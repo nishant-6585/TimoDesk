@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimoDesk Live Feed</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f0f0f; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100dvh; display: flex; flex-direction: column;
+    }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px; padding: 14px 20px;
+      background: #1a1a1a; border-bottom: 1px solid #2a2a2a;
+    }
+    .logo { font-size: 18px; font-weight: 700; color: #FF6B35; letter-spacing: 0.5px; }
+
+    .connect-bar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px;
+      background: #141414; border-bottom: 1px solid #222;
+    }
+    input[type="text"] {
+      background: #0f0f0f; border: 1px solid #333; border-radius: 8px;
+      color: #fff; font-size: 14px; padding: 7px 12px; width: 280px;
+      outline: none; transition: border-color .2s;
+    }
+    input[type="text"]:focus { border-color: #FF6B35; }
+    input[type="text"]::placeholder { color: #555; }
+    button {
+      cursor: pointer; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
+      padding: 8px 16px; transition: opacity .15s, transform .1s;
+      background: #FF6B35; color: #fff;
+    }
+    button:active { transform: scale(0.97); }
+    button:hover { opacity: 0.9; }
+    button.disconnect { background: #ef4444; }
+
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 20px; background: #141414; border-bottom: 1px solid #222;
+      font-size: 12px; letter-spacing: 0.8px;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #555; transition: background .3s; }
+    .dot.live { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,.7); }
+    .dot.error { background: #f87171; }
+    .status { color: #999; }
+    .status.live { color: #4ade80; }
+    .status.error { color: #f87171; }
+    .clock { margin-left: auto; color: #555; font-variant-numeric: tabular-nums; }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; background: #1a1a1a; border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+    }
+    .status-pill .dot { width: 7px; height: 7px; }
+
+    .main-layout {
+      flex: 1; display: flex; gap: 0; position: relative;
+    }
+
+    .feed-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 20px; position: relative;
+    }
+    @media (min-width: 768px) {
+      .feed-wrap { flex: 0 0 65%; }
+      .control-panel { flex: 0 0 35%; }
+    }
+
+    img {
+      max-width: 100%; max-height: calc(100dvh - 150px); border-radius: 10px;
+      background: #000;
+    }
+    #placeholder {
+      display: none; flex-direction: column; align-items: center; gap: 14px; color: #333;
+    }
+    #placeholder svg { width: 72px; height: 72px; }
+    #placeholder p { font-size: 14px; }
+    :fullscreen img { max-height: 100vh; border-radius: 0; }
+    :-webkit-full-screen img { max-height: 100vh; border-radius: 0; }
+
+    .control-panel {
+      display: flex; flex-direction: column; gap: 16px;
+      padding: 16px; background: #141414; border-left: 1px solid #2a2a2a;
+      overflow-y: auto;
+    }
+
+    @media (max-width: 767px) {
+      .main-layout { flex-direction: column; }
+      .control-panel {
+        border-left: none; border-top: 1px solid #2a2a2a;
+        gap: 12px; padding: 12px;
+      }
+    }
+
+    .control-section {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .control-label {
+      font-size: 11px; color: #999; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .head-position {
+      width: 160px; height: 90px; margin: 0 auto;
+      background: #1a1a1a; border-radius: 12px; border: 1px solid #2a2a2a;
+      position: relative; overflow: hidden;
+    }
+
+    .head-position-crosshair {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 40px; height: 40px;
+    }
+    .head-position-h { position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+      width: 40px; height: 1px; background: #2a2a2a; }
+    .head-position-v { position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+      width: 1px; height: 40px; background: #2a2a2a; }
+
+    .head-dot {
+      position: absolute; width: 12px; height: 12px;
+      border-radius: 50%; background: #FF6B35;
+      box-shadow: 0 0 4px rgba(255,107,53,0.8);
+      transform: translate(-50%, -50%);
+      transition: left .1s ease, top .1s ease;
+    }
+
+    .head-corner-label {
+      position: absolute; font-size: 9px; color: #6b7280;
+      pointer-events: none;
+    }
+    .head-corner-label.l { left: 6px; top: 6px; }
+    .head-corner-label.r { right: 6px; top: 6px; }
+    .head-corner-label.u { left: 50%; top: 4px; transform: translateX(-50%); }
+    .head-corner-label.d { left: 50%; bottom: 4px; transform: translateX(-50%); }
+
+    .joystick-container {
+      position: relative; width: 180px; height: 180px; margin: 0 auto;
+      background: #1a1a1a; border-radius: 50%; border: 2px solid rgba(255,107,53,0.4);
+      cursor: grab; user-select: none;
+    }
+    .joystick-container.active { cursor: grabbing; }
+    .joystick-container.disabled {
+      opacity: 0.35; cursor: not-allowed; pointer-events: none;
+    }
+
+    .joystick-knob {
+      position: absolute; width: 52px; height: 52px;
+      border-radius: 50%; background: #FF6B35;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px rgba(255,107,53,0.6);
+      transition: transform .08s ease;
+    }
+
+    .dpad {
+      display: grid; grid-template-columns: 44px 44px 44px;
+      gap: 6px; justify-content: center;
+      grid-template-areas:
+        ". u ."
+        "l c r"
+        ". d .";
+    }
+
+    .dpad button {
+      width: 44px; height: 44px; padding: 0;
+      border-radius: 8px; border: 1px solid #333;
+      background: #1a1a1a; color: #FF6B35;
+      font-size: 20px; font-weight: bold;
+      transition: background .1s, border-color .1s;
+    }
+    .dpad button:hover { background: rgba(255,107,53,.1); border-color: #FF6B35; }
+    .dpad button:active { background: rgba(255,107,53,.2); }
+
+    .dpad-l { grid-area: l; }
+    .dpad-u { grid-area: u; }
+    .dpad-c { grid-area: c; }
+    .dpad-r { grid-area: r; }
+    .dpad-d { grid-area: d; }
+
+    .keyboard-tip {
+      display: none; position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+      padding: 12px 16px; font-size: 12px; color: #999;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">TimoDesk Live Feed</span>
+  <button onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
+</header>
+
+<div class="connect-bar">
+  <input type="text" id="url" placeholder="http://192.168.x.x:8080/stream" value="http://192.168.10." autocomplete="off" spellcheck="false">
+  <button id="btnConnect" onclick="toggle()">Connect</button>
+</div>
+
+<div class="status-row">
+  <div class="status-pill">
+    <div class="dot" id="dot"></div>
+    <span id="status" class="status">IDLE</span>
+  </div>
+  <div class="status-pill">
+    <div class="dot" id="headDot"></div>
+    <span id="headStatus">DISCONNECTED</span>
+  </div>
+  <span class="clock" id="clock"></span>
+</div>
+
+<div class="main-layout">
+  <div class="feed-wrap" id="feedWrap">
+    <img id="stream" alt="Live stream">
+    <div id="placeholder">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/>
+      </svg>
+      <p>Enter stream URL and press <strong>Connect</strong></p>
+    </div>
+  </div>
+
+  <div class="control-panel" id="controlPanel" style="display:none;">
+    <div class="control-section">
+      <div class="control-label">Head Position</div>
+      <div class="head-position" id="headPosition">
+        <div class="head-position-crosshair">
+          <div class="head-position-h"></div>
+          <div class="head-position-v"></div>
+        </div>
+        <div class="head-dot" id="headDotIndicator"></div>
+        <div class="head-corner-label l">L</div>
+        <div class="head-corner-label r">R</div>
+        <div class="head-corner-label u">U</div>
+        <div class="head-corner-label d">D</div>
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="control-label">Joystick Control</div>
+      <div class="joystick-container disabled" id="joystick">
+        <div class="joystick-knob" id="joystickKnob"></div>
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="control-label">D-Pad</div>
+      <div class="dpad">
+        <button class="dpad-l" onclick="dpadPress('l')">←</button>
+        <button class="dpad-u" onclick="dpadPress('u')">↑</button>
+        <button class="dpad-c" onclick="dpadPress('c')">⊙</button>
+        <button class="dpad-r" onclick="dpadPress('r')">→</button>
+        <button class="dpad-d" onclick="dpadPress('d')">↓</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="keyboard-tip" id="keyboardTip">💡 Tip: use arrow keys to control head, space to reset</div>
+
+<script>
+const img = document.getElementById('stream');
+const url_input = document.getElementById('url');
+const btn = document.getElementById('btnConnect');
+const status_el = document.getElementById('status');
+const dot = document.getElementById('dot');
+const placeholder = document.getElementById('placeholder');
+const controlPanel = document.getElementById('controlPanel');
+const joystick = document.getElementById('joystick');
+const joystickKnob = document.getElementById('joystickKnob');
+const headPosition = document.getElementById('headPosition');
+const headDot = document.getElementById('headDot');
+const headDotIndicator = document.getElementById('headDotIndicator');
+const headStatus = document.getElementById('headStatus');
+const keyboardTip = document.getElementById('keyboardTip');
+
+let connected = false;
+let wsConnected = false;
+let streamIp = '';
+let ws = null;
+let headLR = 50;
+let headUD = 50;
+let lastCommandTime = 0;
+let dpadLongPress = null;
+let joystickActive = false;
+let showedKeyboardTip = localStorage.getItem('timodesk_tip_shown');
+
+function setStatus(state, text) {
+  connected = state === 'live';
+  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
+  status_el.className = 'status ' + state;
+  status_el.textContent = text;
+  btn.textContent = connected ? 'Disconnect' : 'Connect';
+  btn.className = connected ? 'disconnect' : '';
+  url_input.disabled = connected;
+}
+
+function toggle() {
+  if (connected) {
+    img.src = '';
+    placeholder.style.display = 'flex';
+    controlPanel.style.display = 'none';
+    setStatus('', 'IDLE');
+    closeWs();
+    return;
+  }
+
+  const url = url_input.value.trim();
+  if (!url) { url_input.focus(); return; }
+
+  let fullUrl = url;
+  if (!url.includes('://')) {
+    fullUrl = 'http://' + url + ':8080/stream';
+    streamIp = url.includes(':') ? url.split(':')[0] : url;
+  } else {
+    const parts = url.split('://')[1].split('/')[0].split(':')[0];
+    streamIp = parts;
+    if (!url.includes('/stream')) {
+      fullUrl = url + '/stream';
+    }
+  }
+
+  console.log('Connecting to:', fullUrl, 'IP:', streamIp);
+  img.src = fullUrl;
+  setStatus('live', 'LIVE');
+  controlPanel.style.display = 'flex';
+  connectWs(streamIp);
+
+  if (!showedKeyboardTip) {
+    keyboardTip.style.display = 'block';
+    setTimeout(() => { keyboardTip.style.display = 'none'; }, 4000);
+    localStorage.setItem('timodesk_tip_shown', 'true');
+  }
+}
+
+function connectWs(ip) {
+  try {
+    ws = new WebSocket('ws://' + ip + ':8081');
+    ws.onopen = () => {
+      wsConnected = true;
+      updateHeadStatus('CONNECTED');
+      joystick.classList.remove('disabled');
+    };
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.type === 'status') {
+        headLR = m.headLR || 50;
+        headUD = m.headUD || 50;
+        updateHeadDot();
+      }
+    };
+    ws.onclose = () => {
+      wsConnected = false;
+      updateHeadStatus('DISCONNECTED');
+      joystick.classList.add('disabled');
+      if (connected) setTimeout(() => connectWs(ip), 3000);
+    };
+    ws.onerror = () => {
+      wsConnected = false;
+      updateHeadStatus('DISCONNECTED');
+      joystick.classList.add('disabled');
+    };
+  } catch (e) {
+    console.error('WS error:', e);
+    wsConnected = false;
+    updateHeadStatus('DISCONNECTED');
+    joystick.classList.add('disabled');
+  }
+}
+
+function closeWs() {
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+}
+
+function updateHeadStatus(status) {
+  headStatus.textContent = status;
+  headDot.className = 'dot ' + (status === 'CONNECTED' ? 'live' : 'error');
+  if (status === 'DISCONNECTED') {
+    console.log('Head control disconnected — start HEAD CONTROL on robot app and try again');
+  }
+}
+
+function updateHeadDot() {
+  const w = 160, h = 90;
+  const x = (headLR / 100) * w;
+  const y = ((100 - headUD) / 100) * h;
+  headDotIndicator.style.left = x + 'px';
+  headDotIndicator.style.top = y + 'px';
+}
+
+function sendHeadCommand(cmd) {
+  if (!wsConnected || !ws) return;
+  const now = Date.now();
+  if (now - lastCommandTime < 50) return;
+  lastCommandTime = now;
+  try {
+    ws.send(JSON.stringify(cmd));
+  } catch (e) {
+    console.error('Send error:', e);
+  }
+}
+
+// Joystick
+joystick.addEventListener('mousedown', startJoystick);
+joystick.addEventListener('touchstart', startJoystick);
+
+function startJoystick(e) {
+  if (!wsConnected) return;
+  joystickActive = true;
+  joystick.classList.add('active');
+  handleJoystick(e);
+  window.addEventListener('mousemove', handleJoystick);
+  window.addEventListener('touchmove', handleJoystick);
+  window.addEventListener('mouseup', endJoystick);
+  window.addEventListener('touchend', endJoystick);
+}
+
+function handleJoystick(e) {
+  if (!joystickActive) return;
+  const rect = joystick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - cx;
+  const y = (e.touches ? e.touches[0].clientY : e.clientY) - cy;
+  const r = 90;
+  const dist = Math.sqrt(x * x + y * y);
+  const ratio = Math.min(1, dist / r);
+  const nx = ratio * (x / dist || 0);
+  const ny = ratio * (y / dist || 0);
+  joystickKnob.style.transform = `translate(calc(-50% + ${nx * 50}px), calc(-50% + ${ny * 50}px))`;
+  const lr = Math.round(50 + nx * 50);
+  const ud = Math.round(50 - ny * 50);
+  sendHeadCommand({ cmd: 'head_both', lr, ud });
+}
+
+function endJoystick(e) {
+  if (!joystickActive) return;
+  joystickActive = false;
+  joystick.classList.remove('active');
+  joystickKnob.style.transform = 'translate(-50%, -50%)';
+  window.removeEventListener('mousemove', handleJoystick);
+  window.removeEventListener('touchmove', handleJoystick);
+  window.removeEventListener('mouseup', endJoystick);
+  window.removeEventListener('touchend', endJoystick);
+  sendHeadCommand({ cmd: 'head_both', lr: 50, ud: 50 });
+}
+
+// D-Pad
+function dpadPress(key) {
+  if (!wsConnected) return;
+  const delta = 15;
+  if (key === 'l') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - delta) });
+  else if (key === 'r') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + delta) });
+  else if (key === 'u') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + delta) });
+  else if (key === 'd') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - delta) });
+  else if (key === 'c') sendHeadCommand({ cmd: 'reset' });
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (document.activeElement === url_input || !wsConnected) return;
+  const delta = 15;
+  if (e.key === 'ArrowLeft') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - delta) });
+  else if (e.key === 'ArrowRight') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + delta) });
+  else if (e.key === 'ArrowUp') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + delta) });
+  else if (e.key === 'ArrowDown') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - delta) });
+  else if (e.key === ' ') { e.preventDefault(); sendHeadCommand({ cmd: 'reset' }); }
+});
+
+img.onerror = () => {
+  console.error('Failed to load stream');
+  setStatus('error', 'FAILED');
+};
+
+url_input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') toggle();
+});
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    img.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
+}
+updateClock();
+setInterval(updateClock, 1000);
+</script>
+
+</body>
+</html>

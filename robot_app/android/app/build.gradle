@@ -1,0 +1,71 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace "com.timoDesk.robotapp"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
+        applicationId = "com.timoDesk.robotapp"
+        minSdk = 25
+        targetSdk = 34
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    flavorDimensions "env"
+    productFlavors {
+        robot {
+            dimension "env"
+            buildConfigField "String", "SDK_IP",   '"127.0.0.1"'
+            buildConfigField "int",    "SDK_PORT",  '60002'
+            resValue "string", "app_name", "TimoDesk Robot"
+        }
+        remote {
+            dimension "env"
+            buildConfigField "String", "SDK_IP",   '"192.168.99.101"'
+            buildConfigField "int",    "SDK_PORT",  '60002'
+            resValue "string", "app_name", "TimoDesk Remote"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
+
+dependencies {
+    implementation project(':newSceneSDK')
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'io.getstream:stream-webrtc-android:1.1.0'
+    // Exclude slf4j-api — newSceneSDK already bundles slf4j-api-1.7.21.jar
+    implementation ('org.java-websocket:Java-WebSocket:1.5.3') {
+        exclude group: 'org.slf4j', module: 'slf4j-api'
+    }
+}
+
+flutter {
+    source = "../.."
+}
