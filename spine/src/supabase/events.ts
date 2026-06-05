@@ -70,3 +70,28 @@ export async function logRobotConnection(
     state,
   });
 }
+
+/**
+ * Calculate purge_after timestamp based on data kind
+ * Used when inserting personal data to Supabase
+ * Implements DPDP Act compliance: automatic deletion after retention window
+ */
+export function getPurgeAfter(
+  kind: 'visitor' | 'capture_admin' | 'capture_intrusion' | 'capture_patrol' | 'conversation'
+): string {
+  const now = new Date();
+
+  // Retention windows (days)
+  const retentionDays: Record<string, number> = {
+    visitor: 30,
+    capture_admin: 30,
+    capture_intrusion: 365, // 1 year for intrusion detection frames
+    capture_patrol: 30,
+    conversation: 7, // PII-scrubbed transcripts
+  };
+
+  const days = retentionDays[kind] ?? 30;
+  now.setDate(now.getDate() + days);
+
+  return now.toISOString();
+}

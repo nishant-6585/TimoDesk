@@ -3,7 +3,9 @@
  * For development: if JWT_SECRET is not set, skip auth (dev mode)
  */
 
-import * as jwt from 'jsonwebtoken';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 

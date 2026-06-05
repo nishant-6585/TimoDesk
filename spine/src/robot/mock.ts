@@ -34,11 +34,23 @@ export class MockRobotSDK implements RobotSDK {
   async drive(dir: 'forward' | 'back' | 'left' | 'right'): Promise<void> {
     this.status.isMoving = true;
     console.log(`[Mock SDK] Drive: ${dir}`);
+    // Emit movement event so browser gets real-time feedback
+    this.eventHandlers.forEach(h => h({
+      type: 'robot_status_update',
+      payload: { isMoving: true, direction: dir },
+      timestamp: Date.now(),
+    } as any));
   }
 
   async stopDrive(): Promise<void> {
     this.status.isMoving = false;
     console.log('[Mock SDK] Stop driving');
+    // Emit stop event so browser knows robot stopped
+    this.eventHandlers.forEach(h => h({
+      type: 'robot_status_update',
+      payload: { isMoving: false },
+      timestamp: Date.now(),
+    } as any));
   }
 
   async setHeadPosition(lr: number, ud: number): Promise<void> {

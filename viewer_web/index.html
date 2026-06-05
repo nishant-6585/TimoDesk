@@ -410,6 +410,9 @@ function connectSpine(spineUrlInput) {
       spineConnected = false;
       setSpineStatus('error', 'DISCONNECTED');
       console.log('[Spine] Disconnected');
+      // Disable joysticks
+      joystick.classList.add('disabled');
+      chassisJoystick.classList.add('disabled');
       if (connected) {
         setTimeout(() => connectSpine(spineUrlInput), 3000);
       }
@@ -439,6 +442,9 @@ function handleSpineMessage(msg) {
 
   if (msg.type === 'authenticated') {
     console.log('[Spine] Authenticated');
+    // Enable joysticks when authenticated
+    joystick.classList.remove('disabled');
+    chassisJoystick.classList.remove('disabled');
     sendSpine({ type: 'intent', intent: { intent: 'get_status' } });
   } else if (msg.type === 'robot_status' && msg.status) {
     headLR = msg.status.headLR || 50;
@@ -453,11 +459,23 @@ function handleSpineMessage(msg) {
   } else if (msg.type === 'stopped') {
     isStopped = true;
     showStopBanner();
+    // Disable movement controls
+    chassisJoystick.classList.add('disabled');
   } else if (msg.type === 'resumed') {
     isStopped = false;
     hideStopBanner();
+    // Re-enable movement controls
+    if (spineConnected) {
+      chassisJoystick.classList.remove('disabled');
+    }
   } else if (msg.type === 'event') {
     console.log('[Robot Event]', msg.event, msg.payload);
+    // Handle robot status updates from mock SDK
+    if (msg.event === 'robot_status_update' && msg.payload) {
+      if (msg.payload.isMoving !== undefined) {
+        document.getElementById('movingStatus').textContent = msg.payload.isMoving ? 'Yes' : 'No';
+      }
+    }
   } else if (msg.type === 'error') {
     console.warn('[Spine Error]', msg.message);
   }
