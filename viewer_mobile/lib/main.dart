@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -252,6 +253,8 @@ class _MjpegFeedState extends State<MjpegFeedScreen> {
   Timer? _retry;
   WebSocketChannel? _wsChannel;
   bool _wsConnected = false;
+  WebSocketChannel? _wsChassisChannel;
+  bool _wsChassisConnected = false;
   int _headLR = 50;
   int _headUD = 50;
   String get _url => 'http://${widget.ip}:${widget.port}/stream';
@@ -265,12 +268,14 @@ class _MjpegFeedState extends State<MjpegFeedScreen> {
     ]);
     _open();
     _connectHeadControl();
+    _connectChassisControl();
   }
 
   @override
   void dispose() {
     _sub?.cancel(); _retry?.cancel();
     _wsChannel?.sink.close();
+    _wsChassisChannel?.sink.close();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
@@ -321,6 +326,51 @@ class _MjpegFeedState extends State<MjpegFeedScreen> {
     }
   }
 
+  void _connectChassisControl() {
+    try {
+      _wsChassisChannel = WebSocketChannel.connect(Uri.parse('ws://${widget.ip}:8082'));
+      _wsChassisChannel!.stream.listen(
+        (msg) {
+          try {
+            final m = jsonDecode(msg as String) as Map<String, dynamic>;
+            if (m['type'] == 'status') {
+              if (mounted) {
+                setState(() {
+                  // Update chassis state if needed
+                });
+              }
+            }
+          } catch (e) {
+            debugPrint('Chassis parse error: $e');
+          }
+        },
+        onError: (_) {
+          if (mounted) setState(() => _wsChassisConnected = false);
+          Future.delayed(const Duration(seconds: 3), _connectChassisControl);
+        },
+        onDone: () {
+          if (mounted) setState(() => _wsChassisConnected = false);
+          Future.delayed(const Duration(seconds: 3), _connectChassisControl);
+        },
+      );
+      if (mounted) setState(() => _wsChassisConnected = true);
+    } catch (e) {
+      debugPrint('Chassis WS error: $e');
+      if (mounted) setState(() => _wsChassisConnected = false);
+      Future.delayed(const Duration(seconds: 3), _connectChassisControl);
+    }
+  }
+
+  void _sendChassisCommand(Map<String, dynamic> cmd) {
+    if (_wsChassisConnected && _wsChassisChannel != null) {
+      try {
+        _wsChassisChannel!.sink.add(jsonEncode(cmd));
+      } catch (e) {
+        debugPrint('Chassis send error: $e');
+      }
+    }
+  }
+
   void _open() {
     _sub?.cancel();
     setState(() => _state = _ConnState.connecting);
@@ -346,6 +396,29 @@ class _MjpegFeedState extends State<MjpegFeedScreen> {
           ? Image.memory(_frame!, fit: BoxFit.contain, gaplessPlayback: true,
               width: double.infinity, height: double.infinity)
           : _Connecting(state: _state, onRetry: _open),
+      if (_wsChassisConnected)
+        Positioned(
+          bottom: 24, left: 24,
+          child: _ChassisFloatingJoystick(
+            onCommand: _sendChassisCommand,
+          )),
+      if (_wsChassisConnected)
+        Positioned(
+          top: 16, left: 0, right: 0,
+          child: Center(
+            child: GestureDetector(
+              onTap: () => _sendChassisCommand({'cmd': 'stop'}),
+              child: Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.red[600],
+                  boxShadow: [BoxShadow(color: Colors.red, blurRadius: 8)],
+                ),
+                child: const Icon(Icons.stop_rounded, color: Colors.white, size: 28),
+              ),
+            ),
+          )),
       if (_wsConnected)
         Positioned(
           bottom: 24, right: 24,
@@ -599,6 +672,96 @@ class _StatusChip extends StatelessWidget {
             fontWeight: FontWeight.bold, letterSpacing: 1)),
       ]));
   }
+}
+
+// ── Chassis Floating Joystick ─────────────────────────────────────────────────
+
+class _ChassisFloatingJoystick extends StatefulWidget {
+  final Function(Map<String, dynamic>) onCommand;
+  const _ChassisFloatingJoystick({required this.onCommand});
+
+  @override
+  State<_ChassisFloatingJoystick> createState() => _ChassisFloatingJoystickState();
+}
+
+class _ChassisFloatingJoystickState extends State<_ChassisFloatingJoystick> {
+  late Offset _knobOffset;
+  bool _dragging = false;
+  late DateTime _lastCommandTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _knobOffset = Offset.zero;
+    _lastCommandTime = DateTime.now();
+  }
+
+  void _handlePan(DragUpdateDetails details) {
+    const radius = 60.0;
+    final newOffset = Offset(
+      (details.delta.dx.clamp(-radius, radius)),
+      (details.delta.dy.clamp(-radius, radius)),
+    );
+
+    final dist = newOffset.distance;
+    if (dist > radius) {
+      _knobOffset = newOffset / dist * radius;
+    } else {
+      _knobOffset = newOffset;
+    }
+
+    final now = DateTime.now();
+    if (now.difference(_lastCommandTime).inMilliseconds >= 150) {
+      final angle = atan2(-_knobOffset.dy, _knobOffset.dx) * 180 / pi;
+      String direction = 'none';
+      if (angle > -45 && angle <= 45) direction = 'right';
+      else if (angle > 45 && angle <= 135) direction = 'forward';
+      else if (angle > 135 || angle <= -135) direction = 'left';
+      else direction = 'back';
+
+      if (direction != 'none') {
+        widget.onCommand({'cmd': 'move', 'dir': direction});
+      }
+      _lastCommandTime = now;
+    }
+
+    setState(() => _dragging = true);
+  }
+
+  void _handlePanEnd(DragEndDetails details) {
+    _knobOffset = Offset.zero;
+    widget.onCommand({'cmd': 'stop'});
+    setState(() => _dragging = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onPanUpdate: _handlePan,
+    onPanEnd: _handlePanEnd,
+    child: Container(
+      width: 120, height: 120,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.85),
+        border: Border.all(color: _orange, width: 2),
+      ),
+      child: Stack(alignment: Alignment.center, children: [
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 80),
+          left: 60 + _knobOffset.dx - 20,
+          top: 60 + _knobOffset.dy - 20,
+          child: Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _orange,
+              boxShadow: [BoxShadow(color: _orange.withValues(alpha: 0.5), blurRadius: 8)],
+            ),
+          ),
+        ),
+      ]),
+    ),
+  );
 }
 
 // ── Floating Joystick ─────────────────────────────────────────────────────────

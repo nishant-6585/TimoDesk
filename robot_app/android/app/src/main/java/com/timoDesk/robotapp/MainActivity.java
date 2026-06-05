@@ -11,6 +11,8 @@ public class MainActivity extends FlutterActivity {
     private static final String EVENT_CHANNEL  = "com.timoDesk/camera_events";
     private static final String HEAD_METHOD_CH = "com.timoDesk/head_control";
     private static final String HEAD_EVENT_CH  = "com.timoDesk/head_events";
+    private static final String CHASSIS_METHOD_CH = "com.timoDesk/chassis_control";
+    private static final String CHASSIS_EVENT_CH  = "com.timoDesk/chassis_events";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -39,5 +41,17 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 HEAD_EVENT_CH
         ).setStreamHandler(headPlugin);
+
+        ChassisControlPlugin chassisPlugin = new ChassisControlPlugin();
+
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                CHASSIS_METHOD_CH
+        ).setMethodCallHandler(chassisPlugin);
+
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                CHASSIS_EVENT_CH
+        ).setStreamHandler(chassisPlugin);
     }
 }

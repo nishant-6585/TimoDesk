@@ -31,5 +31,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
+        <meta-data
+            android:name="CSJ_SDK_REMOTE_APP_NAME"
+            android:value="${applicationId}" />
     </application>
+
+    <queries>
+        <package android:name="com.google.android.tts" />
+        <package android:name="com.android.tts" />
+        <package android:name="com.csjbot.robotsdk.ten" />
+    </queries>
 </manifest>

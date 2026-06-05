@@ -214,6 +214,10 @@
     <div class="dot" id="headDot"></div>
     <span id="headStatus">DISCONNECTED</span>
   </div>
+  <div class="status-pill">
+    <div class="dot" id="chassisDot"></div>
+    <span id="chassisStatus">DISCONNECTED</span>
+  </div>
   <span class="clock" id="clock"></span>
 </div>
 
@@ -245,9 +249,26 @@
     </div>
 
     <div class="control-section">
-      <div class="control-label">Joystick Control</div>
-      <div class="joystick-container disabled" id="joystick">
-        <div class="joystick-knob" id="joystickKnob"></div>
+      <div class="control-label">Drive Joystick</div>
+      <div class="joystick-container disabled" id="chassisJoystick">
+        <div class="joystick-knob" id="chassisKnob"></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 12px; align-items: flex-end; justify-content: center;">
+      <div class="control-section" style="flex: 1;">
+        <div class="control-label" style="text-align: center;">Empty</div>
+        <div style="height: 180px;"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+        <button id="emergencyStopBtn" style="width: 56px; height: 56px; padding: 0; background: #ef4444; border-radius: 50%; font-size: 24px; line-height: 1;">⏹</button>
+        <span style="font-size: 10px; color: #999;">STOP</span>
+      </div>
+      <div class="control-section" style="flex: 1;">
+        <div class="control-label" style="text-align: center;">Head Joystick</div>
+        <div class="joystick-container disabled" id="joystick">
+          <div class="joystick-knob" id="joystickKnob"></div>
+        </div>
       </div>
     </div>
 
@@ -276,22 +297,35 @@ const placeholder = document.getElementById('placeholder');
 const controlPanel = document.getElementById('controlPanel');
 const joystick = document.getElementById('joystick');
 const joystickKnob = document.getElementById('joystickKnob');
+const chassisJoystick = document.getElementById('chassisJoystick');
+const chassisKnob = document.getElementById('chassisKnob');
 const headPosition = document.getElementById('headPosition');
 const headDot = document.getElementById('headDot');
 const headDotIndicator = document.getElementById('headDotIndicator');
 const headStatus = document.getElementById('headStatus');
+const chassisStatus = document.getElementById('chassisStatus');
+const chassisDot = document.getElementById('chassisDot');
+const emergencyStopBtn = document.getElementById('emergencyStopBtn');
 const keyboardTip = document.getElementById('keyboardTip');
 
 let connected = false;
 let wsConnected = false;
+let wsChassis = null;
+let wsChassisConnected = false;
 let streamIp = '';
 let ws = null;
 let headLR = 50;
 let headUD = 50;
 let lastCommandTime = 0;
+let lastChassisCommandTime = 0;
 let dpadLongPress = null;
 let joystickActive = false;
+let chassisJoystickActive = false;
+let chassisMoving = false;
+let chassisDirection = 'none';
 let showedKeyboardTip = localStorage.getItem('timodesk_tip_shown');
+let wasdPressed = { w: false, a: false, s: false, d: false };
+let wasdInterval = null;
 
 function setStatus(state, text) {
   connected = state === 'live';
@@ -310,6 +344,7 @@ function toggle() {
     controlPanel.style.display = 'none';
     setStatus('', 'IDLE');
     closeWs();
+    closeWsChassis();
     return;
   }
 
@@ -333,6 +368,7 @@ function toggle() {
   setStatus('live', 'LIVE');
   controlPanel.style.display = 'flex';
   connectWs(streamIp);
+  connectWsChassis(streamIp);
 
   if (!showedKeyboardTip) {
     keyboardTip.style.display = 'block';
@@ -380,6 +416,75 @@ function closeWs() {
   if (ws) {
     ws.close();
     ws = null;
+  }
+}
+
+function connectWsChassis(ip) {
+  try {
+    wsChassis = new WebSocket('ws://' + ip + ':8082');
+    wsChassis.onopen = () => {
+      wsChassisConnected = true;
+      updateChassissStatus('CONNECTED');
+      chassisJoystick.classList.remove('disabled');
+    };
+    wsChassis.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.type === 'status') {
+        chassisMoving = m.isMoving || false;
+        chassisDirection = m.direction || 'none';
+        updateDirectionIndicator();
+      }
+    };
+    wsChassis.onclose = () => {
+      wsChassisConnected = false;
+      updateChassissStatus('DISCONNECTED');
+      chassisJoystick.classList.add('disabled');
+      if (connected) setTimeout(() => connectWsChassis(ip), 3000);
+    };
+    wsChassis.onerror = () => {
+      wsChassisConnected = false;
+      updateChassissStatus('DISCONNECTED');
+      chassisJoystick.classList.add('disabled');
+    };
+  } catch (e) {
+    console.error('Chassis WS error:', e);
+    wsChassisConnected = false;
+    updateChassissStatus('DISCONNECTED');
+    chassisJoystick.classList.add('disabled');
+  }
+}
+
+function closeWsChassis() {
+  if (wsChassis) {
+    wsChassis.close();
+    wsChassis = null;
+  }
+}
+
+function updateChassissStatus(status) {
+  chassisStatus.textContent = status;
+  chassisDot.className = 'dot ' + (status === 'CONNECTED' ? 'live' : 'error');
+}
+
+function updateDirectionIndicator() {
+  // Direction indicator update can be added here if needed
+}
+
+function sendChassis(obj) {
+  if (!wsChassisConnected || !wsChassis) {
+    console.warn('Chassis WS not ready:', {wsChassisConnected, wsChassis: !!wsChassis});
+    return;
+  }
+  const now = Date.now();
+  if (obj.cmd === 'move' && now - lastChassisCommandTime < 100) {
+    return; // Rate limit move commands
+  }
+  lastChassisCommandTime = now;
+  try {
+    console.log('Sending chassis command:', obj);
+    wsChassis.send(JSON.stringify(obj));
+  } catch (e) {
+    console.error('Chassis send error:', e);
   }
 }
 
@@ -467,15 +572,153 @@ function dpadPress(key) {
   else if (key === 'c') sendHeadCommand({ cmd: 'reset' });
 }
 
-// Keyboard
+// ── Chassis Joystick ──────────────────────────────────────────────────────────
+
+chassisJoystick.addEventListener('mousedown', startChassisJoystick);
+chassisJoystick.addEventListener('touchstart', startChassisJoystick);
+
+function startChassisJoystick(e) {
+  if (!wsChassisConnected) return;
+  chassisJoystickActive = true;
+  chassisJoystick.classList.add('active');
+  handleChassisJoystick(e);
+  window.addEventListener('mousemove', handleChassisJoystick);
+  window.addEventListener('touchmove', handleChassisJoystick);
+  window.addEventListener('mouseup', endChassisJoystick);
+  window.addEventListener('touchend', endChassisJoystick);
+}
+
+function handleChassisJoystick(e) {
+  if (!chassisJoystickActive) return;
+  const rect = chassisJoystick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - cx;
+  const y = (e.touches ? e.touches[0].clientY : e.clientY) - cy;
+  const r = 90;
+  const dist = Math.sqrt(x * x + y * y);
+  const ratio = Math.min(1, dist / r);
+  const nx = ratio * (x / dist || 0);
+  const ny = ratio * (y / dist || 0);
+  chassisKnob.style.transform = `translate(calc(-50% + ${nx * 50}px), calc(-50% + ${ny * 50}px))`;
+
+  const angle = Math.atan2(-ny, nx) * 180 / Math.PI;
+  let direction = 'none';
+  if (angle > -45 && angle <= 45) direction = 'right';
+  else if (angle > 45 && angle <= 135) direction = 'forward';
+  else if (angle > 135 || angle <= -135) direction = 'left';
+  else direction = 'back';
+
+  if (direction !== 'none') {
+    sendChassis({ cmd: 'move', dir: direction });
+  }
+}
+
+function endChassisJoystick(e) {
+  if (!chassisJoystickActive) return;
+  chassisJoystickActive = false;
+  chassisJoystick.classList.remove('active');
+  chassisKnob.style.transform = 'translate(-50%, -50%)';
+  window.removeEventListener('mousemove', handleChassisJoystick);
+  window.removeEventListener('touchmove', handleChassisJoystick);
+  window.removeEventListener('mouseup', endChassisJoystick);
+  window.removeEventListener('touchend', endChassisJoystick);
+  sendChassis({ cmd: 'stop' });
+}
+
+emergencyStopBtn.addEventListener('click', () => {
+  if (wsChassisConnected && wsChassis) {
+    wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    chassisKnob.style.transform = 'translate(-50%, -50%)';
+  }
+});
+
+// Keyboard support
 document.addEventListener('keydown', e => {
-  if (document.activeElement === url_input || !wsConnected) return;
-  const delta = 15;
-  if (e.key === 'ArrowLeft') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - delta) });
-  else if (e.key === 'ArrowRight') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + delta) });
-  else if (e.key === 'ArrowUp') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + delta) });
-  else if (e.key === 'ArrowDown') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - delta) });
+  if (document.activeElement === url_input) return;
+
+  if (e.key === 'Escape') {
+    if (wsChassisConnected && wsChassis) {
+      wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    }
+    return;
+  }
+
+  if (e.key === 'w' || e.key === 'W') {
+    e.preventDefault();
+    wasdPressed.w = true;
+    if (!wasdInterval && wsChassisConnected) {
+      wasdInterval = setInterval(() => {
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
+        else { clearInterval(wasdInterval); wasdInterval = null; }
+      }, 150);
+    }
+  }
+  else if (e.key === 'a' || e.key === 'A') {
+    e.preventDefault();
+    wasdPressed.a = true;
+    if (!wasdInterval && wsChassisConnected) {
+      wasdInterval = setInterval(() => {
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
+        else { clearInterval(wasdInterval); wasdInterval = null; }
+      }, 150);
+    }
+  }
+  else if (e.key === 's' || e.key === 'S') {
+    e.preventDefault();
+    wasdPressed.s = true;
+    if (!wasdInterval && wsChassisConnected) {
+      wasdInterval = setInterval(() => {
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
+        else { clearInterval(wasdInterval); wasdInterval = null; }
+      }, 150);
+    }
+  }
+  else if (e.key === 'd' || e.key === 'D') {
+    e.preventDefault();
+    wasdPressed.d = true;
+    if (!wasdInterval && wsChassisConnected) {
+      wasdInterval = setInterval(() => {
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
+        else { clearInterval(wasdInterval); wasdInterval = null; }
+      }, 150);
+    }
+  }
+  else if (!wsConnected) return;
+  else if (e.key === 'ArrowLeft') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - 15) });
+  else if (e.key === 'ArrowRight') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + 15) });
+  else if (e.key === 'ArrowUp') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + 15) });
+  else if (e.key === 'ArrowDown') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - 15) });
   else if (e.key === ' ') { e.preventDefault(); sendHeadCommand({ cmd: 'reset' }); }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.key === 'w' || e.key === 'W') wasdPressed.w = false;
+  else if (e.key === 'a' || e.key === 'A') wasdPressed.a = false;
+  else if (e.key === 's' || e.key === 'S') wasdPressed.s = false;
+  else if (e.key === 'd' || e.key === 'D') wasdPressed.d = false;
+
+  if (!wasdPressed.w && !wasdPressed.a && !wasdPressed.s && !wasdPressed.d) {
+    if (wasdInterval) {
+      clearInterval(wasdInterval);
+      wasdInterval = null;
+    }
+    if (wsChassisConnected && wsChassis) {
+      wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    }
+  }
 });
 
 img.onerror = () => {

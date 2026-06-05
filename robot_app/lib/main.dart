@@ -11,6 +11,8 @@ const _methodCh = MethodChannel('com.timoDesk/camera_stream');
 const _eventCh  = EventChannel('com.timoDesk/camera_events');
 const _headMethodCh = MethodChannel('com.timoDesk/head_control');
 const _headEventCh  = EventChannel('com.timoDesk/head_events');
+const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
+const _chassisEventCh  = EventChannel('com.timoDesk/chassis_events');
 
 // ── MJPEG state ───────────────────────────────────────────────────────────────
 
@@ -74,6 +76,38 @@ class HeadState {
     clientCount: clientCount ?? this.clientCount,
     headLR: headLR ?? this.headLR,
     headUD: headUD ?? this.headUD,
+  );
+}
+
+// ── Chassis control state ──────────────────────────────────────────────────────
+
+class ChassisState {
+  final bool   isRunning;
+  final int    clientCount;
+  final bool   isMoving;
+  final double speed;
+  final String direction;
+
+  const ChassisState({
+    this.isRunning = false,
+    this.clientCount = 0,
+    this.isMoving = false,
+    this.speed = 0.5,
+    this.direction = 'none',
+  });
+
+  ChassisState copyWith({
+    bool? isRunning,
+    int? clientCount,
+    bool? isMoving,
+    double? speed,
+    String? direction,
+  }) => ChassisState(
+    isRunning: isRunning ?? this.isRunning,
+    clientCount: clientCount ?? this.clientCount,
+    isMoving: isMoving ?? this.isMoving,
+    speed: speed ?? this.speed,
+    direction: direction ?? this.direction,
   );
 }
 
@@ -191,6 +225,71 @@ class HeadNotifier extends StateNotifier<HeadState> {
 final headProvider =
     StateNotifierProvider<HeadNotifier, HeadState>((ref) => HeadNotifier());
 
+// ── Chassis control notifier ───────────────────────────────────────────────────
+
+class ChassisNotifier extends StateNotifier<ChassisState> {
+  ChassisNotifier() : super(const ChassisState()) {
+    _sub = _chassisEventCh.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      isMoving: m['isMoving'] as bool?,
+      speed: (m['speed'] as num?)?.toDouble(),
+      direction: m['direction'] as String?,
+    );
+  }
+
+  Future<void> startChassisControl() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('startChassisControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startChassisControl: $e'); }
+  }
+
+  Future<void> stopChassisControl() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('stopChassisControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopChassisControl: $e'); }
+  }
+
+  Future<void> emergencyStop() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('emergencyStop');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('emergencyStop: $e'); }
+  }
+
+  Future<void> setSpeed(double speed) async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('setSpeed', {'speed': speed});
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('setSpeed: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      isMoving: m['isMoving'] as bool?,
+      speed: (m['speed'] as num?)?.toDouble(),
+      direction: m['direction'] as String?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final chassisProvider =
+    StateNotifierProvider<ChassisNotifier, ChassisState>((ref) => ChassisNotifier());
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 void main() => runApp(const ProviderScope(child: _App()));
@@ -226,11 +325,16 @@ class _StreamScreen extends ConsumerWidget {
     final mNotifier = ref.read(streamProvider.notifier);
     final head = ref.watch(headProvider);
     final hNotifier = ref.read(headProvider.notifier);
+    final chassis = ref.watch(chassisProvider);
+    final cNotifier = ref.read(chassisProvider.notifier);
 
-    // Auto-start head control when camera starts
+    // Auto-start head & chassis control when camera starts
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
       if (curr && !head.isRunning) {
         hNotifier.startHeadControl();
+      }
+      if (curr && !chassis.isRunning) {
+        cNotifier.startChassisControl();
       }
     });
 
@@ -276,6 +380,17 @@ class _StreamScreen extends ConsumerWidget {
             _HeadControlButton(state: head, notifier: hNotifier),
             const SizedBox(height: 12),
             _HeadResetButton(notifier: hNotifier),
+            // ── Chassis control section ─────────────────────────────────────
+            const SizedBox(height: 28),
+            _SectionLabel('CHASSIS CONTROL'),
+            const SizedBox(height: 8),
+            _ChassisControlCard(state: chassis, notifier: cNotifier, streamIp: mjpeg.ip),
+            const SizedBox(height: 12),
+            _ChassisControlButton(state: chassis, notifier: cNotifier),
+            const SizedBox(height: 12),
+            _ChassisSpeedSlider(notifier: cNotifier, speed: chassis.speed),
+            const SizedBox(height: 12),
+            _ChassisEmergencyStopButton(notifier: cNotifier),
           ],
         ),
       ),
@@ -635,5 +750,179 @@ class _HeadResetButton extends StatelessWidget {
     ),
     child: const Text('RESET CENTER',
         style: TextStyle(color: _orange, fontWeight: FontWeight.bold, letterSpacing: 1)),
+  );
+}
+
+// ── Chassis Control card ───────────────────────────────────────────────────────
+
+class _ChassisControlCard extends StatelessWidget {
+  final ChassisState state;
+  final ChassisNotifier notifier;
+  final String streamIp;
+  const _ChassisControlCard({
+    required this.state,
+    required this.notifier,
+    required this.streamIp,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final wsUrl = 'ws://$streamIp:8082';
+
+    return Card(
+      color: const Color(0xFF1A1A1A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.directions_car_rounded, size: 16, color: _orange),
+            const SizedBox(width: 8),
+            Text(state.isRunning ? 'ACTIVE' : 'STOPPED',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 1.4,
+                    color: state.isRunning ? const Color(0xFF4ADE80) : const Color(0xFF6B7280))),
+            const Spacer(),
+            Text('${state.clientCount} client${state.clientCount == 1 ? '' : 's'}',
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ]),
+          const Divider(height: 24),
+          _Label('WebSocket URL'),
+          const SizedBox(height: 4),
+          GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: wsUrl));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('WebSocket URL copied')));
+            },
+            child: Row(children: [
+              Flexible(child: Text(wsUrl,
+                  style: const TextStyle(color: _orange, fontSize: 13),
+                  overflow: TextOverflow.ellipsis)),
+              const SizedBox(width: 6),
+              const Icon(Icons.copy_rounded, size: 14, color: _orange),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          _Label('Direction Indicator'),
+          const SizedBox(height: 12),
+          _DirectionIndicator(direction: state.direction, isMoving: state.isMoving),
+        ]),
+      ),
+    );
+  }
+}
+
+class _DirectionIndicator extends StatelessWidget {
+  final String direction;
+  final bool isMoving;
+  const _DirectionIndicator({required this.direction, required this.isMoving});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 80.0;
+    final color = isMoving ? _orange : const Color(0xFF6B7280);
+
+    String getArrowSymbol() {
+      return switch (direction) {
+        'forward' => '↑',
+        'back' => '↓',
+        'left' => '←',
+        'right' => '→',
+        _ => '●',
+      };
+    }
+
+    return Center(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0F0F),
+          borderRadius: BorderRadius.circular(size / 2),
+          border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
+        ),
+        child: Stack(alignment: Alignment.center, children: [
+          Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('N', style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.5))),
+            Text('S', style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.5))),
+          ]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('W', style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.5))),
+            Text('E', style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.5))),
+          ]),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: color),
+            child: Text(getArrowSymbol()),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ChassisControlButton extends StatelessWidget {
+  final ChassisState state;
+  final ChassisNotifier notifier;
+  const _ChassisControlButton({required this.state, required this.notifier});
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+    onPressed: state.isRunning ? notifier.stopChassisControl : notifier.startChassisControl,
+    icon: Icon(state.isRunning ? Icons.stop_circle_rounded : Icons.play_circle_rounded),
+    label: Text(state.isRunning ? 'STOP CHASSIS' : 'START CHASSIS',
+        style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+    style: FilledButton.styleFrom(
+      backgroundColor: state.isRunning ? Colors.redAccent : _orange,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      textStyle: const TextStyle(fontSize: 15),
+    ),
+  );
+}
+
+class _ChassisSpeedSlider extends StatelessWidget {
+  final ChassisNotifier notifier;
+  final double speed;
+  const _ChassisSpeedSlider({required this.notifier, required this.speed});
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        _Label('Speed Control'),
+        Text('${(speed * 10).toStringAsFixed(0)}%',
+            style: const TextStyle(color: _orange, fontSize: 13, fontWeight: FontWeight.bold)),
+      ]),
+      const SizedBox(height: 8),
+      Slider(
+        value: speed,
+        min: 0.3,
+        max: 0.8,
+        divisions: 10,
+        activeColor: _orange,
+        inactiveColor: const Color(0xFF2A2A2A),
+        onChanged: (v) => notifier.setSpeed(v),
+      ),
+    ],
+  );
+}
+
+class _ChassisEmergencyStopButton extends StatelessWidget {
+  final ChassisNotifier notifier;
+  const _ChassisEmergencyStopButton({required this.notifier});
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+    onPressed: notifier.emergencyStop,
+    icon: const Icon(Icons.emergency_rounded),
+    label: const Text('EMERGENCY STOP',
+        style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+    style: FilledButton.styleFrom(
+      backgroundColor: Colors.redAccent,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      textStyle: const TextStyle(fontSize: 15),
+    ),
   );
 }

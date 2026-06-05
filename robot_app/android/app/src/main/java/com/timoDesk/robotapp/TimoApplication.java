@@ -33,7 +33,7 @@ public class TimoApplication extends MultiDexApplication {
                 // Steps 3–6: Configure before init
                 CsjRobot.enableAsr(false);
                 CsjRobot.enableFace(false);
-                CsjRobot.enableSlam(false);
+                CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement
                 CsjRobot.setRobotType(CsjRobot.RobotType.TIMO);
 
                 // Remote flavor: point SDK at the robot over WiFi instead of localhost
