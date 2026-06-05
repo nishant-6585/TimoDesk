@@ -38,7 +38,10 @@
       "Bash(adb connect *)",
       "Bash(adb install *)",
       "Bash(adb shell *)",
-      "Bash(lsof -ti:8888)"
+      "Bash(lsof -ti:8888)",
+      "Read(//Users/nishantkumar/development/Xboom/Project/Timo/Timo dev/**)",
+      "Bash(head -n 320 /Users/nishantkumar/development/Xboom/Project/TimoDesk/viewer_web/index.html)",
+      "Read(//tmp/**)"
     ]
   }
 }

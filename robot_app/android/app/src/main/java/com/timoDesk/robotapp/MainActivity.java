@@ -13,6 +13,8 @@ public class MainActivity extends FlutterActivity {
     private static final String HEAD_EVENT_CH  = "com.timoDesk/head_events";
     private static final String CHASSIS_METHOD_CH = "com.timoDesk/chassis_control";
     private static final String CHASSIS_EVENT_CH  = "com.timoDesk/chassis_events";
+    private static final String ARM_METHOD_CH = "com.timoDesk/arm_control";
+    private static final String ARM_EVENT_CH  = "com.timoDesk/arm_events";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -53,5 +55,8 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 CHASSIS_EVENT_CH
         ).setStreamHandler(chassisPlugin);
+
+        ArmControlPlugin armPlugin = new ArmControlPlugin();
+        armPlugin.setup(flutterEngine);
     }
 }

@@ -13,6 +13,8 @@ const _headMethodCh = MethodChannel('com.timoDesk/head_control');
 const _headEventCh  = EventChannel('com.timoDesk/head_events');
 const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
 const _chassisEventCh  = EventChannel('com.timoDesk/chassis_events');
+const _armMethodCh = MethodChannel('com.timoDesk/arm_control');
+const _armEventCh  = EventChannel('com.timoDesk/arm_events');
 
 // ── MJPEG state ───────────────────────────────────────────────────────────────
 
@@ -108,6 +110,38 @@ class ChassisState {
     isMoving: isMoving ?? this.isMoving,
     speed: speed ?? this.speed,
     direction: direction ?? this.direction,
+  );
+}
+
+// ── Arm control state ──────────────────────────────────────────────────────
+
+class ArmState {
+  final bool isRunning;
+  final int  clientCount;
+  final int  leftArm;
+  final int  rightArm;
+  final bool isWaving;
+
+  const ArmState({
+    this.isRunning = false,
+    this.clientCount = 0,
+    this.leftArm = 50,
+    this.rightArm = 50,
+    this.isWaving = false,
+  });
+
+  ArmState copyWith({
+    bool? isRunning,
+    int? clientCount,
+    int? leftArm,
+    int? rightArm,
+    bool? isWaving,
+  }) => ArmState(
+    isRunning: isRunning ?? this.isRunning,
+    clientCount: clientCount ?? this.clientCount,
+    leftArm: leftArm ?? this.leftArm,
+    rightArm: rightArm ?? this.rightArm,
+    isWaving: isWaving ?? this.isWaving,
   );
 }
 
@@ -290,6 +324,78 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
 final chassisProvider =
     StateNotifierProvider<ChassisNotifier, ChassisState>((ref) => ChassisNotifier());
 
+// ── Arm control notifier ───────────────────────────────────────────────────────
+
+class ArmNotifier extends StateNotifier<ArmState> {
+  ArmNotifier() : super(const ArmState()) {
+    _sub = _armEventCh.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      leftArm: m['leftArm'] as int?,
+      rightArm: m['rightArm'] as int?,
+      isWaving: m['isWaving'] as bool?,
+    );
+  }
+
+  Future<void> startArmControl() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('startArmControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startArmControl: $e'); }
+  }
+
+  Future<void> stopArmControl() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('stopArmControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopArmControl: $e'); }
+  }
+
+  Future<void> resetArms() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('resetArms');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('resetArms: $e'); }
+  }
+
+  Future<void> wave() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('wave');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('wave: $e'); }
+  }
+
+  Future<void> stopWave() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('stopWave');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopWave: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      leftArm: m['leftArm'] as int?,
+      rightArm: m['rightArm'] as int?,
+      isWaving: m['isWaving'] as bool?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final armProvider =
+    StateNotifierProvider<ArmNotifier, ArmState>((ref) => ArmNotifier());
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 void main() => runApp(const ProviderScope(child: _App()));
@@ -327,14 +433,19 @@ class _StreamScreen extends ConsumerWidget {
     final hNotifier = ref.read(headProvider.notifier);
     final chassis = ref.watch(chassisProvider);
     final cNotifier = ref.read(chassisProvider.notifier);
+    final arm = ref.watch(armProvider);
+    final aNotifier = ref.read(armProvider.notifier);
 
-    // Auto-start head & chassis control when camera starts
+    // Auto-start head, chassis & arm control when camera starts
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
       if (curr && !head.isRunning) {
         hNotifier.startHeadControl();
       }
       if (curr && !chassis.isRunning) {
         cNotifier.startChassisControl();
+      }
+      if (curr && !arm.isRunning) {
+        aNotifier.startArmControl();
       }
     });
 
@@ -391,6 +502,14 @@ class _StreamScreen extends ConsumerWidget {
             _ChassisSpeedSlider(notifier: cNotifier, speed: chassis.speed),
             const SizedBox(height: 12),
             _ChassisEmergencyStopButton(notifier: cNotifier),
+            const SizedBox(height: 28),
+            _SectionLabel('ARM CONTROL'),
+            const SizedBox(height: 8),
+            _ArmControlCard(state: arm, notifier: aNotifier, streamIp: mjpeg.ip),
+            const SizedBox(height: 12),
+            _ArmControlButtons(notifier: aNotifier, state: arm),
+            const SizedBox(height: 12),
+            _ArmSliders(state: arm, notifier: aNotifier),
           ],
         ),
       ),
@@ -925,4 +1044,164 @@ class _ChassisEmergencyStopButton extends StatelessWidget {
       textStyle: const TextStyle(fontSize: 15),
     ),
   );
+}
+
+// ── Arm Control Card ──────────────────────────────────────────────────────────
+
+class _ArmControlCard extends StatelessWidget {
+  final ArmState state;
+  final ArmNotifier notifier;
+  final String streamIp;
+
+  const _ArmControlCard({
+    required this.state,
+    required this.notifier,
+    required this.streamIp,
+  });
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: const Color(0xFF1A1A1A),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Row(children: [
+            const Icon(Icons.pan_tool, color: _orange, size: 20),
+            const SizedBox(width: 8),
+            const Text('Arm Control', style: TextStyle(fontWeight: FontWeight.bold)),
+          ]),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: state.isRunning ? const Color(0xFF4ADE80) : const Color(0xFF6B7280),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              state.isRunning ? 'ACTIVE' : 'STOPPED',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Icon(Icons.link, size: 14, color: Color(0xFF9CA3AF)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => Clipboard.setData(ClipboardData(text: 'ws://$streamIp:8083')),
+              child: Text(
+                'ws://$streamIp:8083',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: _orange,
+                  fontFamily: 'monospace',
+                  decoration: TextDecoration.underline,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text('Clients: ${state.clientCount}', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+      ]),
+    ),
+  );
+}
+
+class _ArmControlButtons extends StatelessWidget {
+  final ArmNotifier notifier;
+  final ArmState state;
+
+  const _ArmControlButtons({required this.notifier, required this.state});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+    Expanded(
+      child: FilledButton(
+        onPressed: state.isRunning ? notifier.stopArmControl : notifier.startArmControl,
+        style: FilledButton.styleFrom(
+          backgroundColor: state.isRunning ? Colors.grey : _orange,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        child: Text(state.isRunning ? 'STOP' : 'START',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    ),
+  ]);
+}
+
+class _ArmSliders extends StatelessWidget {
+  final ArmState state;
+  final ArmNotifier notifier;
+
+  const _ArmSliders({required this.state, required this.notifier});
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _Label('Arm Positions'),
+    const SizedBox(height: 12),
+    Row(children: [
+      Expanded(
+        child: Column(children: [
+          Text('L Arm: ${state.leftArm}', style: const TextStyle(fontSize: 12, color: _orange, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Slider(
+            value: state.leftArm.toDouble(),
+            min: 0,
+            max: 100,
+            divisions: 10,
+            activeColor: _orange,
+            inactiveColor: const Color(0xFF2A2A2A),
+            onChanged: (_) {},
+          ),
+        ]),
+      ),
+      const SizedBox(width: 16),
+      Expanded(
+        child: Column(children: [
+          Text('R Arm: ${state.rightArm}', style: const TextStyle(fontSize: 12, color: _orange, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Slider(
+            value: state.rightArm.toDouble(),
+            min: 0,
+            max: 100,
+            divisions: 10,
+            activeColor: _orange,
+            inactiveColor: const Color(0xFF2A2A2A),
+            onChanged: (_) {},
+          ),
+        ]),
+      ),
+    ]),
+    const SizedBox(height: 12),
+    Row(children: [
+      Expanded(
+        child: FilledButton(
+          onPressed: state.isWaving ? notifier.stopWave : notifier.wave,
+          style: FilledButton.styleFrom(
+            backgroundColor: state.isWaving ? Colors.amber : const Color(0xFF1A1A1A),
+            side: const BorderSide(color: _orange, width: 1.5),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          child: Text(state.isWaving ? '👋 WAVING' : '👋 WAVE',
+              style: const TextStyle(fontWeight: FontWeight.bold, color: _orange)),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: FilledButton(
+          onPressed: notifier.resetArms,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF1A1A1A),
+            side: const BorderSide(color: _orange, width: 1.5),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          child: const Text('⟲ RESET',
+              style: TextStyle(fontWeight: FontWeight.bold, color: _orange)),
+        ),
+      ),
+    ]),
+  ]);
 }

@@ -1,0 +1,36 @@
+{
+  "name": "@timodesk/spine",
+  "version": "0.1.0",
+  "description": "Timo Reception Robot — Integration Spine (WebSocket gateway, SDK interface, safety interlocks)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "@supabase/supabase-js": "^2.40.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "vitest": "^1.0.4",
+    "@types/node": "^20.10.6",
+    "@types/jsonwebtoken": "^9.0.6"
+  },
+  "keywords": [
+    "timo",
+    "robot",
+    "spine",
+    "websocket",
+    "integration"
+  ],
+  "author": "Nishant",
+  "license": "MIT"
+}

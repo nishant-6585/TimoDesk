@@ -191,37 +191,9 @@
       padding: 12px 16px; font-size: 12px; color: #999;
       z-index: 1000;
     }
-
-    #stopBanner {
-      display: none; position: fixed; top: 0; left: 0; right: 0;
-      background: #ef4444; color: #fff; padding: 16px; text-align: center;
-      font-weight: 600; z-index: 2000; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-
-    #stopBanner.active {
-      display: block; animation: slideDown .3s ease-out;
-    }
-
-    @keyframes slideDown {
-      from { transform: translateY(-100%); }
-      to { transform: translateY(0); }
-    }
-
-    #stopBannerResume {
-      margin-left: 16px; padding: 6px 12px; background: #fff; color: #ef4444;
-      border: none; border-radius: 4px; font-weight: 600; cursor: pointer;
-      font-size: 12px;
-    }
-
-    #stopBannerResume:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
-
-<div id="stopBanner">
-  ⛔ SYSTEM STOPPED — Click RESUME to continue
-  <button id="stopBannerResume">RESUME</button>
-</div>
 
 <header>
   <span class="logo">TimoDesk Live Feed</span>
@@ -229,22 +201,22 @@
 </header>
 
 <div class="connect-bar">
-  <input type="text" id="robotIpInput" placeholder="Robot IP (192.168.x.x)" value="192.168.10.18" autocomplete="off" spellcheck="false" style="width: 200px;">
-  <input type="text" id="spineUrlInput" placeholder="Spine URL (localhost:4000)" value="localhost:4000" autocomplete="off" spellcheck="false" style="width: 200px;">
+  <input type="text" id="url" placeholder="http://192.168.x.x:8080/stream" value="http://192.168.10.18:8080/stream" autocomplete="off" spellcheck="false">
   <button id="btnConnect" onclick="toggle()">Connect</button>
 </div>
 
 <div class="status-row">
   <div class="status-pill">
-    <div class="dot" id="cameraDot"></div>
-    <span id="cameraStatus" class="status">IDLE</span>
+    <div class="dot" id="dot"></div>
+    <span id="status" class="status">IDLE</span>
   </div>
   <div class="status-pill">
-    <div class="dot" id="spineDot"></div>
-    <span id="spineStatus" class="status">DISCONNECTED</span>
+    <div class="dot" id="headDot"></div>
+    <span id="headStatus">DISCONNECTED</span>
   </div>
-  <div class="status-pill" style="margin-left: auto; color: #999; font-size: 11px;">
-    <span>🔋 <span id="batteryLevel">--</span>% | ⚡ <span id="movingStatus">--</span> | 🤖 <span id="robotStatus">OFFLINE</span></span>
+  <div class="status-pill">
+    <div class="dot" id="chassisDot"></div>
+    <span id="chassisStatus">DISCONNECTED</span>
   </div>
   <span class="clock" id="clock"></span>
 </div>
@@ -338,18 +310,24 @@
 <div class="keyboard-tip" id="keyboardTip">💡 Tip: use arrow keys to control head, space to reset</div>
 
 <script>
-// ============================================================================
-// DOM ELEMENTS
-// ============================================================================
-const btn = document.getElementById('btnConnect');
 const img = document.getElementById('stream');
+const url_input = document.getElementById('url');
+const btn = document.getElementById('btnConnect');
+const status_el = document.getElementById('status');
+const dot = document.getElementById('dot');
 const placeholder = document.getElementById('placeholder');
 const controlPanel = document.getElementById('controlPanel');
 const joystick = document.getElementById('joystick');
 const joystickKnob = document.getElementById('joystickKnob');
 const chassisJoystick = document.getElementById('chassisJoystick');
 const chassisKnob = document.getElementById('chassisKnob');
+const headPosition = document.getElementById('headPosition');
+const headDot = document.getElementById('headDot');
 const headDotIndicator = document.getElementById('headDotIndicator');
+const headStatus = document.getElementById('headStatus');
+const chassisStatus = document.getElementById('chassisStatus');
+const chassisDot = document.getElementById('chassisDot');
+const emergencyStopBtn = document.getElementById('emergencyStopBtn');
 const keyboardTip = document.getElementById('keyboardTip');
 const leftArmSlider = document.getElementById('leftArmSlider');
 const rightArmSlider = document.getElementById('rightArmSlider');
@@ -357,136 +335,201 @@ const leftArmValue = document.getElementById('leftArmValue');
 const rightArmValue = document.getElementById('rightArmValue');
 const armWaveBtn = document.getElementById('armWaveBtn');
 const armResetBtn = document.getElementById('armResetBtn');
-const emergencyStopBtn = document.getElementById('emergencyStopBtn');
-const stopBanner = document.getElementById('stopBanner');
-const stopBannerResume = document.getElementById('stopBannerResume');
 
-// ============================================================================
-// STATE
-// ============================================================================
 let connected = false;
-let spine = null;
-let spineConnected = false;
-let robotIp = '';
-let spineUrl = '';
+let wsConnected = false;
+let wsChassis = null;
+let wsChassisConnected = false;
+let wsArms = null;
+let wsArmsConnected = false;
+let streamIp = '';
+let ws = null;
 let headLR = 50;
 let headUD = 50;
+let lastCommandTime = 0;
+let lastArmCommandTime = 0;
 let leftArm = 50;
 let rightArm = 50;
 let isWaving = false;
-let batteryLevel = 0;
-let robotOnline = false;
-let isStopped = false;
+let lastChassisCommandTime = 0;
 let dpadLongPress = null;
 let joystickActive = false;
 let chassisJoystickActive = false;
+let chassisMoving = false;
+let chassisDirection = 'none';
 let showedKeyboardTip = localStorage.getItem('timodesk_tip_shown');
 let wasdPressed = { w: false, a: false, s: false, d: false };
 let wasdInterval = null;
 
-// ============================================================================
-// SPINE CONNECTION
-// ============================================================================
+function setStatus(state, text) {
+  connected = state === 'live';
+  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
+  status_el.className = 'status ' + state;
+  status_el.textContent = text;
+  btn.textContent = connected ? 'Disconnect' : 'Connect';
+  btn.className = connected ? 'disconnect' : '';
+  url_input.disabled = connected;
+}
 
-function connectSpine(spineUrlInput) {
-  const wsUrl = spineUrlInput.startsWith('ws') ? spineUrlInput : 'ws://' + spineUrlInput;
+function toggle() {
+  if (connected) {
+    img.src = '';
+    placeholder.style.display = 'flex';
+    controlPanel.style.display = 'none';
+    setStatus('', 'IDLE');
+    closeWs();
+    closeWsChassis();
+    closeWsArms();
+    return;
+  }
 
+  const url = url_input.value.trim();
+  if (!url) { url_input.focus(); return; }
+
+  let fullUrl = url;
+  if (!url.includes('://')) {
+    fullUrl = 'http://' + url + ':8080/stream';
+    streamIp = url.includes(':') ? url.split(':')[0] : url;
+  } else {
+    const parts = url.split('://')[1].split('/')[0].split(':')[0];
+    streamIp = parts;
+    if (!url.includes('/stream')) {
+      fullUrl = url + '/stream';
+    }
+  }
+
+  console.log('Connecting to:', fullUrl, 'IP:', streamIp);
+  img.src = fullUrl;
+  setStatus('live', 'LIVE');
+  controlPanel.style.display = 'flex';
+  connectWs(streamIp);
+  connectWsChassis(streamIp);
+  connectArms(streamIp);
+
+  if (!showedKeyboardTip) {
+    keyboardTip.style.display = 'block';
+    setTimeout(() => { keyboardTip.style.display = 'none'; }, 4000);
+    localStorage.setItem('timodesk_tip_shown', 'true');
+  }
+}
+
+function connectWs(ip) {
   try {
-    spine = new WebSocket(wsUrl);
-
-    spine.onopen = () => {
-      spineConnected = true;
-      setSpineStatus('connected', 'CONNECTED');
-      console.log('[Spine] Connected');
-      spine.send(JSON.stringify({ type: 'auth', token: 'dev' }));
+    ws = new WebSocket('ws://' + ip + ':8081');
+    ws.onopen = () => {
+      wsConnected = true;
+      updateHeadStatus('CONNECTED');
+      joystick.classList.remove('disabled');
     };
-
-    spine.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      handleSpineMessage(msg);
-    };
-
-    spine.onclose = () => {
-      spineConnected = false;
-      setSpineStatus('error', 'DISCONNECTED');
-      console.log('[Spine] Disconnected');
-      if (connected) {
-        setTimeout(() => connectSpine(spineUrlInput), 3000);
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.type === 'status') {
+        headLR = m.headLR || 50;
+        headUD = m.headUD || 50;
+        updateHeadDot();
       }
     };
-
-    spine.onerror = (err) => {
-      console.error('[Spine] Error:', err);
-      setSpineStatus('error', 'ERROR');
+    ws.onclose = () => {
+      wsConnected = false;
+      updateHeadStatus('DISCONNECTED');
+      joystick.classList.add('disabled');
+      if (connected) setTimeout(() => connectWs(ip), 3000);
     };
-  } catch (err) {
-    console.error('[Spine] Connection error:', err);
-    setSpineStatus('error', 'ERROR');
+    ws.onerror = () => {
+      wsConnected = false;
+      updateHeadStatus('DISCONNECTED');
+      joystick.classList.add('disabled');
+    };
+  } catch (e) {
+    console.error('WS error:', e);
+    wsConnected = false;
+    updateHeadStatus('DISCONNECTED');
+    joystick.classList.add('disabled');
   }
 }
 
-function sendSpine(obj) {
-  if (spine && spine.readyState === WebSocket.OPEN) {
-    console.log('[Spine] Sending:', obj);
-    spine.send(JSON.stringify(obj));
-  } else {
-    console.warn('[Spine] Not connected');
+function closeWs() {
+  if (ws) {
+    ws.close();
+    ws = null;
   }
 }
 
-function handleSpineMessage(msg) {
-  console.log('[Spine] Message:', msg.type);
-
-  if (msg.type === 'authenticated') {
-    console.log('[Spine] Authenticated');
-    sendSpine({ type: 'intent', intent: { intent: 'get_status' } });
-  } else if (msg.type === 'robot_status' && msg.status) {
-    headLR = msg.status.headLR || 50;
-    headUD = msg.status.headUD || 50;
-    leftArm = msg.status.leftArm || 50;
-    rightArm = msg.status.rightArm || 50;
-    batteryLevel = msg.status.battery || 0;
-    robotOnline = msg.status.online || false;
-    updateHeadDot();
-    updateRobotStatusBar();
-    updateArmDisplay();
-  } else if (msg.type === 'stopped') {
-    isStopped = true;
-    showStopBanner();
-  } else if (msg.type === 'resumed') {
-    isStopped = false;
-    hideStopBanner();
-  } else if (msg.type === 'event') {
-    console.log('[Robot Event]', msg.event, msg.payload);
-  } else if (msg.type === 'error') {
-    console.warn('[Spine Error]', msg.message);
+function connectWsChassis(ip) {
+  try {
+    wsChassis = new WebSocket('ws://' + ip + ':8082');
+    wsChassis.onopen = () => {
+      wsChassisConnected = true;
+      updateChassissStatus('CONNECTED');
+      chassisJoystick.classList.remove('disabled');
+    };
+    wsChassis.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.type === 'status') {
+        chassisMoving = m.isMoving || false;
+        chassisDirection = m.direction || 'none';
+        updateDirectionIndicator();
+      }
+    };
+    wsChassis.onclose = () => {
+      wsChassisConnected = false;
+      updateChassissStatus('DISCONNECTED');
+      chassisJoystick.classList.add('disabled');
+      if (connected) setTimeout(() => connectWsChassis(ip), 3000);
+    };
+    wsChassis.onerror = () => {
+      wsChassisConnected = false;
+      updateChassissStatus('DISCONNECTED');
+      chassisJoystick.classList.add('disabled');
+    };
+  } catch (e) {
+    console.error('Chassis WS error:', e);
+    wsChassisConnected = false;
+    updateChassissStatus('DISCONNECTED');
+    chassisJoystick.classList.add('disabled');
   }
 }
 
-// ============================================================================
-// STATUS UPDATES
-// ============================================================================
-
-function setCameraStatus(state, text) {
-  const dot = document.getElementById('cameraDot');
-  const status = document.getElementById('cameraStatus');
-  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
-  status.className = 'status ' + state;
-  status.textContent = text;
+function closeWsChassis() {
+  if (wsChassis) {
+    wsChassis.close();
+    wsChassis = null;
+  }
 }
 
-function setSpineStatus(state, text) {
-  const dot = document.getElementById('spineDot');
-  const status = document.getElementById('spineStatus');
-  dot.className = 'dot ' + (state === 'connected' ? 'live' : state === 'error' ? 'error' : '');
-  status.className = 'status ' + (state === 'connected' ? 'live' : state === 'error' ? 'error' : '');
-  status.textContent = text;
+function updateChassissStatus(status) {
+  chassisStatus.textContent = status;
+  chassisDot.className = 'dot ' + (status === 'CONNECTED' ? 'live' : 'error');
 }
 
-function updateRobotStatusBar() {
-  document.getElementById('batteryLevel').textContent = batteryLevel || '--';
-  document.getElementById('movingStatus').textContent = robotOnline ? 'No' : '--';
-  document.getElementById('robotStatus').textContent = robotOnline ? 'ONLINE' : 'OFFLINE';
+function updateDirectionIndicator() {
+  // Direction indicator update can be added here if needed
+}
+
+function sendChassis(obj) {
+  if (!wsChassisConnected || !wsChassis) {
+    console.warn('Chassis WS not ready:', {wsChassisConnected, wsChassis: !!wsChassis});
+    return;
+  }
+  const now = Date.now();
+  if (obj.cmd === 'move' && now - lastChassisCommandTime < 100) {
+    return; // Rate limit move commands
+  }
+  lastChassisCommandTime = now;
+  try {
+    console.log('Sending chassis command:', obj);
+    wsChassis.send(JSON.stringify(obj));
+  } catch (e) {
+    console.error('Chassis send error:', e);
+  }
+}
+
+function updateHeadStatus(status) {
+  headStatus.textContent = status;
+  headDot.className = 'dot ' + (status === 'CONNECTED' ? 'live' : 'error');
+  if (status === 'DISCONNECTED') {
+    console.log('Head control disconnected — start HEAD CONTROL on robot app and try again');
+  }
 }
 
 function updateHeadDot() {
@@ -497,85 +540,24 @@ function updateHeadDot() {
   headDotIndicator.style.top = y + 'px';
 }
 
-function updateArmDisplay() {
-  leftArmSlider.value = leftArm;
-  rightArmSlider.value = rightArm;
-  leftArmValue.textContent = leftArm;
-  rightArmValue.textContent = rightArm;
-}
-
-function showStopBanner() {
-  stopBanner.classList.add('active');
-}
-
-function hideStopBanner() {
-  stopBanner.classList.remove('active');
-}
-
-// ============================================================================
-// CONNECT / DISCONNECT
-// ============================================================================
-
-function toggle() {
-  if (connected) {
-    img.src = '';
-    placeholder.style.display = 'flex';
-    controlPanel.style.display = 'none';
-    setCameraStatus('', 'IDLE');
-    setSpineStatus('', 'DISCONNECTED');
-    if (spine) spine.close();
-    spine = null;
-    spineConnected = false;
-    connected = false;
-    btn.textContent = 'Connect';
-    btn.className = '';
-    document.getElementById('robotIpInput').disabled = false;
-    document.getElementById('spineUrlInput').disabled = false;
-    isStopped = false;
-    hideStopBanner();
-    return;
-  }
-
-  robotIp = document.getElementById('robotIpInput').value.trim();
-  spineUrl = document.getElementById('spineUrlInput').value.trim();
-
-  if (!robotIp || !spineUrl) {
-    if (!robotIp) document.getElementById('robotIpInput').focus();
-    else document.getElementById('spineUrlInput').focus();
-    return;
-  }
-
-  const streamUrl = 'http://' + robotIp + ':8080/stream';
-  console.log('Connecting to camera:', streamUrl, 'Spine:', spineUrl);
-
-  img.src = streamUrl;
-  setCameraStatus('live', 'LIVE');
-  setSpineStatus('connecting', 'CONNECTING...');
-  controlPanel.style.display = 'flex';
-  connected = true;
-  btn.textContent = 'Disconnect';
-  btn.className = 'disconnect';
-  document.getElementById('robotIpInput').disabled = true;
-  document.getElementById('spineUrlInput').disabled = true;
-
-  connectSpine(spineUrl);
-
-  if (!showedKeyboardTip) {
-    keyboardTip.style.display = 'block';
-    setTimeout(() => { keyboardTip.style.display = 'none'; }, 4000);
-    localStorage.setItem('timodesk_tip_shown', 'true');
+function sendHeadCommand(cmd) {
+  if (!wsConnected || !ws) return;
+  const now = Date.now();
+  if (now - lastCommandTime < 50) return;
+  lastCommandTime = now;
+  try {
+    ws.send(JSON.stringify(cmd));
+  } catch (e) {
+    console.error('Send error:', e);
   }
 }
 
-// ============================================================================
-// HEAD CONTROL (JOYSTICK)
-// ============================================================================
-
+// Joystick
 joystick.addEventListener('mousedown', startJoystick);
 joystick.addEventListener('touchstart', startJoystick);
 
 function startJoystick(e) {
-  if (!spineConnected) return;
+  if (!wsConnected) return;
   joystickActive = true;
   joystick.classList.add('active');
   handleJoystick(e);
@@ -600,7 +582,7 @@ function handleJoystick(e) {
   joystickKnob.style.transform = `translate(calc(-50% + ${nx * 50}px), calc(-50% + ${ny * 50}px))`;
   const lr = Math.round(50 + nx * 50);
   const ud = Math.round(50 - ny * 50);
-  sendSpine({ type: 'intent', intent: { intent: 'head', lr, ud } });
+  sendHeadCommand({ cmd: 'head_both', lr, ud });
 }
 
 function endJoystick(e) {
@@ -612,41 +594,27 @@ function endJoystick(e) {
   window.removeEventListener('touchmove', handleJoystick);
   window.removeEventListener('mouseup', endJoystick);
   window.removeEventListener('touchend', endJoystick);
-  sendSpine({ type: 'intent', intent: { intent: 'head', lr: 50, ud: 50 } });
+  sendHeadCommand({ cmd: 'head_both', lr: 50, ud: 50 });
 }
 
-// ============================================================================
-// D-PAD (HEAD DIRECTIONAL)
-// ============================================================================
-
+// D-Pad
 function dpadPress(key) {
-  if (!spineConnected) return;
+  if (!wsConnected) return;
   const delta = 15;
-  if (key === 'l') {
-    headLR = Math.max(0, headLR - delta);
-  } else if (key === 'r') {
-    headLR = Math.min(100, headLR + delta);
-  } else if (key === 'u') {
-    headUD = Math.min(100, headUD + delta);
-  } else if (key === 'd') {
-    headUD = Math.max(0, headUD - delta);
-  } else if (key === 'c') {
-    headLR = 50;
-    headUD = 50;
-  }
-  sendSpine({ type: 'intent', intent: { intent: 'head', lr: headLR, ud: headUD } });
-  updateHeadDot();
+  if (key === 'l') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - delta) });
+  else if (key === 'r') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + delta) });
+  else if (key === 'u') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + delta) });
+  else if (key === 'd') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - delta) });
+  else if (key === 'c') sendHeadCommand({ cmd: 'reset' });
 }
 
-// ============================================================================
-// CHASSIS (DRIVE JOYSTICK)
-// ============================================================================
+// ── Chassis Joystick ──────────────────────────────────────────────────────────
 
 chassisJoystick.addEventListener('mousedown', startChassisJoystick);
 chassisJoystick.addEventListener('touchstart', startChassisJoystick);
 
 function startChassisJoystick(e) {
-  if (!spineConnected || isStopped) return;
+  if (!wsChassisConnected) return;
   chassisJoystickActive = true;
   chassisJoystick.classList.add('active');
   handleChassisJoystick(e);
@@ -678,7 +646,7 @@ function handleChassisJoystick(e) {
   else direction = 'back';
 
   if (direction !== 'none') {
-    sendSpine({ type: 'intent', intent: { intent: 'drive', dir: direction } });
+    sendChassis({ cmd: 'move', dir: direction });
   }
 }
 
@@ -691,43 +659,36 @@ function endChassisJoystick(e) {
   window.removeEventListener('touchmove', handleChassisJoystick);
   window.removeEventListener('mouseup', endChassisJoystick);
   window.removeEventListener('touchend', endChassisJoystick);
+  sendChassis({ cmd: 'stop' });
 }
 
-// ============================================================================
-// EMERGENCY STOP
-// ============================================================================
-
 emergencyStopBtn.addEventListener('click', () => {
-  sendSpine({ type: 'intent', intent: { intent: 'stop' } });
+  if (wsChassisConnected && wsChassis) {
+    wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    chassisKnob.style.transform = 'translate(-50%, -50%)';
+  }
 });
 
-stopBannerResume.addEventListener('click', () => {
-  sendSpine({ type: 'intent', intent: { intent: 'resume' } });
-});
-
-// ============================================================================
-// KEYBOARD CONTROL
-// ============================================================================
-
+// Keyboard support
 document.addEventListener('keydown', e => {
-  const input1 = document.getElementById('robotIpInput');
-  const input2 = document.getElementById('spineUrlInput');
-  if (document.activeElement === input1 || document.activeElement === input2) return;
+  if (document.activeElement === url_input) return;
 
   if (e.key === 'Escape') {
-    sendSpine({ type: 'intent', intent: { intent: 'stop' } });
+    if (wsChassisConnected && wsChassis) {
+      wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    }
     return;
   }
 
   if (e.key === 'w' || e.key === 'W') {
     e.preventDefault();
     wasdPressed.w = true;
-    if (!wasdInterval && spineConnected && !isStopped) {
+    if (!wasdInterval && wsChassisConnected) {
       wasdInterval = setInterval(() => {
-        if (wasdPressed.w) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'forward' } });
-        else if (wasdPressed.a) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'left' } });
-        else if (wasdPressed.s) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'back' } });
-        else if (wasdPressed.d) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'right' } });
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
         else { clearInterval(wasdInterval); wasdInterval = null; }
       }, 150);
     }
@@ -735,12 +696,12 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'a' || e.key === 'A') {
     e.preventDefault();
     wasdPressed.a = true;
-    if (!wasdInterval && spineConnected && !isStopped) {
+    if (!wasdInterval && wsChassisConnected) {
       wasdInterval = setInterval(() => {
-        if (wasdPressed.w) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'forward' } });
-        else if (wasdPressed.a) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'left' } });
-        else if (wasdPressed.s) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'back' } });
-        else if (wasdPressed.d) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'right' } });
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
         else { clearInterval(wasdInterval); wasdInterval = null; }
       }, 150);
     }
@@ -748,12 +709,12 @@ document.addEventListener('keydown', e => {
   else if (e.key === 's' || e.key === 'S') {
     e.preventDefault();
     wasdPressed.s = true;
-    if (!wasdInterval && spineConnected && !isStopped) {
+    if (!wasdInterval && wsChassisConnected) {
       wasdInterval = setInterval(() => {
-        if (wasdPressed.w) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'forward' } });
-        else if (wasdPressed.a) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'left' } });
-        else if (wasdPressed.s) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'back' } });
-        else if (wasdPressed.d) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'right' } });
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
         else { clearInterval(wasdInterval); wasdInterval = null; }
       }, 150);
     }
@@ -761,44 +722,22 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'd' || e.key === 'D') {
     e.preventDefault();
     wasdPressed.d = true;
-    if (!wasdInterval && spineConnected && !isStopped) {
+    if (!wasdInterval && wsChassisConnected) {
       wasdInterval = setInterval(() => {
-        if (wasdPressed.w) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'forward' } });
-        else if (wasdPressed.a) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'left' } });
-        else if (wasdPressed.s) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'back' } });
-        else if (wasdPressed.d) sendSpine({ type: 'intent', intent: { intent: 'drive', dir: 'right' } });
+        if (wasdPressed.w) sendChassis({ cmd: 'move', dir: 'forward' });
+        else if (wasdPressed.a) sendChassis({ cmd: 'move', dir: 'left' });
+        else if (wasdPressed.s) sendChassis({ cmd: 'move', dir: 'back' });
+        else if (wasdPressed.d) sendChassis({ cmd: 'move', dir: 'right' });
         else { clearInterval(wasdInterval); wasdInterval = null; }
       }, 150);
     }
   }
-  else if (!spineConnected) return;
-  else if (e.key === 'ArrowLeft') {
-    headLR = Math.max(0, headLR - 15);
-    sendSpine({ type: 'intent', intent: { intent: 'head', lr: headLR, ud: headUD } });
-    updateHeadDot();
-  }
-  else if (e.key === 'ArrowRight') {
-    headLR = Math.min(100, headLR + 15);
-    sendSpine({ type: 'intent', intent: { intent: 'head', lr: headLR, ud: headUD } });
-    updateHeadDot();
-  }
-  else if (e.key === 'ArrowUp') {
-    headUD = Math.min(100, headUD + 15);
-    sendSpine({ type: 'intent', intent: { intent: 'head', lr: headLR, ud: headUD } });
-    updateHeadDot();
-  }
-  else if (e.key === 'ArrowDown') {
-    headUD = Math.max(0, headUD - 15);
-    sendSpine({ type: 'intent', intent: { intent: 'head', lr: headLR, ud: headUD } });
-    updateHeadDot();
-  }
-  else if (e.key === ' ') {
-    e.preventDefault();
-    headLR = 50;
-    headUD = 50;
-    sendSpine({ type: 'intent', intent: { intent: 'head', lr: 50, ud: 50 } });
-    updateHeadDot();
-  }
+  else if (!wsConnected) return;
+  else if (e.key === 'ArrowLeft') sendHeadCommand({ cmd: 'head_lr', value: Math.max(0, headLR - 15) });
+  else if (e.key === 'ArrowRight') sendHeadCommand({ cmd: 'head_lr', value: Math.min(100, headLR + 15) });
+  else if (e.key === 'ArrowUp') sendHeadCommand({ cmd: 'head_ud', value: Math.min(100, headUD + 15) });
+  else if (e.key === 'ArrowDown') sendHeadCommand({ cmd: 'head_ud', value: Math.max(0, headUD - 15) });
+  else if (e.key === ' ') { e.preventDefault(); sendHeadCommand({ cmd: 'reset' }); }
 });
 
 document.addEventListener('keyup', e => {
@@ -812,67 +751,18 @@ document.addEventListener('keyup', e => {
       clearInterval(wasdInterval);
       wasdInterval = null;
     }
+    if (wsChassisConnected && wsChassis) {
+      wsChassis.send(JSON.stringify({ cmd: 'stop' }));
+    }
   }
 });
 
-// ============================================================================
-// ARM CONTROL
-// ============================================================================
-
-leftArmSlider.addEventListener('input', e => {
-  leftArm = parseInt(e.target.value);
-  leftArmValue.textContent = leftArm;
-});
-
-leftArmSlider.addEventListener('change', e => {
-  sendSpine({ type: 'intent', intent: { intent: 'arm', left: leftArm, right: rightArm } });
-});
-
-rightArmSlider.addEventListener('input', e => {
-  rightArm = parseInt(e.target.value);
-  rightArmValue.textContent = rightArm;
-});
-
-rightArmSlider.addEventListener('change', e => {
-  sendSpine({ type: 'intent', intent: { intent: 'arm', left: leftArm, right: rightArm } });
-});
-
-function toggleWave() {
-  if (!spineConnected) return;
-  isWaving = !isWaving;
-  sendSpine({ type: 'intent', intent: { intent: isWaving ? 'wave' : 'stop_wave' } });
-  armWaveBtn.textContent = isWaving ? '👋 WAVING' : '👋 Wave';
-  armWaveBtn.style.background = isWaving ? '#f59e0b' : '#FF6B35';
-}
-
-function resetArms() {
-  if (!spineConnected) return;
-  sendSpine({ type: 'intent', intent: { intent: 'arm', left: 50, right: 50 } });
-  leftArm = 50;
-  rightArm = 50;
-  leftArmSlider.value = 50;
-  rightArmSlider.value = 50;
-  leftArmValue.textContent = '50';
-  rightArmValue.textContent = '50';
-  isWaving = false;
-  armWaveBtn.textContent = '👋 Wave';
-  armWaveBtn.style.background = '#FF6B35';
-}
-
-// ============================================================================
-// UTILITIES
-// ============================================================================
-
 img.onerror = () => {
   console.error('Failed to load stream');
-  setCameraStatus('error', 'FAILED');
+  setStatus('error', 'FAILED');
 };
 
-document.getElementById('robotIpInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') toggle();
-});
-
-document.getElementById('spineUrlInput').addEventListener('keydown', e => {
+url_input.addEventListener('keydown', e => {
   if (e.key === 'Enter') toggle();
 });
 
@@ -884,14 +774,98 @@ function toggleFullscreen() {
   }
 }
 
-function updateClock() {
-  const now = new Date();
-  const hms = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  document.getElementById('clock').textContent = hms;
+// Arm control - only send command when slider is released
+leftArmSlider.addEventListener('input', e => {
+  leftArm = parseInt(e.target.value);
+  leftArmValue.textContent = leftArm;
+});
+
+leftArmSlider.addEventListener('change', e => {
+  sendArmCommand({ cmd: 'left_arm', value: leftArm });
+});
+
+rightArmSlider.addEventListener('input', e => {
+  rightArm = parseInt(e.target.value);
+  rightArmValue.textContent = rightArm;
+});
+
+rightArmSlider.addEventListener('change', e => {
+  sendArmCommand({ cmd: 'right_arm', value: rightArm });
+});
+
+function toggleWave() {
+  isWaving = !isWaving;
+  sendArmCommand({ cmd: isWaving ? 'wave' : 'stop_wave' });
+  armWaveBtn.textContent = isWaving ? '👋 WAVING' : '👋 Wave';
+  armWaveBtn.style.background = isWaving ? '#f59e0b' : '#FF6B35';
 }
 
-setInterval(updateClock, 1000);
+function resetArms() {
+  sendArmCommand({ cmd: 'reset' });
+  leftArm = 50;
+  rightArm = 50;
+  leftArmSlider.value = 50;
+  rightArmSlider.value = 50;
+  leftArmValue.textContent = '50';
+  rightArmValue.textContent = '50';
+  isWaving = false;
+  armWaveBtn.textContent = '👋 Wave';
+  armWaveBtn.style.background = '#FF6B35';
+}
+
+function connectArms(ip) {
+  try {
+    wsArms = new WebSocket('ws://' + ip + ':8083');
+    wsArms.onopen = () => {
+      wsArmsConnected = true;
+      console.log('Arms connected');
+    };
+    wsArms.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.type === 'status') {
+        leftArm = m.leftArm;
+        rightArm = m.rightArm;
+        isWaving = m.isWaving;
+        leftArmSlider.value = leftArm;
+        rightArmSlider.value = rightArm;
+        leftArmValue.textContent = leftArm;
+        rightArmValue.textContent = rightArm;
+        armWaveBtn.textContent = isWaving ? '👋 WAVING' : '👋 Wave';
+        armWaveBtn.style.background = isWaving ? '#f59e0b' : '#FF6B35';
+      }
+    };
+    wsArms.onclose = () => {
+      wsArmsConnected = false;
+      setTimeout(() => connectArms(ip), 3000);
+    };
+  } catch (e) {
+    console.error('Arms connection error:', e);
+  }
+}
+
+function sendArmCommand(obj) {
+  const now = Date.now();
+  if (now - lastArmCommandTime < 50) return;
+  lastArmCommandTime = now;
+  if (wsArmsConnected && wsArms) {
+    wsArms.send(JSON.stringify(obj));
+  }
+}
+
+function closeWsArms() {
+  if (wsArms) {
+    wsArms.close();
+    wsArms = null;
+    wsArmsConnected = false;
+  }
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
+}
 updateClock();
+setInterval(updateClock, 1000);
 </script>
+
 </body>
 </html>
