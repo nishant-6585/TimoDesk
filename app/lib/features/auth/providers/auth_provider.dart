@@ -40,6 +40,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> signUpWithPassword(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+      );
+      state = state.copyWith(
+        user: Supabase.instance.client.auth.currentUser,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+    }
+  }
+
   Future<void> logout() async {
     try {
       await Supabase.instance.client.auth.signOut();

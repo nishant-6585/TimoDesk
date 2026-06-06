@@ -2,15 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class TimoColors {
-  static const Color background = Color(0xFF0F0F0F); // Deep black
-  static const Color surface = Color(0xFF1A1A1A); // Card background
-  static const Color border = Color(0xFF2A2A2A); // Divider
+  // Layout & backgrounds
+  static const Color background = Color(0xFF0F0F0F); // App bg
+  static const Color surface = Color(0xFF121212); // Header, sidebar
+  static const Color cardTop = Color(0xFF1A1A1A);
+  static const Color cardBottom = Color(0xFF161616);
+  static const Color inset = Color(0xFF141414); // Action buttons
+
+  // Borders & dividers
+  static const Color border = Color(0xFF2A2A2A);
+  static const Color borderFaint = Color(0xFF222222);
+
+  // Brand colors
   static const Color primary = Color(0xFFFF6B35); // xboom orange
-  static const Color success = Color(0xFF4ADE80); // Green
-  static const Color error = Color(0xFFEF4444); // Red
-  static const Color warning = Color(0xFFFBBF24); // Amber
+  static const Color primaryDark = Color(0xFFE14B1E); // Logo gradient
+
+  // Status colors
+  static const Color success = Color(0xFF4ADE80); // Green / online
+  static const Color error = Color(0xFFEF4444); // Red / stop
+  static const Color errorPressed = Color(0xFF7F1D1D); // Dark red pressed
+  static const Color info = Color(0xFF3B82F6); // Blue / commands
+  static const Color warning = Color(0xFFF59E0B); // Amber / battery
+
+  // Text colors
   static const Color textPrimary = Color(0xFFFFFFFF); // White
   static const Color textSecondary = Color(0xFF9CA3AF); // Grey
+  static const Color textMuted = Color(0xFF6B7280); // Darker grey
 }
 
 class TimoTheme {
@@ -60,7 +77,7 @@ class TimoTheme {
           color: TimoColors.textPrimary,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: TimoColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(

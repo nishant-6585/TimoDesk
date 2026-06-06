@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
@@ -43,7 +44,7 @@ class _JoystickWidgetState extends State<JoystickWidget> {
     double rawY = localPos.dy - centerY;
 
     // Clamp to joystick radius
-    final distance = (rawX * rawX + rawY * rawY).toDouble().sqrt();
+    final distance = sqrt(rawX * rawX + rawY * rawY);
     if (distance > joystickRadius) {
       final ratio = joystickRadius / distance;
       rawX *= ratio;

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -35,7 +36,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     String direction = 'none';
     if (dx.abs() > 0.3 || dy.abs() > 0.3) {
-      final angle = (dy.atan2(dx) * 180 / 3.14159).toInt();
+      final angle = (atan2(dy, dx) * 180 / pi).toInt();
       if (angle > -45 && angle <= 45) direction = 'right';
       else if (angle > 45 && angle <= 135) direction = 'forward';
       else if (angle > 135 || angle <= -135) direction = 'left';

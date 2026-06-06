@@ -82,7 +82,7 @@ class RobotStatusBar extends StatelessWidget {
 
           // Battery
           Icon(
-            battery > 20 ? Icons.battery_full : Icons.battery_low,
+            battery > 20 ? Icons.battery_full : Icons.battery_alert,
             color: battery > 20 ? TimoColors.success : TimoColors.warning,
             size: 18,
           ),
