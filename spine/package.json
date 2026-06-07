@@ -13,16 +13,17 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "ws": "^8.14.2",
     "@supabase/supabase-js": "^2.40.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.19.42",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.7.0",
-    "vitest": "^1.0.4",
-    "@types/node": "^20.10.6",
-    "@types/jsonwebtoken": "^9.0.6"
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.4"
   },
   "keywords": [
     "timo",
