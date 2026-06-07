@@ -3,7 +3,7 @@
  * Orchestrates: parse → interlock check → handler → response
  */
 
-import { Intent, SpineMessage, AdminMessage } from '../types';
+import { SpineMessage, AdminMessage } from '../types';
 import { RobotSDK } from '../robot/interface';
 import { checkInterlocks } from './interlocks';
 import { handleIntent } from './handlers';
@@ -15,7 +15,7 @@ import { handleIntent } from './handlers';
 export async function routeMessage(
   raw: unknown,
   sessionId: string,
-  userId: string,
+  _userId: string,
   sdk: RobotSDK
 ): Promise<SpineMessage> {
   // 1. Parse and validate message

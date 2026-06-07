@@ -94,7 +94,7 @@ export class RealRobotSDK implements RobotSDK {
       };
 
       ws.onmessage = (msg) => {
-        this.handleRobotMessage(msg.data);
+        this.handleRobotMessage(msg.data.toString());
       };
 
       // Timeout if connection takes too long
@@ -240,7 +240,7 @@ export class RealRobotSDK implements RobotSDK {
       if (!response.ok) {
         throw new Error(`Snapshot failed: ${response.statusText}`);
       }
-      const buffer = await response.buffer();
+      const buffer = Buffer.from(await response.arrayBuffer());
       console.log(`[Real SDK] Snapshot taken (${buffer.length} bytes)`);
       return buffer;
     } catch (err) {

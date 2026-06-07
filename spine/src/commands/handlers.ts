@@ -3,7 +3,7 @@
  * Each intent type has a handler that calls the SDK
  */
 
-import { Intent, RobotStatus, SpineMessage } from '../types';
+import { Intent, SpineMessage } from '../types';
 import { RobotSDK } from '../robot/interface';
 import { logEvent } from '../supabase/events';
 import { handleStop, handleResume } from './interlocks';

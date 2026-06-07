@@ -3,7 +3,7 @@
  * Gracefully skips logging if Supabase is not configured
  */
 
-import { getSupabaseClient, isSupabaseConfigured } from './client';
+import { getSupabaseClient } from './client';
 
 export interface RobotEventRecord {
   type: string; // admin_session, robot_connection, safety_stop, snapshot, face_detected, etc.
