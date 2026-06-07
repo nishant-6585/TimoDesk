@@ -5,10 +5,11 @@
 
 import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
-import { SpineMessage, AdminMessage } from './types';
+import { SpineMessage, AdminMessage, RobotStatus } from './types';
 import { routeMessage } from './commands/router';
 import { verifyToken } from './auth/middleware';
-import { logAdminSession } from './supabase/events';
+import { logAdminSession, logEvent } from './supabase/events';
+import { createSensorPipeline } from './sensors';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -150,6 +151,28 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           client.send(JSON.stringify(msg));
         }
       });
+    });
+
+    // Sensor/obstacle awareness (Phase 1A): each SensorEvent updates the cached
+    // RobotStatus, broadcasts it to all clients, and logs to Supabase.
+    const broadcastStatus = (status: RobotStatus) => {
+      const msg: SpineMessage = { type: 'robot_status', status };
+      wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(msg));
+        }
+      });
+    };
+
+    void sdk.getStatus().then((initialStatus) => {
+      const handleSensorEvent = createSensorPipeline(
+        initialStatus,
+        broadcastStatus,
+        (type, payload) => {
+          void logEvent(type, payload);
+        }
+      );
+      sdk.onSensorEvent(handleSensorEvent);
     });
   });
 }

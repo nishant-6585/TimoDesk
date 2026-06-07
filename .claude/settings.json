@@ -45,7 +45,9 @@
       "Bash(flutter create *)",
       "Bash(pkill -f \"flutter run\")",
       "Bash(pkill -f \"flutter run\" 2>/dev/null; sleep 2; flutter run -d chrome > /tmp/flutter_run.log 2>&1 & *)",
-      "Bash(rm -rf /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/dashboard/widgets/*.dart /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/dashboard/screens/dashboard_screen.dart && echo \"✓ Deleted all existing dashboard files\")"
+      "Bash(rm -rf /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/dashboard/widgets/*.dart /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/dashboard/screens/dashboard_screen.dart && echo \"✓ Deleted all existing dashboard files\")",
+      "Bash(npx tsc *)",
+      "Bash(npx tsx *)"
     ],
     "additionalDirectories": [
       "/tmp",

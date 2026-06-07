@@ -4,7 +4,7 @@
  * Allows swapping between mock (dev) and real (production) via .env
  */
 
-import { RobotStatus, RobotEvent } from '../types';
+import { RobotStatus, RobotEvent, SensorEvent } from '../types';
 
 export interface RobotSDK {
   /**
@@ -61,4 +61,11 @@ export interface RobotSDK {
    * Register a handler for robot events (face_detected, battery_update, etc.)
    */
   onEvent(handler: (event: RobotEvent) => void): void;
+
+  /**
+   * Register a handler for sensor/obstacle awareness events (Phase 1A).
+   * Mock synthesizes these on a timer; Real receives them from the native
+   * bridge documented in robot_app/docs/SENSOR_BRIDGE.md.
+   */
+  onSensorEvent(handler: (event: SensorEvent) => void): void;
 }

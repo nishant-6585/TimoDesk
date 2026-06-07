@@ -6,7 +6,7 @@
 
 import { WebSocket } from 'ws';
 import { RobotSDK } from './interface';
-import { RobotStatus, RobotEvent } from '../types';
+import { RobotStatus, RobotEvent, SensorEvent } from '../types';
 
 export interface RealRobotSDKOptions {
   robotIP: string;
@@ -35,6 +35,11 @@ export class RealRobotSDK implements RobotSDK {
     leftArm: 50,
     rightArm: 50,
     isWaving: false,
+    obstacleState: 'unknown',
+    localizationQuality: 'unknown',
+    sensorHealth: null,
+    personDetected: false,
+    lastObstacleEventAt: null,
   };
 
   constructor(options: RealRobotSDKOptions) {
@@ -257,5 +262,19 @@ export class RealRobotSDK implements RobotSDK {
    */
   onEvent(handler: (event: RobotEvent) => void): void {
     this.eventHandlers.push(handler);
+  }
+
+  /**
+   * Register sensor/obstacle event handler.
+   *
+   * PLACEHOLDER — no-op until real hardware is wired in. The CSJBot SDK's
+   * high-level obstacle/health/localization/person events are captured by the
+   * native Android bridge and forwarded over the chassis WebSocket; that bridge
+   * is documented (Kotlin + Dart) in robot_app/docs/SENSOR_BRIDGE.md. When the
+   * bridge lands, parse those messages in handleRobotMessage() and invoke these
+   * handlers here.
+   */
+  onSensorEvent(_handler: (event: SensorEvent) => void): void {
+    // intentionally empty — see robot_app/docs/SENSOR_BRIDGE.md
   }
 }

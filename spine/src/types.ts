@@ -13,6 +13,20 @@ export interface Intent {
   right?: number; // 0–100, for arm
 }
 
+// ── Sensor / obstacle awareness (Phase 1A) ──────────────────────────────────
+// Sourced from CSJBot high-level nav events (raw LIDAR scan is NOT exposed).
+// See robot_app/docs/SENSOR_BRIDGE.md for the native bridge that produces these.
+
+export type ObstacleState = 'running' | 'blocked' | 'wait_short' | 'wait_long' | 'unknown';
+export type LocalizationQuality = 'low' | 'normal' | 'unknown';
+export type SensorState = 'ok' | 'warn' | 'error';
+
+export interface SensorHealth {
+  lidar: SensorState;
+  rgbd: SensorState;
+  sonar: SensorState;
+}
+
 // Robot status (what the robot reports back)
 export interface RobotStatus {
   online: boolean;
@@ -23,7 +37,21 @@ export interface RobotStatus {
   leftArm: number; // 0–100
   rightArm: number; // 0–100
   isWaving: boolean;
+  // Sensor awareness (Phase 1A)
+  obstacleState: ObstacleState;
+  localizationQuality: LocalizationQuality;
+  sensorHealth: SensorHealth | null;
+  personDetected: boolean;
+  lastObstacleEventAt: string | null; // ISO-8601
 }
+
+// Sensor events emitted by the robot (or mock) — discriminated on `type`.
+// Distinct from RobotEvent: these drive the new RobotStatus sensor fields.
+export type SensorEvent =
+  | { type: 'obstacle_event'; state: Exclude<ObstacleState, 'unknown'>; timestamp: number }
+  | { type: 'sensor_health'; sensors: SensorHealth; timestamp: number }
+  | { type: 'localization_lq'; quality: Exclude<LocalizationQuality, 'unknown'>; lq: number; timestamp: number }
+  | { type: 'person_detected'; detected: boolean; timestamp: number };
 
 // Events emitted by the robot (or mock)
 export interface RobotEvent {

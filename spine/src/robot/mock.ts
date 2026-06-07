@@ -5,10 +5,24 @@
  */
 
 import { RobotSDK } from './interface';
-import { RobotStatus, RobotEvent } from '../types';
+import { RobotStatus, RobotEvent, SensorEvent, ObstacleState, SensorHealth } from '../types';
+import { getStoppedState } from '../commands/interlocks';
+
+export interface MockSensorSimOptions {
+  enabled?: boolean; // default true — auto-start in constructor; set false in tests
+  obstacleMs?: number; // override the 8–15s random obstacle cadence (tests)
+  sensorHealthMs?: number; // default 30000
+  localizationMs?: number; // default 45000
+  personMs?: number; // default 20000
+}
 
 export interface MockRobotSDKOptions {
   eventIntervalMs?: number; // default 10000 (production), override for tests
+  // Predicate for "is the robot under a safety STOP?". Sensor emitters are
+  // suppressed when true. Defaults to the interlocks module's global STOP state
+  // (the single source of truth — see commands/interlocks.ts).
+  isStopped?: () => boolean;
+  sensorSim?: MockSensorSimOptions;
 }
 
 export class MockRobotSDK implements RobotSDK {
@@ -21,14 +35,39 @@ export class MockRobotSDK implements RobotSDK {
     leftArm: 50,
     rightArm: 50,
     isWaving: false,
+    obstacleState: 'unknown',
+    localizationQuality: 'unknown',
+    sensorHealth: null,
+    personDetected: false,
+    lastObstacleEventAt: null,
   };
 
   private eventHandlers: Array<(event: RobotEvent) => void> = [];
   private eventIntervals: NodeJS.Timeout[] = [];
   private eventIntervalMs: number;
 
+  // Sensor sim state
+  private sensorHandlers: Array<(event: SensorEvent) => void> = [];
+  private sensorTimers: NodeJS.Timeout[] = [];
+  private obstacleTimer: NodeJS.Timeout | null = null;
+  private sensorSimRunning = false;
+  private readonly isStopped: () => boolean;
+  private readonly sensorSim: Required<MockSensorSimOptions>;
+
   constructor(options?: MockRobotSDKOptions) {
     this.eventIntervalMs = options?.eventIntervalMs ?? 10000; // default 10s for production
+    this.isStopped = options?.isStopped ?? getStoppedState;
+    this.sensorSim = {
+      enabled: options?.sensorSim?.enabled ?? true,
+      obstacleMs: options?.sensorSim?.obstacleMs ?? 0, // 0 → use random 8–15s
+      sensorHealthMs: options?.sensorSim?.sensorHealthMs ?? 30000,
+      localizationMs: options?.sensorSim?.localizationMs ?? 45000,
+      personMs: options?.sensorSim?.personMs ?? 20000,
+    };
+
+    if (this.sensorSim.enabled) {
+      this.startSensorSim();
+    }
   }
 
   async drive(dir: 'forward' | 'back' | 'left' | 'right'): Promise<void> {
@@ -123,6 +162,114 @@ export class MockRobotSDK implements RobotSDK {
     this.eventIntervals.push(faceInterval, batteryInterval);
   }
 
+  onSensorEvent(handler: (event: SensorEvent) => void): void {
+    this.sensorHandlers.push(handler);
+  }
+
+  // ── Synthetic sensor simulator ────────────────────────────────────────────
+  // Mimics the high-level obstacle / health / localization / person events the
+  // CSJBot SDK surfaces (raw LIDAR scan is not exposed). All emitters are
+  // suppressed while the robot is under a safety STOP.
+
+  /**
+   * Start the synthetic sensor emitters. Auto-called in the constructor unless
+   * sensorSim.enabled is false. Idempotent.
+   */
+  startSensorSim(): void {
+    if (this.sensorSimRunning) return;
+    this.sensorSimRunning = true;
+
+    this.scheduleObstacle();
+
+    this.sensorTimers.push(
+      // sensor health — every 30s (95% all-ok, 5% one sensor degraded to 'warn')
+      setInterval(() => {
+        this.emitSensorEvent({
+          type: 'sensor_health',
+          sensors: this.pickSensorHealth(),
+          timestamp: Date.now(),
+        });
+      }, this.sensorSim.sensorHealthMs),
+
+      // localization quality — every 45s (90% normal lq 70–95, 10% low lq 30–55)
+      setInterval(() => {
+        const { quality, lq } = this.pickLocalization();
+        this.emitSensorEvent({ type: 'localization_lq', quality, lq, timestamp: Date.now() });
+      }, this.sensorSim.localizationMs),
+
+      // person detection — every 20s (30% detected)
+      setInterval(() => {
+        this.emitSensorEvent({
+          type: 'person_detected',
+          detected: Math.random() < 0.3,
+          timestamp: Date.now(),
+        });
+      }, this.sensorSim.personMs)
+    );
+  }
+
+  /**
+   * Stop the synthetic sensor emitters and clear their timers.
+   */
+  stopSensorSim(): void {
+    this.sensorSimRunning = false;
+    if (this.obstacleTimer) {
+      clearTimeout(this.obstacleTimer);
+      this.obstacleTimer = null;
+    }
+    this.sensorTimers.forEach(t => clearInterval(t));
+    this.sensorTimers = [];
+  }
+
+  /**
+   * Obstacle events fire on a random 8–15s cadence (self-rescheduling), or a
+   * fixed cadence when sensorSim.obstacleMs is set (tests).
+   */
+  private scheduleObstacle(): void {
+    const delay = this.sensorSim.obstacleMs || 8000 + Math.floor(Math.random() * 7001); // 8–15s
+    this.obstacleTimer = setTimeout(() => {
+      this.emitSensorEvent({
+        type: 'obstacle_event',
+        state: this.pickObstacleState(),
+        timestamp: Date.now(),
+      });
+      if (this.sensorSimRunning) this.scheduleObstacle();
+    }, delay);
+  }
+
+  /**
+   * Emit a sensor event to all handlers — unless suppressed by a safety STOP.
+   */
+  private emitSensorEvent(event: SensorEvent): void {
+    if (this.isStopped()) return; // suppressed while stopped
+    this.sensorHandlers.forEach(h => h(event));
+  }
+
+  // weighted: 60% running, 20% wait_short, 12% blocked, 8% wait_long
+  private pickObstacleState(): Exclude<ObstacleState, 'unknown'> {
+    const r = Math.random();
+    if (r < 0.6) return 'running';
+    if (r < 0.8) return 'wait_short';
+    if (r < 0.92) return 'blocked';
+    return 'wait_long';
+  }
+
+  private pickSensorHealth(): SensorHealth {
+    if (Math.random() < 0.95) return { lidar: 'ok', rgbd: 'ok', sonar: 'ok' };
+    const sensors: Array<keyof SensorHealth> = ['lidar', 'rgbd', 'sonar'];
+    const degraded = sensors[Math.floor(Math.random() * sensors.length)];
+    const health: SensorHealth = { lidar: 'ok', rgbd: 'ok', sonar: 'ok' };
+    health[degraded] = 'warn';
+    return health;
+  }
+
+  private pickLocalization(): { quality: 'low' | 'normal'; lq: number } {
+    if (Math.random() < 0.9) {
+      return { quality: 'normal', lq: 70 + Math.floor(Math.random() * 26) }; // 70–95
+    }
+    return { quality: 'low', lq: 30 + Math.floor(Math.random() * 26) }; // 30–55
+  }
+
   /**
    * Clean up intervals (for tests)
    */
@@ -130,5 +277,7 @@ export class MockRobotSDK implements RobotSDK {
     this.eventIntervals.forEach(interval => clearInterval(interval));
     this.eventIntervals = [];
     this.eventHandlers = [];
+    this.stopSensorSim();
+    this.sensorHandlers = [];
   }
 }
