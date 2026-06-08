@@ -26,16 +26,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   String _driveStatus = 'IDLE';
   int _throttle = 0;
 
-  // Throttle joystick updates to 20ms (50 FPS max) to prevent UI freezing
+  // Throttle joystick updates to prevent UI freezing on rapid pointer events
   DateTime _lastDriveSend = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastHeadSend = DateTime.fromMillisecondsSinceEpoch(0);
-  static const throttleDurationMs = 50; // 50ms = 20 updates/second
+  static const throttleDurationMs = 100; // 100ms = 10 updates/second (prevents UI freeze)
 
   void _handleDriveJoystick(double x, double y, double mag) {
     setState(() {
       _driveX = x;
       _driveY = y;
-      const deadzone = 0.15;  // 15% deadzone (was 28%, too high)
+      const deadzone = 0.10;  // 10% deadzone (lower = more responsive)
       if (mag < deadzone) {
         _driveStatus = 'IDLE';
         _throttle = 0;
