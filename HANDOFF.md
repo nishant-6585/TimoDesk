@@ -110,6 +110,19 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 
 - **#52** SDK API integration roadmap — quarterly review of deferred listeners (elevator, door, MQTT, remote — site-specific)
 
+**🛑 Hardware bring-up epic (#60–#64) — BLOCKED: awaiting physical Timo robot.** Real camera + real movement against actual hardware. The plumbing is mostly built; this epic is verification + the last-mile native bridges. Cannot be validated without the robot on the desk, so it stays parked, not scheduled.
+
+- **#60** Verify `RealRobotSDK` (`spine/src/robot/real.ts`) end-to-end: `ROBOT_MODE=real` + `ROBOT_IP`, intents → robot WS ports 8081/8082/8083, confirm drive/head/arm/wave actually move the chassis. SDK is implemented but **never run against hardware.**
+- **#61** Confirm `robot_app` native plugins (`ChassisControlPlugin` / `HeadControlPlugin` / `ArmControlPlugin`) actually call the CSJBot **motor** SDK — right now they're WebSocket command receivers; the real motor bridge is the "(future) native SDK bridge."
+- **#62** Swap the **mock camera** (cycling RGB frames, per `README.md:96`) for the real CSJBot camera feed in `CameraStreamPlugin`. MJPEG server + admin-app `MjpegView` already work against the mock; this swaps the source.
+- **#63** Wire the native sensor bridge (`robot_app/docs/SENSOR_BRIDGE.md`) into `RealRobotSDK.onSensorEvent` (currently a no-op) so Phase 1A obstacle/health/localization events flow from real hardware.
+- **#64** Real-hardware safety pass: STOP interlock + obstacle-blocked behaviour validated with the robot physically moving. Highest-risk item — do last, supervised.
+
+**🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
+
+- **Live camera view in the admin app** — new cross-platform `MjpegView` (`app/lib/features/live_feed/widgets/`): native `<img>`/HtmlElementView on web, pure-Dart JPEG frame parser (`mjpeg_parser.dart`, unit-tested) on mobile/desktop. Wired into the Live Feed screen + Control screen feed cards with a start/stop toggle, reading the robot IP from `settingsProvider` → `http://<ip>:8080/stream`. Closes the gap where those panels were static `videocam` icons. Works against the mock camera today; "just works" when #62 swaps in the real feed.
+- **Settings ↔ provider fix** — the Settings "Robot IP" field previously wrote only to local widget state, so it never reached the stream URL. Now seeds from and persists to `settingsProvider`. Added `http: ^1.2.0` dep + `robotStreamUrl()` helper in `constants.dart`.
+
 **🌐 Cross-project (xboom-flow, separate repo):**
 
 - **#14–#17** Webhook auth header migration (Exotel / MyOperator / Interakt + 30-day secret rotation)
@@ -155,7 +168,11 @@ cd spine && npm install && npm test    # fresh containers need install first
 
 ### 5. Real hardware is unavailable
 
-All Phase 1A code runs against `MockRobotSDK`. `RealRobotSDK` is a no-op placeholder. Don't try to deploy `robot_app/` against actual Timo — hardware isn't here yet. The Kotlin in `SENSOR_BRIDGE.md` is reference code; it has NOT been built or tested.
+All Phase 1A code runs against `MockRobotSDK`. **Correction to earlier notes:** `RealRobotSDK` (`spine/src/robot/real.ts`) is *not* a no-op — it implements intent→command translation over WS ports 8081/8082/8083 and HTTP snapshot. What's true: it has **never been run against hardware**, `onSensorEvent` is a no-op, and `getStatus` is static. The Kotlin in `SENSOR_BRIDGE.md` is reference code; it has NOT been built or tested. See the Hardware bring-up epic (#60–#64). Don't deploy `robot_app/` against a real Timo until that epic runs.
+
+### 5b. Camera view needs on-device verification
+
+The new `MjpegView` (this session) was written **without a Flutter SDK in the cloud container — not compiled or `flutter analyze`'d here.** Before relying on it: `cd app && flutter pub get && flutter analyze && flutter test`. The web path uses `dart:html` + `dart:ui_web` (fine for `flutter run -d chrome`; not Wasm builds). The mobile path streams via `package:http`. The `mjpeg_parser.dart` slicer has unit tests (`app/test/mjpeg_parser_test.dart`); the platform rendering needs a real device/browser + a running MJPEG source (mock camera in `robot_app`, or any MJPEG URL). Note: the **Dashboard** mini live-feed card still shows a hardcoded `192.168.1.42` placeholder — not yet wired to `MjpegView` (out of scope this pass).
 
 ### 6. Orphan-rewriter (Windows-only)
 

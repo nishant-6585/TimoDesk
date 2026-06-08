@@ -17,6 +17,9 @@ dependencies:
   # WebSocket for spine connection
   web_socket_channel: ^2.4.0
 
+  # Streamed HTTP GET for the mobile/desktop MJPEG camera parser
+  http: ^1.2.0
+
   # Routing with auth guard
   go_router: ^13.0.0
 

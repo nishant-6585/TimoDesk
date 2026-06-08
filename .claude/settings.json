@@ -81,7 +81,8 @@
       "Bash(killall -9 chrome)",
       "Bash(killall -9 flutter)",
       "Bash(flutter analyze *)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(git rebase *)"
     ],
     "additionalDirectories": [
       "/tmp",

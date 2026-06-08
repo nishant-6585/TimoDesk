@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../../services/spine/spine_state.dart';
+import '../../live_feed/widgets/mjpeg_view.dart';
+import '../../settings/providers/settings_provider.dart';
 import '../widgets/joystick.dart';
 import '../widgets/sensor_status_card.dart';
 import '../widgets/blocked_overlay.dart';
@@ -293,20 +296,48 @@ class _ControlContent extends StatelessWidget {
   }
 }
 
-class _LiveFeedCard extends StatelessWidget {
+class _LiveFeedCard extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_LiveFeedCard> createState() => _LiveFeedCardState();
+}
+
+class _LiveFeedCardState extends ConsumerState<_LiveFeedCard> {
+  bool _streaming = false;
+
   @override
   Widget build(BuildContext context) {
+    final robotIp = ref.watch(settingsProvider).robotIp;
+    final url = robotStreamUrl(robotIp);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: Colors.black, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.error)), const SizedBox(width: 8), Text('LIVE', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: TimoColors.error, letterSpacing: 0.1))]), Icon(Icons.fullscreen, size: 20, color: TimoColors.textSecondary)]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: _streaming ? TimoColors.error : TimoColors.textMuted)), const SizedBox(width: 8), Text(_streaming ? 'LIVE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _streaming ? TimoColors.error : TimoColors.textMuted, letterSpacing: 0.1))]),
+          InkWell(
+            onTap: () => setState(() => _streaming = !_streaming),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(padding: const EdgeInsets.all(2), child: Icon(_streaming ? Icons.stop_circle_outlined : Icons.play_circle_outline, size: 22, color: _streaming ? TimoColors.error : TimoColors.primary)),
+          ),
+        ]),
         const SizedBox(height: 16),
-        AspectRatio(aspectRatio: 16 / 9, child: Center(child: Icon(Icons.videocam, size: 64, color: const Color(0xFF3A3A3A)))),
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: _streaming
+              ? ClipRRect(borderRadius: BorderRadius.circular(8), child: MjpegView(url: url))
+              : Center(
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.videocam_off, size: 56, color: const Color(0xFF3A3A3A)),
+                    const SizedBox(height: 10),
+                    TextButton.icon(onPressed: () => setState(() => _streaming = true), icon: const Icon(Icons.play_arrow, size: 18), label: Text('Start stream', style: GoogleFonts.inter(fontSize: 12))),
+                  ]),
+                ),
+        ),
         const SizedBox(height: 12),
-        Text('Live Feed · 192.168.1.42:8080', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textSecondary)),
+        Text('Live Feed · $robotIp:$robotCameraPort', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textSecondary)),
         const SizedBox(height: 12),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('RES 640×480', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.textMuted)), Text('FPS 15', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.success)), Text('LATENCY 45ms', style: GoogleFonts.jetBrainsMono(fontSize: 10))]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('RES 640×480', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.textMuted)), Text(_streaming ? 'MJPEG' : 'IDLE', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: _streaming ? TimoColors.success : TimoColors.textMuted)), Text('PORT $robotCameraPort', style: GoogleFonts.jetBrainsMono(fontSize: 10))]),
       ]),
     );
   }

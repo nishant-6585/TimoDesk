@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../core/constants.dart';
 import '../../../core/theme.dart';
+import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -12,14 +14,22 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  String _robotIp = '192.168.1.42';
-  String _port = '8080';
+  String _robotIp = defaultRobotIp;
+  String _port = '$robotCameraPort';
   String _signalingServer = 'ws://192.168.1.42:8081';
   String _reconnectTimeout = '5000';
   bool _collisionSafety = true;
   bool _autoSnapshot = false;
   bool _notifications = true;
   String _speed = '0.5x';
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from the shared settings provider so the field reflects (and edits)
+    // the same robot IP the live camera view consumes.
+    _robotIp = ref.read(settingsProvider).robotIp;
+  }
 
   void _testConnection() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -79,7 +89,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ]),
                               const SizedBox(height: 24),
                               _SettingCard('NETWORK', [
-                                _SettingField('Robot IP', _robotIp, (v) => setState(() => _robotIp = v)),
+                                _SettingField('Robot IP', _robotIp, (v) {
+                                  setState(() => _robotIp = v);
+                                  ref.read(settingsProvider.notifier).setRobotIp(v.trim());
+                                }),
                                 _SettingField('Port', _port, (v) => setState(() => _port = v)),
                                 _SettingField('Signaling Server', _signalingServer, (v) => setState(() => _signalingServer = v)),
                                 _SettingField('Reconnect timeout', _reconnectTimeout, (v) => setState(() => _reconnectTimeout = v)),
