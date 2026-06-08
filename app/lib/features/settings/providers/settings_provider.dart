@@ -33,10 +33,24 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final spineUrl = prefs.getString(spineUrlKey) ?? defaultSpineUrl;
-      final robotIp = prefs.getString(robotIpKey) ?? defaultRobotIp;
+
+      // Load from SharedPreferences or use defaults
+      var spineUrl = prefs.getString(spineUrlKey) ?? defaultSpineUrl;
+      var robotIp = prefs.getString(robotIpKey) ?? defaultRobotIp;
+
+      // Fix: If settings still point to old mock IPs (192.168.1.x), reset to real robot
+      if (robotIp.startsWith('192.168.1.') || spineUrl.contains('192.168.1.')) {
+        print('[SettingsNotifier] Detected old mock settings, resetting to real robot...');
+        spineUrl = defaultSpineUrl;
+        robotIp = defaultRobotIp;
+
+        // Save the corrected values
+        await prefs.setString(spineUrlKey, spineUrl);
+        await prefs.setString(robotIpKey, robotIp);
+      }
 
       state = state.copyWith(spineUrl: spineUrl, robotIp: robotIp);
+      print('[SettingsNotifier] Loaded settings - Robot IP: $robotIp, Spine: $spineUrl');
     } catch (e) {
       print('[SettingsNotifier] Error loading settings: $e');
     }
