@@ -2,6 +2,8 @@
 
 > Smart reception app for the **Timo robot platform** (Alpha Robotics / CSJBot). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously.
 
+> **⚡ Read [`HANDOFF.md`](./HANDOFF.md) FIRST.** It's the live session state — what shipped last, what's pending, what's blocking, what to start with on this machine. This `CLAUDE.md` is the durable architectural reference; `HANDOFF.md` is the per-session pulse.
+
 ---
 
 ## Architecture
