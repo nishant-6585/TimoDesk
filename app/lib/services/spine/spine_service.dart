@@ -82,6 +82,11 @@ class SpineService extends StateNotifier<SpineState> {
       state = state.copyWith(stopped: true);
     } else if (msg['type'] == 'resumed') {
       state = state.copyWith(stopped: false);
+    } else if (msg['type'] == 'event') {
+      final eventType = msg['event'] as String?;
+      final eventPayload = msg['eventPayload'] as Map<String, dynamic>?;
+      // Log for now — Phase 1B will wire these to UI
+      print('[SpineService] Robot event: $eventType payload: $eventPayload');
     }
   }
 

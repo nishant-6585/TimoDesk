@@ -70,7 +70,8 @@
       "Bash(sed -i '' 's/Slider\\(value: _value, min: widget.min, max: widget.max, activeColor: TimoColors.primary, inactiveColor: TimoColors.border, onChanged: \\(v\\) {setState\\(\\(\\) => _value = v\\); widget.onChanged\\(v\\);}/Slider\\(value: _value, min: widget.min, max: widget.max, activeColor: TimoColors.primary, inactiveColor: TimoColors.border, onChanged: \\(v\\) {setState\\(\\(\\) => _value = v\\); widget.onChanged\\(v\\);}\\)\\),\\);/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)",
       "Bash(sed -i '' 's/GalleryScreen\\(detailId: captureId\\)/GalleryScreen\\(\\)/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/core/router.dart)",
       "Bash(sed -i '' 's/backdropFilter: ImageFilter.blur\\(sigmaX: 4, sigmaY: 4\\),//g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/gallery/screens/gallery_screen.dart)",
-      "Bash(sed -i '' \"s/.toList\\(\\).reduce\\(\\(a, b\\) => Row\\(children: \\\\[a, b\\\\]\\)\\)/..toList\\(\\)/g\" /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/settings/screens/settings_screen.dart)"
+      "Bash(sed -i '' \"s/.toList\\(\\).reduce\\(\\(a, b\\) => Row\\(children: \\\\[a, b\\\\]\\)\\)/..toList\\(\\)/g\" /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/settings/screens/settings_screen.dart)",
+      "Bash(npm test *)"
     ],
     "additionalDirectories": [
       "/tmp",

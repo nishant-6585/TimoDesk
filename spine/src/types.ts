@@ -74,7 +74,8 @@ export interface SpineMessage {
   message?: string;
   intent?: string; // for ack
   status?: RobotStatus; // for robot_status
-  event?: RobotEvent; // for event
+  event?: string; // for event — the event type name (e.g. 'face_detected')
+  eventPayload?: Record<string, any>; // for event — the event payload fields
 }
 
 // Session tracking (spine-internal)

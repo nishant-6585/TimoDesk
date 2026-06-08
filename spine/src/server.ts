@@ -141,10 +141,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
     // Register robot event handler to broadcast to all clients
     sdk.onEvent((event) => {
+      const { type: eventType, ...rest } = event;
       const msg: SpineMessage = {
         type: 'event',
-        event: event.type,
-        ...event,
+        event: eventType,
+        eventPayload: rest,
       };
       wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {

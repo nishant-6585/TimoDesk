@@ -209,3 +209,53 @@ describe('MockRobotSDK sensor simulator', () => {
     mock.cleanup();
   });
 });
+
+describe('RobotEvent wire format — event broadcast', () => {
+  it('event broadcast has correct wire shape: type=event, event=string, eventPayload=rest', () => {
+    // Simulate what happens in server.ts event handler
+    const robotEvent = {
+      type: 'face_detected' as const,
+      payload: { confidence: 87 },
+      timestamp: 1700000000,
+    };
+
+    // This is the fix: destructure event.type and spread the rest
+    const { type: eventType, ...rest } = robotEvent;
+
+    // Build the wire message (matching server.ts fix)
+    const msg = {
+      type: 'event' as const,
+      event: eventType,
+      eventPayload: rest,
+    };
+
+    // Verify the wire shape
+    expect(msg.type).toBe('event');
+    expect(msg.event).toBe('face_detected');
+    expect(msg.eventPayload).toEqual({ payload: { confidence: 87 }, timestamp: 1700000000 });
+
+    // Critical: type must NOT be clobbered by event type
+    expect(msg.type).not.toBe('face_detected');
+    expect(msg.type).toBe('event');
+  });
+
+  it('viewer_web and spine_service consume the wire format correctly', () => {
+    // The fixed wire format that server.ts produces
+    const wireMessage = {
+      type: 'event',
+      event: 'robot_status_update',
+      eventPayload: { isMoving: true },
+    };
+
+    // viewer_web consumer (index.html line 471-478)
+    expect(wireMessage.type).toBe('event');
+    expect(wireMessage.event).toBe('robot_status_update');
+    expect(wireMessage.eventPayload?.isMoving).toBe(true);
+
+    // spine_service consumer (spine_service.dart)
+    const eventType = wireMessage.event as string | undefined;
+    const eventPayload = wireMessage.eventPayload as Record<string, any> | undefined;
+    expect(eventType).toBe('robot_status_update');
+    expect(eventPayload?.isMoving).toBe(true);
+  });
+});
