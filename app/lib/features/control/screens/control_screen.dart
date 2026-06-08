@@ -26,6 +26,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   String _driveStatus = 'IDLE';
   int _throttle = 0;
 
+  // Throttle joystick updates to 20ms (50 FPS max) to prevent UI freezing
+  DateTime _lastDriveSend = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastHeadSend = DateTime.fromMillisecondsSinceEpoch(0);
+  static const throttleDurationMs = 50; // 50ms = 20 updates/second
+
   void _handleDriveJoystick(double x, double y, double mag) {
     setState(() {
       _driveX = x;
@@ -49,6 +54,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     if (spineState.stopped) return;
 
+    // Throttle: only send intent if enough time has passed
+    final now = DateTime.now();
+    if (now.difference(_lastDriveSend).inMilliseconds < throttleDurationMs) return;
+    _lastDriveSend = now;
+
     // Only send movement intents when joystick is NOT idle
     if (_driveStatus != 'IDLE') {
       final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
@@ -69,6 +79,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final notifier = ref.read(spineProvider.notifier);
 
     if (spineState.stopped) return;
+
+    // Throttle: only send intent if enough time has passed
+    final now = DateTime.now();
+    if (now.difference(_lastHeadSend).inMilliseconds < throttleDurationMs) return;
+    _lastHeadSend = now;
 
     notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
   }
