@@ -15,6 +15,170 @@ final _privateConstructorUsedError = UnsupportedError(
     'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
+mixin _$SensorHealth {
+  SensorState get lidar => throw _privateConstructorUsedError;
+  SensorState get rgbd => throw _privateConstructorUsedError;
+  SensorState get sonar => throw _privateConstructorUsedError;
+
+  /// Create a copy of SensorHealth
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $SensorHealthCopyWith<SensorHealth> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $SensorHealthCopyWith<$Res> {
+  factory $SensorHealthCopyWith(
+          SensorHealth value, $Res Function(SensorHealth) then) =
+      _$SensorHealthCopyWithImpl<$Res, SensorHealth>;
+  @useResult
+  $Res call({SensorState lidar, SensorState rgbd, SensorState sonar});
+}
+
+/// @nodoc
+class _$SensorHealthCopyWithImpl<$Res, $Val extends SensorHealth>
+    implements $SensorHealthCopyWith<$Res> {
+  _$SensorHealthCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of SensorHealth
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? lidar = null,
+    Object? rgbd = null,
+    Object? sonar = null,
+  }) {
+    return _then(_value.copyWith(
+      lidar: null == lidar
+          ? _value.lidar
+          : lidar // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+      rgbd: null == rgbd
+          ? _value.rgbd
+          : rgbd // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+      sonar: null == sonar
+          ? _value.sonar
+          : sonar // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$SensorHealthImplCopyWith<$Res>
+    implements $SensorHealthCopyWith<$Res> {
+  factory _$$SensorHealthImplCopyWith(
+          _$SensorHealthImpl value, $Res Function(_$SensorHealthImpl) then) =
+      __$$SensorHealthImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({SensorState lidar, SensorState rgbd, SensorState sonar});
+}
+
+/// @nodoc
+class __$$SensorHealthImplCopyWithImpl<$Res>
+    extends _$SensorHealthCopyWithImpl<$Res, _$SensorHealthImpl>
+    implements _$$SensorHealthImplCopyWith<$Res> {
+  __$$SensorHealthImplCopyWithImpl(
+      _$SensorHealthImpl _value, $Res Function(_$SensorHealthImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of SensorHealth
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? lidar = null,
+    Object? rgbd = null,
+    Object? sonar = null,
+  }) {
+    return _then(_$SensorHealthImpl(
+      lidar: null == lidar
+          ? _value.lidar
+          : lidar // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+      rgbd: null == rgbd
+          ? _value.rgbd
+          : rgbd // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+      sonar: null == sonar
+          ? _value.sonar
+          : sonar // ignore: cast_nullable_to_non_nullable
+              as SensorState,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$SensorHealthImpl implements _SensorHealth {
+  const _$SensorHealthImpl(
+      {required this.lidar, required this.rgbd, required this.sonar});
+
+  @override
+  final SensorState lidar;
+  @override
+  final SensorState rgbd;
+  @override
+  final SensorState sonar;
+
+  @override
+  String toString() {
+    return 'SensorHealth(lidar: $lidar, rgbd: $rgbd, sonar: $sonar)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SensorHealthImpl &&
+            (identical(other.lidar, lidar) || other.lidar == lidar) &&
+            (identical(other.rgbd, rgbd) || other.rgbd == rgbd) &&
+            (identical(other.sonar, sonar) || other.sonar == sonar));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, lidar, rgbd, sonar);
+
+  /// Create a copy of SensorHealth
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SensorHealthImplCopyWith<_$SensorHealthImpl> get copyWith =>
+      __$$SensorHealthImplCopyWithImpl<_$SensorHealthImpl>(this, _$identity);
+}
+
+abstract class _SensorHealth implements SensorHealth {
+  const factory _SensorHealth(
+      {required final SensorState lidar,
+      required final SensorState rgbd,
+      required final SensorState sonar}) = _$SensorHealthImpl;
+
+  @override
+  SensorState get lidar;
+  @override
+  SensorState get rgbd;
+  @override
+  SensorState get sonar;
+
+  /// Create a copy of SensorHealth
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SensorHealthImplCopyWith<_$SensorHealthImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
 mixin _$SpineState {
   bool get connected => throw _privateConstructorUsedError;
   bool get stopped => throw _privateConstructorUsedError; // Global STOP active
@@ -208,7 +372,14 @@ mixin _$RobotStatus {
   int get headUD => throw _privateConstructorUsedError;
   int get leftArm => throw _privateConstructorUsedError;
   int get rightArm => throw _privateConstructorUsedError;
-  bool get isWaving => throw _privateConstructorUsedError;
+  bool get isWaving =>
+      throw _privateConstructorUsedError; // Phase 1A sensor fields
+  ObstacleState get obstacleState => throw _privateConstructorUsedError;
+  LocalizationQuality get localizationQuality =>
+      throw _privateConstructorUsedError;
+  SensorHealth? get sensorHealth => throw _privateConstructorUsedError;
+  bool get personDetected => throw _privateConstructorUsedError;
+  DateTime? get lastObstacleEventAt => throw _privateConstructorUsedError;
 
   /// Create a copy of RobotStatus
   /// with the given fields replaced by the non-null parameter values.
@@ -231,7 +402,14 @@ abstract class $RobotStatusCopyWith<$Res> {
       int headUD,
       int leftArm,
       int rightArm,
-      bool isWaving});
+      bool isWaving,
+      ObstacleState obstacleState,
+      LocalizationQuality localizationQuality,
+      SensorHealth? sensorHealth,
+      bool personDetected,
+      DateTime? lastObstacleEventAt});
+
+  $SensorHealthCopyWith<$Res>? get sensorHealth;
 }
 
 /// @nodoc
@@ -257,6 +435,11 @@ class _$RobotStatusCopyWithImpl<$Res, $Val extends RobotStatus>
     Object? leftArm = null,
     Object? rightArm = null,
     Object? isWaving = null,
+    Object? obstacleState = null,
+    Object? localizationQuality = null,
+    Object? sensorHealth = freezed,
+    Object? personDetected = null,
+    Object? lastObstacleEventAt = freezed,
   }) {
     return _then(_value.copyWith(
       online: null == online
@@ -291,7 +474,41 @@ class _$RobotStatusCopyWithImpl<$Res, $Val extends RobotStatus>
           ? _value.isWaving
           : isWaving // ignore: cast_nullable_to_non_nullable
               as bool,
+      obstacleState: null == obstacleState
+          ? _value.obstacleState
+          : obstacleState // ignore: cast_nullable_to_non_nullable
+              as ObstacleState,
+      localizationQuality: null == localizationQuality
+          ? _value.localizationQuality
+          : localizationQuality // ignore: cast_nullable_to_non_nullable
+              as LocalizationQuality,
+      sensorHealth: freezed == sensorHealth
+          ? _value.sensorHealth
+          : sensorHealth // ignore: cast_nullable_to_non_nullable
+              as SensorHealth?,
+      personDetected: null == personDetected
+          ? _value.personDetected
+          : personDetected // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastObstacleEventAt: freezed == lastObstacleEventAt
+          ? _value.lastObstacleEventAt
+          : lastObstacleEventAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ) as $Val);
+  }
+
+  /// Create a copy of RobotStatus
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $SensorHealthCopyWith<$Res>? get sensorHealth {
+    if (_value.sensorHealth == null) {
+      return null;
+    }
+
+    return $SensorHealthCopyWith<$Res>(_value.sensorHealth!, (value) {
+      return _then(_value.copyWith(sensorHealth: value) as $Val);
+    });
   }
 }
 
@@ -311,7 +528,15 @@ abstract class _$$RobotStatusImplCopyWith<$Res>
       int headUD,
       int leftArm,
       int rightArm,
-      bool isWaving});
+      bool isWaving,
+      ObstacleState obstacleState,
+      LocalizationQuality localizationQuality,
+      SensorHealth? sensorHealth,
+      bool personDetected,
+      DateTime? lastObstacleEventAt});
+
+  @override
+  $SensorHealthCopyWith<$Res>? get sensorHealth;
 }
 
 /// @nodoc
@@ -335,6 +560,11 @@ class __$$RobotStatusImplCopyWithImpl<$Res>
     Object? leftArm = null,
     Object? rightArm = null,
     Object? isWaving = null,
+    Object? obstacleState = null,
+    Object? localizationQuality = null,
+    Object? sensorHealth = freezed,
+    Object? personDetected = null,
+    Object? lastObstacleEventAt = freezed,
   }) {
     return _then(_$RobotStatusImpl(
       online: null == online
@@ -369,6 +599,26 @@ class __$$RobotStatusImplCopyWithImpl<$Res>
           ? _value.isWaving
           : isWaving // ignore: cast_nullable_to_non_nullable
               as bool,
+      obstacleState: null == obstacleState
+          ? _value.obstacleState
+          : obstacleState // ignore: cast_nullable_to_non_nullable
+              as ObstacleState,
+      localizationQuality: null == localizationQuality
+          ? _value.localizationQuality
+          : localizationQuality // ignore: cast_nullable_to_non_nullable
+              as LocalizationQuality,
+      sensorHealth: freezed == sensorHealth
+          ? _value.sensorHealth
+          : sensorHealth // ignore: cast_nullable_to_non_nullable
+              as SensorHealth?,
+      personDetected: null == personDetected
+          ? _value.personDetected
+          : personDetected // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastObstacleEventAt: freezed == lastObstacleEventAt
+          ? _value.lastObstacleEventAt
+          : lastObstacleEventAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ));
   }
 }
@@ -384,7 +634,12 @@ class _$RobotStatusImpl implements _RobotStatus {
       required this.headUD,
       required this.leftArm,
       required this.rightArm,
-      required this.isWaving});
+      required this.isWaving,
+      required this.obstacleState,
+      required this.localizationQuality,
+      this.sensorHealth,
+      required this.personDetected,
+      this.lastObstacleEventAt});
 
   @override
   final bool online;
@@ -402,10 +657,21 @@ class _$RobotStatusImpl implements _RobotStatus {
   final int rightArm;
   @override
   final bool isWaving;
+// Phase 1A sensor fields
+  @override
+  final ObstacleState obstacleState;
+  @override
+  final LocalizationQuality localizationQuality;
+  @override
+  final SensorHealth? sensorHealth;
+  @override
+  final bool personDetected;
+  @override
+  final DateTime? lastObstacleEventAt;
 
   @override
   String toString() {
-    return 'RobotStatus(online: $online, battery: $battery, isMoving: $isMoving, headLR: $headLR, headUD: $headUD, leftArm: $leftArm, rightArm: $rightArm, isWaving: $isWaving)';
+    return 'RobotStatus(online: $online, battery: $battery, isMoving: $isMoving, headLR: $headLR, headUD: $headUD, leftArm: $leftArm, rightArm: $rightArm, isWaving: $isWaving, obstacleState: $obstacleState, localizationQuality: $localizationQuality, sensorHealth: $sensorHealth, personDetected: $personDetected, lastObstacleEventAt: $lastObstacleEventAt)';
   }
 
   @override
@@ -423,12 +689,35 @@ class _$RobotStatusImpl implements _RobotStatus {
             (identical(other.rightArm, rightArm) ||
                 other.rightArm == rightArm) &&
             (identical(other.isWaving, isWaving) ||
-                other.isWaving == isWaving));
+                other.isWaving == isWaving) &&
+            (identical(other.obstacleState, obstacleState) ||
+                other.obstacleState == obstacleState) &&
+            (identical(other.localizationQuality, localizationQuality) ||
+                other.localizationQuality == localizationQuality) &&
+            (identical(other.sensorHealth, sensorHealth) ||
+                other.sensorHealth == sensorHealth) &&
+            (identical(other.personDetected, personDetected) ||
+                other.personDetected == personDetected) &&
+            (identical(other.lastObstacleEventAt, lastObstacleEventAt) ||
+                other.lastObstacleEventAt == lastObstacleEventAt));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, online, battery, isMoving,
-      headLR, headUD, leftArm, rightArm, isWaving);
+  int get hashCode => Object.hash(
+      runtimeType,
+      online,
+      battery,
+      isMoving,
+      headLR,
+      headUD,
+      leftArm,
+      rightArm,
+      isWaving,
+      obstacleState,
+      localizationQuality,
+      sensorHealth,
+      personDetected,
+      lastObstacleEventAt);
 
   /// Create a copy of RobotStatus
   /// with the given fields replaced by the non-null parameter values.
@@ -448,7 +737,12 @@ abstract class _RobotStatus implements RobotStatus {
       required final int headUD,
       required final int leftArm,
       required final int rightArm,
-      required final bool isWaving}) = _$RobotStatusImpl;
+      required final bool isWaving,
+      required final ObstacleState obstacleState,
+      required final LocalizationQuality localizationQuality,
+      final SensorHealth? sensorHealth,
+      required final bool personDetected,
+      final DateTime? lastObstacleEventAt}) = _$RobotStatusImpl;
 
   @override
   bool get online;
@@ -465,7 +759,17 @@ abstract class _RobotStatus implements RobotStatus {
   @override
   int get rightArm;
   @override
-  bool get isWaving;
+  bool get isWaving; // Phase 1A sensor fields
+  @override
+  ObstacleState get obstacleState;
+  @override
+  LocalizationQuality get localizationQuality;
+  @override
+  SensorHealth? get sensorHealth;
+  @override
+  bool get personDetected;
+  @override
+  DateTime? get lastObstacleEventAt;
 
   /// Create a copy of RobotStatus
   /// with the given fields replaced by the non-null parameter values.

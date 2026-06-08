@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
+import '../../../services/spine/spine_state.dart';
 import '../widgets/joystick.dart';
+import '../widgets/sensor_status_card.dart';
+import '../widgets/blocked_overlay.dart';
 
 class ControlScreen extends ConsumerStatefulWidget {
   const ControlScreen({Key? key}) : super(key: key);
@@ -139,7 +142,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 child: Row(
                   children: [
                     if (!compact) _Sidebar(onNav: (route) {
-                      final routes = {'dashboard': '/', 'control': '/control', 'feed': '/live-feed', 'gallery': '/gallery', 'events': '/event-log', 'settings': '/settings'};
+                      final routes = {'dashboard': '/', 'control': '/control', 'feed': '/live-feed', 'gallery': '/gallery', 'events': '/event-log', 'patrol_routes': '/patrol-routes', 'settings': '/settings'};
                       if (routes.containsKey(route)) context.go(routes[route]!);
                     }),
                     Expanded(
@@ -160,6 +163,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                               onGesture: _sendGesture,
                               onCenterHead: _resetHead,
                               stopped: stopped,
+                              status: spine.status,
                             ),
                           ),
                         ),
@@ -170,6 +174,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               ),
             ],
           ),
+          // Blocked overlay (obstacle detected)
+          BlockedOverlay(visible: spine.status?.obstacleState == ObstacleState.blocked),
         ],
       ),
     );
@@ -191,6 +197,7 @@ class _Sidebar extends StatelessWidget {
           _NavItem('Live Feed', Icons.videocam, false, () => onNav('feed')),
           _NavItem('Gallery', Icons.photo_library, false, () => onNav('gallery')),
           _NavItem('Event Log', Icons.receipt_long, false, () => onNav('events')),
+          _NavItem('Patrol Routes', Icons.route, false, () => onNav('patrol_routes')),
           _NavItem('Settings', Icons.settings, false, () => onNav('settings')),
         ])),
       ]),
@@ -232,6 +239,7 @@ class _ControlContent extends StatelessWidget {
   final Function(String) onGesture;
   final VoidCallback onCenterHead;
   final bool stopped;
+  final RobotStatus? status;
 
   const _ControlContent({
     required this.driveStatus,
@@ -245,6 +253,7 @@ class _ControlContent extends StatelessWidget {
     required this.onGesture,
     required this.onCenterHead,
     required this.stopped,
+    this.status,
   });
 
   @override
@@ -262,7 +271,13 @@ class _ControlContent extends StatelessWidget {
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(flex: 3, child: _LiveFeedCard()),
         const SizedBox(width: 20),
-        Expanded(flex: 2, child: _TelemetryCard(driveStatus: driveStatus, throttle: throttle, pan: pan, tilt: tilt, maxSpeed: maxSpeed, onMaxSpeedChange: onMaxSpeedChange)),
+        Expanded(flex: 2, child: Column(children: [
+          _TelemetryCard(driveStatus: driveStatus, throttle: throttle, pan: pan, tilt: tilt, maxSpeed: maxSpeed, onMaxSpeedChange: onMaxSpeedChange),
+          if (status != null) ...[
+            const SizedBox(height: 20),
+            SensorStatusCard(status: status!),
+          ]
+        ])),
       ]),
       const SizedBox(height: 20),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
