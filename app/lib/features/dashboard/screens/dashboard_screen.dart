@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import '../../../core/constants.dart';
 import '../../../services/spine/spine_provider.dart';
+import '../../live_feed/widgets/mjpeg_view.dart';
+import '../../settings/providers/settings_provider.dart';
 
 // Models
 class EventModel {
@@ -931,53 +934,138 @@ class _SessionsCard extends StatelessWidget {
   }
 }
 
-class _LiveFeedWidget extends StatelessWidget {
+class _LiveFeedWidget extends ConsumerWidget {
   final bool stopped;
   final String timeString;
 
   const _LiveFeedWidget({required this.stopped, required this.timeString});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final robotUrl = robotStreamUrl(settings.robotIp);
+
     return _McCard(
       padding: EdgeInsets.zero,
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(children: [
-          Container(color: Colors.black),
-          Center(
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.videocam, size: 56, color: const Color(0xFF3A3A3A)),
-              const SizedBox(height: 8),
-              Text('Live Feed · 192.168.1.42:8080', style: GoogleFonts.jetBrainsMono(fontSize: 12, color: const Color(0xFF5A5A5A))),
-            ]),
+          // Live camera feed
+          Container(
+            color: Colors.black,
+            child: MjpegView(
+              url: robotUrl,
+              onDataReceived: (int frameCount) {
+                // Frame data received
+              },
+            ),
           ),
-          Positioned(top: 12, left: 12, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), border: Border.all(color: Colors.white.withOpacity(0.05)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.error)), const SizedBox(width: 8), Text('LIVE', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.15, color: Colors.white))]))),
-          if (stopped) Positioned.fill(
+          // Live indicator badge
+          Positioned(
+            top: 12,
+            left: 12,
             child: Container(
-              color: TimoColors.error.withOpacity(0.1),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: TimoColors.error,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.55),
+                border: Border.all(color: Colors.white.withOpacity(0.05)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: TimoColors.success,
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.stop_circle, color: Colors.white, size: 20),
-                      const SizedBox(width: 8),
-                      Text('MOTION HALTED', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.1, color: Colors.white)),
-                    ],
+                  const SizedBox(width: 8),
+                  Text(
+                    'LIVE',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.15,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Motion halted overlay
+          if (stopped)
+            Positioned.fill(
+              child: Container(
+                color: TimoColors.error.withOpacity(0.1),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: TimoColors.error,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.stop_circle, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'MOTION HALTED',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.1,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
+          // Stats bar
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(0.8)],
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  _Stat('RES', '640×480'),
+                  const SizedBox(width: 16),
+                  _Stat('FPS', '15', color: TimoColors.success),
+                  const SizedBox(width: 16),
+                  _Stat('LATENCY', '45ms'),
+                  const Spacer(),
+                  Text(
+                    timeString,
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 11,
+                      color: Colors.white.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          Positioned(bottom: 0, left: 0, right: 0, child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(0.8)])), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Row(children: [_Stat('RES', '640×480'), const SizedBox(width: 16), _Stat('FPS', '15', color: TimoColors.success), const SizedBox(width: 16), _Stat('LATENCY', '45ms'), const Spacer(), Text(timeString, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: Colors.white.withOpacity(0.5)))]),
-          )),
         ]),
       ),
     );
