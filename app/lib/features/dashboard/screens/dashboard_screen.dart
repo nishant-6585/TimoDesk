@@ -953,12 +953,7 @@ class _LiveFeedWidget extends ConsumerWidget {
           // Live camera feed
           Container(
             color: Colors.black,
-            child: MjpegView(
-              url: robotUrl,
-              onDataReceived: (int frameCount) {
-                // Frame data received
-              },
-            ),
+            child: MjpegView(url: robotUrl),
           ),
           // Live indicator badge
           Positioned(
