@@ -105,7 +105,14 @@
       "Bash(timeout 2 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8083')",
       "Bash(timeout 2 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8080')",
       "Bash(curl -s -m 2 http://192.168.10.18:8080/stream)",
-      "Bash(killall flutter *)"
+      "Bash(killall flutter *)",
+      "Bash(killall -9 node)",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/4000')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8081')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8082')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8083')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8080')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8888')"
     ],
     "additionalDirectories": [
       "/tmp",

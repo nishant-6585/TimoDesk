@@ -3,7 +3,8 @@ const Duration spineReconnectDelay = Duration(seconds: 3);
 const Duration joystickThrottleMs = Duration(milliseconds: 50);
 const int joystickRadius = 90;
 
-// Default network settings
+// REAL ROBOT NETWORK SETTINGS - HARDCODED FOR TIMO
+// Robot IP: 192.168.10.18 (WiFi interface on CSJBot device)
 const String defaultSpineUrl = 'ws://192.168.10.18:4000';
 const String defaultRobotIp = '192.168.10.18';
 

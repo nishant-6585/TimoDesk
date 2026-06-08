@@ -27,7 +27,42 @@ class SettingsState {
 
 class SettingsNotifier extends StateNotifier<SettingsState> {
   SettingsNotifier() : super(SettingsState(spineUrl: defaultSpineUrl, robotIp: defaultRobotIp)) {
-    _loadSettings();
+    // Initialize with hardcoded real robot settings
+    // Always use the real robot IP, ignore any cached mock settings
+    _initializeRealRobotSettings();
+  }
+
+  Future<void> _initializeRealRobotSettings() async {
+    try {
+      // HARDCODED: Always use real robot settings, never trust SharedPreferences
+      // This ensures the app always connects to the real Timo robot
+      final spineUrl = defaultSpineUrl; // ws://192.168.10.18:4000
+      final robotIp = defaultRobotIp;   // 192.168.10.18
+
+      state = state.copyWith(spineUrl: spineUrl, robotIp: robotIp);
+
+      print('[SettingsNotifier] ========================================');
+      print('[SettingsNotifier] REAL ROBOT CONFIGURATION (HARDCODED)');
+      print('[SettingsNotifier] Robot IP: $robotIp');
+      print('[SettingsNotifier] Spine URL: $spineUrl');
+      print('[SettingsNotifier] Camera Stream: http://$robotIp:8080/stream');
+      print('[SettingsNotifier] ========================================');
+
+      // Optionally: Clear any old cached settings from SharedPreferences
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        // Clear old mock settings to prevent reversion
+        if (prefs.getString(robotIpKey)?.startsWith('192.168.1.') ?? false) {
+          await prefs.remove(robotIpKey);
+          await prefs.remove(spineUrlKey);
+          print('[SettingsNotifier] Cleared old mock settings from cache');
+        }
+      } catch (e) {
+        // Ignore errors clearing cache
+      }
+    } catch (e) {
+      print('[SettingsNotifier] Error initializing settings: $e');
+    }
   }
 
   Future<void> _loadSettings() async {

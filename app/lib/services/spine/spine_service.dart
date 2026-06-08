@@ -29,11 +29,15 @@ class SpineService extends StateNotifier<SpineState> {
       final session = Supabase.instance.client.auth.currentSession;
       _jwt = session?.accessToken ?? 'dev';
 
-      // Get spine URL from settings provider (defaults to real robot IP)
-      final settings = _ref.read(settingsProvider);
-      _spineUrl = settings.spineUrl;
+      // HARDCODED: Always use real robot Spine URL
+      // Robot is at 192.168.10.18 on WiFi
+      _spineUrl = 'ws://192.168.10.18:4000';
 
-      print('[SpineService] Using spine URL from settings: $_spineUrl');
+      print('[SpineService] ========================================');
+      print('[SpineService] CONNECTING TO REAL TIMO ROBOT');
+      print('[SpineService] Spine WebSocket: $_spineUrl');
+      print('[SpineService] ========================================');
+
       await connect(_spineUrl!, _jwt!);
     } catch (e) {
       print('[SpineService] Init error: $e');
