@@ -24,6 +24,10 @@ class _PulseDotState extends State<PulseDot> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
+  }
+
+  void _initializeAnimations() {
     if (widget.pulse) {
       _controller = AnimationController(
         duration: const Duration(milliseconds: 1800),
@@ -42,7 +46,7 @@ class _PulseDotState extends State<PulseDot> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    if (widget.pulse) {
+    if (widget.pulse && _controller != null) {
       _controller.dispose();
     }
     super.dispose();
@@ -50,39 +54,47 @@ class _PulseDotState extends State<PulseDot> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.pulse) {
+      return Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.color,
+        ),
+      );
+    }
+
     return Stack(
       alignment: Alignment.center,
       children: [
-        if (widget.pulse)
-          ScaleTransition(
-            scale: _scaleAnimation,
-            child: Opacity(
-              opacity: _opacityAnimation.value,
-              child: Container(
-                width: widget.size,
-                height: widget.size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.color,
-                ),
+        ScaleTransition(
+          scale: _scaleAnimation,
+          child: Opacity(
+            opacity: _opacityAnimation.value,
+            child: Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color,
               ),
             ),
           ),
+        ),
         Container(
           width: widget.size,
           height: widget.size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: widget.color,
-            boxShadow: widget.pulse
-                ? [
-                    BoxShadow(
-                      color: widget.color,
-                      blurRadius: 8,
-                      spreadRadius: 0,
-                    ),
-                  ]
-                : null,
+            boxShadow: [
+              BoxShadow(
+                color: widget.color,
+                blurRadius: 8,
+                spreadRadius: 0,
+              ),
+            ],
           ),
         ),
       ],

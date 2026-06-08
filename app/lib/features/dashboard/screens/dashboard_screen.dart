@@ -93,7 +93,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _startLiveEvents() {
-    _eventTimer = Timer.periodic(const Duration(milliseconds: 4200), (_) {
+    _eventTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final spine = ref.read(spineProvider);
       if (spine.stopped) return;
@@ -104,7 +104,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         {'type': 'face_detected', 'details': 'confidence: ${80 + (DateTime.now().millisecond % 19)}%', 'session': 'system'},
         {'type': 'visitor_checkin', 'details': 'guest #${100 + (DateTime.now().millisecond % 99)}', 'session': 'system'},
       ];
-      _addEvent(pool[DateTime.now().millisecond % 4]);
+      _addEvent(pool[DateTime.now().millisecond % pool.length]);
     });
   }
 
@@ -385,89 +385,97 @@ class _McHeader extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Row(children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [TimoColors.primary, TimoColors.primaryDark],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Row(children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [TimoColors.primary, TimoColors.primaryDark],
+                        ),
+                        boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)],
+                      ),
+                      child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
                     ),
-                    boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)],
-                  ),
-                  child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
-                ),
-                if (!compact) ...[
-                  const SizedBox(width: 10),
-                  Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary)),
-                    Text('xboom', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.2, color: TimoColors.textMuted)),
+                    if (!compact) ...[
+                      const SizedBox(width: 12),
+                      Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)),
+                        Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0)),
+                      ]),
+                    ]
                   ]),
-                ]
-              ]),
-              Row(children: [
-                if (!compact) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
-                    child: Row(children: [
-                      const Icon(Icons.battery_charging_full, size: 16, color: TimoColors.success),
-                      const SizedBox(width: 8),
-                      Text('$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
-                      const SizedBox(width: 8),
+                  Row(children: [
+                    if (!compact) ...[
                       Container(
-                        width: 40,
-                        height: 6,
-                        decoration: BoxDecoration(color: TimoColors.border, borderRadius: BorderRadius.circular(999)),
-                        child: Stack(children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              width: (40 * battery / 100).clamp(0, 40),
-                              height: 6,
-                              decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
-                            ),
-                          )
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
+                        child: Row(children: [
+                          const Icon(Icons.battery_charging_full, size: 16, color: TimoColors.success),
+                          const SizedBox(width: 8),
+                          Text('$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 40,
+                            height: 6,
+                            decoration: BoxDecoration(color: TimoColors.border, borderRadius: BorderRadius.circular(999)),
+                            child: Stack(children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  width: (40 * battery / 100).clamp(0, 40),
+                                  height: 6,
+                                  decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
+                                ),
+                              )
+                            ]),
+                          ),
                         ]),
                       ),
-                    ]),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.08),
-                    border: Border.all(color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.3)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(children: [
-                    Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
-                    const SizedBox(width: 8),
-                    Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? TimoColors.success : TimoColors.error)),
+                      const SizedBox(width: 12),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.08),
+                        border: Border.all(color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
+                        const SizedBox(width: 8),
+                        Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? TimoColors.success : TimoColors.error)),
+                      ]),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)),
+                      child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
+                    ),
                   ]),
+                ],
+              ),
+              if (!compact) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Timo — Reception Robot',
+                  style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
                 ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)),
-                  child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
-                ),
-              ]),
+              ]
             ],
           ),
-          if (!compact)
-            Text(
-              'Timo — Reception Robot',
-              style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
-            ),
         ],
       ),
     );
@@ -484,8 +492,10 @@ class _McSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 220,
-      color: TimoColors.surface,
-      border: const Border(right: BorderSide(color: TimoColors.border)),
+      decoration: BoxDecoration(
+        color: TimoColors.surface,
+        border: const Border(right: BorderSide(color: TimoColors.border)),
+      ),
       child: Column(children: [
         Expanded(
           child: ListView(
@@ -613,27 +623,28 @@ class _BatteryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _McCard(
+      padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
           Icon(charging ? Icons.bolt : Icons.battery_full, size: 18, color: TimoColors.primary),
         ]),
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
         Center(
           child: SizedBox(
-            width: 104,
-            height: 104,
+            width: 80,
+            height: 80,
             child: Stack(alignment: Alignment.center, children: [
-              CustomPaint(painter: _ProgressRingPainter(percent.toDouble(), TimoColors.primary, TimoColors.border, 9)),
+              CustomPaint(painter: _ProgressRingPainter(percent.toDouble(), TimoColors.primary, TimoColors.border, 7)),
               Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text('$percent%', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(charging ? 'Charging' : 'On Battery', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary)),
+                Text('$percent%', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, height: 1.0)),
+                const SizedBox(height: 0),
+                Text(charging ? 'Charging' : 'On Battery', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w600, letterSpacing: 0, color: TimoColors.textSecondary, height: 1.0)),
               ]),
             ]),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Divider(color: TimoColors.border, height: 1),
         const SizedBox(height: 8),
         Text.rich(TextSpan(
@@ -692,12 +703,18 @@ class _VisitorsCard extends StatelessWidget {
         ]),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('24', style: GoogleFonts.inter(fontSize: 34, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('visitors checked in', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
-          ]),
-          CustomPaint(painter: _SparklinePainter([12, 16, 9, 18, 14, 21, 24], 132, 38, TimoColors.primary), size: const Size(132, 38)),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('24', style: GoogleFonts.inter(fontSize: 34, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text('visitors checked in', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+            ]),
+          ),
+          SizedBox(
+            width: 110,
+            height: 40,
+            child: CustomPaint(painter: _SparklinePainter([12, 16, 9, 18, 14, 21, 24], 110, 40, TimoColors.primary), size: const Size(110, 40)),
+          ),
         ]),
         const SizedBox(height: 8),
         Divider(color: TimoColors.border, height: 1),
@@ -772,15 +789,21 @@ class _SessionsCard extends StatelessWidget {
         ]),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('2', style: GoogleFonts.inter(fontSize: 34, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('admin sessions active', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
-          ]),
-          Stack(children: [
-            Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.primary, border: Border.all(color: TimoColors.cardTop, width: 2)), alignment: Alignment.center, child: Text('NK', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white))),
-            Positioned(left: 16, child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF3B82F6), border: Border.all(color: TimoColors.cardTop, width: 2)), alignment: Alignment.center, child: Text('RS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)))),
-          ]),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('2', style: GoogleFonts.inter(fontSize: 34, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text('admin sessions active', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+            ]),
+          ),
+          SizedBox(
+            width: 50,
+            height: 32,
+            child: Stack(clipBehavior: Clip.none, children: [
+              Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.primary, border: Border.all(color: TimoColors.cardTop, width: 2)), alignment: Alignment.center, child: Text('NK', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white))),
+              Positioned(left: 18, child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF3B82F6), border: Border.all(color: TimoColors.cardTop, width: 2)), alignment: Alignment.center, child: Text('RS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)))),
+            ]),
+          ),
         ]),
         const SizedBox(height: 8),
         Divider(color: TimoColors.border, height: 1),
@@ -817,7 +840,29 @@ class _LiveFeedWidget extends StatelessWidget {
             ]),
           ),
           Positioned(top: 12, left: 12, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), border: Border.all(color: Colors.white.withOpacity(0.05)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.error)), const SizedBox(width: 8), Text('LIVE', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.15, color: Colors.white))]))),
-          if (stopped) Positioned.fill(child: Container(color: TimoColors.error.withOpacity(0.1), child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: TimoColors.error, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)]), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.stop_circle, color: Colors.white, size: 20), const SizedBox(width: 8), Text('MOTION HALTED', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.1, color: Colors.white))])))),
+          if (stopped) Positioned.fill(
+            child: Container(
+              color: TimoColors.error.withOpacity(0.1),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: TimoColors.error,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.stop_circle, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      Text('MOTION HALTED', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.1, color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(bottom: 0, left: 0, right: 0, child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withOpacity(0), Colors.black.withOpacity(0.8)])), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Row(children: [_Stat('RES', '640×480'), const SizedBox(width: 16), _Stat('FPS', '15', color: TimoColors.success), const SizedBox(width: 16), _Stat('LATENCY', '45ms'), const Spacer(), Text(timeString, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: Colors.white.withOpacity(0.5)))]),
           )),
         ]),
@@ -869,13 +914,21 @@ class _QuickControlsPanel extends StatelessWidget {
         Text('Quick Actions', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: TimoColors.textPrimary)),
         const SizedBox(height: 16),
         _EmergencyButton(stopped: stopped, onStop: onStop),
-        const SizedBox(height: 16),
-        GridView.count(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [
-          _ActionButton('Control Room', Icons.sports_esports, () => onAction('control')),
-          _ActionButton('Wave Hello', Icons.waving_hand, () => onAction('wave')),
-          _ActionButton('Take Snapshot', Icons.photo_camera, () => onAction('snapshot')),
-          _ActionButton('Go Home', Icons.home, () => onAction('home')),
-        ]),
+        const SizedBox(height: 12),
+        GridView.count(
+          crossAxisCount: 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 2.2,
+          children: [
+            _ActionButton('Control Room', Icons.sports_esports, () => onAction('control')),
+            _ActionButton('Wave Hello', Icons.waving_hand, () => onAction('wave')),
+            _ActionButton('Take Snapshot', Icons.photo_camera, () => onAction('snapshot')),
+            _ActionButton('Go Home', Icons.home, () => onAction('home')),
+          ],
+        ),
         const SizedBox(height: 16),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -917,14 +970,33 @@ class _ActionButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
+        hoverColor: Colors.white.withOpacity(0.05),
         child: Container(
-          decoration: BoxDecoration(color: TimoColors.inset, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(children: [
-            Icon(icon, size: 20, color: TimoColors.primary),
-            const SizedBox(width: 10),
-            Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withOpacity(0.9)))),
-          ]),
+          decoration: BoxDecoration(
+            color: TimoColors.inset,
+            border: Border.all(color: TimoColors.border),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: TimoColors.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1048,20 +1120,20 @@ class _EventStreamWidget extends StatelessWidget {
           return Column(children: [
             Container(
               color: idx % 2 == 1 ? Colors.white.withOpacity(0.012) : Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(children: [
-                SizedBox(width: 120, child: Text(event.ago, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: TimoColors.textSecondary))),
+                SizedBox(width: 100, child: Text(event.ago, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textSecondary))),
                 SizedBox(
-                  width: 200,
+                  width: 150,
                   child: _EventChip(event.type),
                 ),
-                Expanded(child: Text(event.details, style: GoogleFonts.jetBrainsMono(fontSize: 13, color: Colors.white.withOpacity(0.85)))),
+                Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(event.details, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: Colors.white.withOpacity(0.85))))),
                 SizedBox(
-                  width: 120,
+                  width: 100,
                   child: Row(children: [
-                    Icon(event.session == 'admin' ? Icons.person : Icons.memory, size: 14, color: TimoColors.textSecondary),
-                    const SizedBox(width: 6),
-                    Text(event.session, style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary)),
+                    Icon(event.session == 'admin' ? Icons.person : Icons.memory, size: 12, color: TimoColors.textSecondary),
+                    const SizedBox(width: 4),
+                    Text(event.session, style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary)),
                   ]),
                 ),
               ]),
@@ -1084,11 +1156,29 @@ class _EventChip extends StatelessWidget {
     final color = eventColorMap[type] ?? TimoColors.textMuted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.10), border: Border.all(color: color.withOpacity(0.2)), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        border: Border.all(color: color.withOpacity(0.25)),
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+          ),
+        ),
         const SizedBox(width: 6),
-        Text(type, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.w500, color: color)),
+        Text(
+          type,
+          style: GoogleFonts.jetBrainsMono(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: color,
+          ),
+        ),
       ]),
     );
   }
