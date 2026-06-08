@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-08 (Windows session) · **For:** Claude Code on iMac or any future session picking up TimoDesk work
+> **Last updated:** 2026-06-08 (Linux cloud session — branch `claude/clever-brown-8kLaJ`) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -8,14 +8,33 @@
 
 ## TL;DR — Where things stand right now
 
-- **Phase 1A** (spine-side LIDAR/obstacle awareness against `MockRobotSDK`) — **SHIPPED.** 47/47 vitest passing, `tsc --noEmit` at 3 known-deferred errors.
-- **Phase 1B** (Flutter admin UI consuming the new sensor events) — **NOT STARTED.** Blocked on Flutter SDK install. Check `flutter --version` on this machine; if missing, install before tackling #42.
+- **Phase 1A** (spine-side LIDAR/obstacle awareness against `MockRobotSDK`) — **SHIPPED.** 49/49 vitest passing, `tsc --noEmit` clean of wire-format errors (only an unrelated `moduleResolution=node10` deprecation warning remains).
+- **#53** (spine wire-format spread bug at `server.ts:145-146`) — **FIXED & VERIFIED** in commit `7a19c83`. The 3 `tsc` errors are gone; Flutter `spine_service.dart` + `viewer_web/index.html` consumers were updated to read `eventPayload`.
+- **Phase 1B** (Flutter admin UI consuming the new sensor events, task #42 — `SensorStatusCard` + `BlockedOverlay`) — **NOT STARTED.** Gated on Flutter SDK install. Check `flutter --version`; if missing, install before tackling #42. Root gap: Flutter `RobotStatus.fromJson` still drops the 5 Phase 1A sensor fields.
 - **Phase 1.5** (5 more SDK listener integrations — battery, errors, snapshot, head touch, expressions) — **NOT STARTED.** Blocked on resolving the Windows-only orphan-rewriter (task #54).
 - **Phase 1.7, Phase 2, Phase 3** — queued.
 
 ---
 
-## What just shipped (Windows session, 2026-06-08)
+## What just shipped
+
+### Since last handoff (commits after `901f3bb`, mostly Flutter UI + the #53 fix)
+
+| Commit | Message | Notes |
+|---|---|---|
+| `7a19c83` | `feat(spine): implement event handling and update message structure for robot events` | ✅ **The #53 fix.** Destructures `{ type, ...rest }` → `{ event, eventPayload }`; updates `SpineMessage` type; updates Flutter + viewer_web consumers; +2 vitest cases (47→49). |
+| `6b5ff75` | `feat(events): rename events route to event-log and update event details` | Flutter |
+| `4bc6e56` | `Add MapCanvas and PatrolPanels for route management and waypoint editing` | Flutter — new `patrol_routes` feature |
+| `74d0271` | `feat(settings): add new bash commands for project file searching and reading` | tooling |
+| `6fcad3d` | `Refactor Gallery and Settings Screens for Improved UI and Functionality` | Flutter |
+| `536e375` | `feat: Refactor dashboard and live feed screens with navigation and layout improvements` | Flutter |
+| `ec1157b` | `feat(dashboard): refactor header layout and enhance battery card animation` | Flutter |
+| `eeff972` | `feat: Update settings and add design verification checklist` | + `DESIGN_VERIFICATION.md` |
+| `76dc96a` | `chore: add HANDOFF.md for cross-machine session continuity` | this file |
+
+> Note: the orphan-rewriter hazard (#54) was Windows-only. This session runs in a fresh Linux cloud container — no orphan, commit messages land verbatim.
+
+### Earlier (Windows session, 2026-06-08) — Phase 1A foundation
 
 | Commit | Intended message | Notes |
 |---|---|---|
@@ -50,13 +69,14 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 
 ## Pipeline status
 
-### ✅ Done (7 tracked tasks + Phase 1A code)
+### ✅ Done (8 tracked tasks + Phase 1A code)
 
 - All TimoDesk LIDAR research tasks (#35–#40)
 - Add `@types/ws` + `@types/node` devDeps (#41)
+- **#53 — spine wire-format spread bug — FIXED & VERIFIED (commit `7a19c83`).** Both consumers (Flutter `spine_service.dart`, `viewer_web/index.html`) updated to `eventPayload`. tsc clean of those 3 errors; 49/49 vitest.
 - Plus the 4 Phase 1A commits above (delivered against #38–#40 in real time, not tracked as discrete tasks)
 
-### ⏳ Remaining (17 tasks)
+### ⏳ Remaining (16 tasks)
 
 **🔴 Blocking — investigate first (Windows only):**
 
@@ -66,10 +86,10 @@ These are noise but harmless — the code state is correct. Optionally clean up 
   ```
   Confirm with user before terminating any. Then verify with a test commit + reflog scan.
 
-**🟡 Phase 1B — Flutter UI consumer (the natural iMac work):**
+**🟡 Phase 1B — Flutter UI consumer (the natural next work):**
 
-- **#42** — Flutter admin UI for sensor / obstacle events. Gated on Flutter SDK install. Adds `SensorStatusCard`, `BlockedOverlay`, event log filter chip, toast on blocked transitions, widget tests. Estimated 3–4h.
-- **#53** — Audit Flutter wire-format consumption + fix `server.ts:145-146` `onEvent ...event` spread (the 3 remaining `tsc` errors). Gated by #42. **Real bug, not a type nag.** See "Critical gotchas" below.
+- **#42** — Flutter admin UI for sensor / obstacle events. Gated on Flutter SDK install. Adds `SensorStatusCard`, `BlockedOverlay`, event log filter chip, toast on blocked transitions, widget tests. Estimated 3–4h. **Root gap:** Flutter `RobotStatus.fromJson` (`app/lib/services/spine/spine_state.dart`) still drops the 5 Phase 1A sensor fields (`obstacleState`, `localizationQuality`, `sensorHealth`, `personDetected`, `lastObstacleEventAt`) — extend the freezed model first, then build the two widgets, then wire into `control_screen.dart`. A detailed VS Code Claude Code prompt was drafted for this in the 2026-06-08 cloud session.
+- ~~**#53**~~ — ✅ DONE in `7a19c83` (see "Done" above). Was on the `event` message path, separate from the `robot_status` sensor path — Phase 1B is independent of it.
 
 **🟢 Phase 1.5 — ~10h spine + ~5h Flutter, gated by #54:**
 
@@ -100,21 +120,18 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 
 ## Critical gotchas
 
-### 1. The #53 wire-format bug — DO NOT SILENTLY "FIX"
+### 1. The #53 wire-format bug — ✅ RESOLVED (commit `7a19c83`)
 
-`spine/src/server.ts:145-146` currently does:
+**Historical, kept for context.** `spine/src/server.ts` used to do `{ type: 'event', event: event.type, ...event }`; the spread clobbered `type` with `RobotEvent`'s own `type`. The fix destructures it cleanly:
 ```ts
-{ type: 'event', event: event.type, ...event }
+const { type: eventType, ...rest } = event;
+const msg: SpineMessage = { type: 'event', event: eventType, eventPayload: rest };
 ```
+`SpineMessage` was updated to `event?: string` + `eventPayload?: Record<string, any>`. Both consumers now read `eventPayload`:
+- `app/lib/services/spine/spine_service.dart` — `event` branch reads `msg['event']` + `msg['eventPayload']` (logs only for now; Phase 1B wires to UI).
+- `viewer_web/index.html` — `handleSpineMessage` reads `msg.eventPayload`.
 
-The spread clobbers `type` with `RobotEvent`'s own `type` field (`face_detected`, `battery_update`, etc.) and TypeScript flags it. **This is a real bug, not a type nag** — but fixing it changes the WebSocket payload that `app/lib/**/*.dart` and `viewer_web/index.html` consume.
-
-**Required sequence before fixing:**
-1. Grep `app/lib/**/*.dart` and `viewer_web/index.html` for every field read off the broadcast payload (look for `data['...']`, `payload.`, JSON destructuring).
-2. Determine which fields the spread is currently exposing.
-3. Decide per field: keep (promote to named field in a typed `BroadcastPayload` interface), drop, or rename.
-4. Implement the fix.
-5. Verify: `tsc --noEmit` clean + every Flutter/viewer field still arrives + manual smoke test.
+No action needed. Don't re-introduce the spread.
 
 ### 2. STOP location
 
@@ -126,15 +143,15 @@ When wiring new sensor or intent code: STOP state lives in `spine/src/commands/i
 cd spine && npx tsc --noEmit
 ```
 
-Shows 3 errors. All are the #53 wire-format spread. **New code should add zero new errors.** Verify before committing.
+Clean of the old #53 wire-format errors (fixed in `7a19c83`). The only remaining output is an unrelated config deprecation: `tsconfig.json(8,25): TS5107 moduleResolution=node10 is deprecated`. **New code should add zero new errors.** Verify before committing.
 
 ### 4. Test baseline
 
 ```bash
-cd spine && npm test
+cd spine && npm install && npm test    # fresh containers need install first
 ```
 
-47 tests must pass. Every behavioral change adds a vitest case.
+**49 tests must pass** (was 47; the #53 fix added 2 event-handling cases). Every behavioral change adds a vitest case.
 
 ### 5. Real hardware is unavailable
 
@@ -152,20 +169,25 @@ Per-machine. Don't commit it. Permission grants will rebuild as you approve comm
 
 ## Recommended next step
 
-### If you're on **iMac** → Path B (recommended)
+### Next up → **#42 Phase 1B Flutter sensor UI** (#53 is now done)
 
 ```bash
 # 1. Sync
-git pull origin main
+git pull origin <branch>
 
 # 2. Confirm baselines
-flutter --version       # if missing: https://docs.flutter.dev/get-started/install/macos
-cd spine && npm install && npm test     # expect 47/47
+flutter --version       # if missing: install Flutter SDK — this is the gate for #42
+cd spine && npm install && npm test     # expect 49/49
 cd ../app && flutter pub get && flutter analyze    # establishes Flutter baseline
 
-# 3. Then work on:
-#    #53 (Flutter wire-format consumption audit) → #42 (Flutter sensor UI) together
-#    These are narrow-surface; safe to do without #54 since iMac has no orphan rewriter.
+# 3. Work on #42:
+#    a. Extend freezed RobotStatus in app/lib/services/spine/spine_state.dart with the
+#       5 sensor fields + fromJson parsing (run build_runner after).
+#    b. Build SensorStatusCard + BlockedOverlay (mirror _TelemetryCard / StopOverlay styling).
+#    c. Wire into app/lib/features/control/screens/control_screen.dart (card in content,
+#       overlay in the top-level Stack; optional one-shot toast on transition into 'blocked').
+#    d. Widget tests + a fromJson unit test (cover the unknown-value fallback).
+#    Narrow surface; independent of #53 (event path) and #54 (Windows-only orphan).
 ```
 
 ### If you're on **Windows** → Path A (recommended)
@@ -218,7 +240,8 @@ The original Windows session built extended context in personal memory files at 
 | Phase 1A tests | `spine/tests/sensors.test.ts` |
 | Mock synthetic emitter | `spine/src/robot/mock.ts` |
 | Native bridge reference (NOT deployed) | `robot_app/docs/SENSOR_BRIDGE.md` |
-| Wire-format bug (#53) | `spine/src/server.ts:145-146` |
+| Wire-format fix (#53, DONE `7a19c83`) | `spine/src/server.ts` event handler · `app/lib/services/spine/spine_service.dart` · `viewer_web/index.html` |
+| Phase 1B target (#42) | `app/lib/services/spine/spine_state.dart` (model) · `app/lib/features/control/widgets/` (new cards) · `control_screen.dart` (wire-in) |
 | STOP state | `spine/src/commands/interlocks.ts` |
 | Project context | `CLAUDE.md` |
 | Status snapshot (older) | `PROJECT_STATUS.md` |
