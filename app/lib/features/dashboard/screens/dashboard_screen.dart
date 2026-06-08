@@ -382,100 +382,91 @@ class _McHeader extends StatelessWidget {
         border: const Border(bottom: BorderSide(color: TimoColors.border)),
       ),
       padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
-      child: Stack(
-        alignment: Alignment.center,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [TimoColors.primary, TimoColors.primaryDark],
-                        ),
-                        boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)],
-                      ),
-                      child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
-                    ),
-                    if (!compact) ...[
-                      const SizedBox(width: 12),
-                      Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)),
-                        Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0)),
-                      ]),
-                    ]
-                  ]),
-                  Row(children: [
-                    if (!compact) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
-                        child: Row(children: [
-                          const Icon(Icons.battery_charging_full, size: 16, color: TimoColors.success),
-                          const SizedBox(width: 8),
-                          Text('$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 40,
-                            height: 6,
-                            decoration: BoxDecoration(color: TimoColors.border, borderRadius: BorderRadius.circular(999)),
-                            child: Stack(children: [
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  width: (40 * battery / 100).clamp(0, 40),
-                                  height: 6,
-                                  decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
-                                ),
-                              )
-                            ]),
-                          ),
-                        ]),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.08),
-                        border: Border.all(color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.3)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
-                        const SizedBox(width: 8),
-                        Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? TimoColors.success : TimoColors.error)),
-                      ]),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)),
-                      child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
-                    ),
-                  ]),
-                ],
-              ),
-              if (!compact) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Timo — Reception Robot',
-                  style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
+          // Left: Logo lockup
+          Row(children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [TimoColors.primary, TimoColors.primaryDark],
                 ),
-              ]
+                boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)],
+              ),
+              child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
+            ),
+            if (!compact) ...[
+              const SizedBox(width: 12),
+              Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)),
+                Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0)),
+              ]),
+            ]
+          ]),
+          // Center: Subtitle (desktop only)
+          if (!compact)
+            Text(
+              'Timo — Reception Robot',
+              style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
+            ),
+          // Right: Status pills and avatar
+          Row(children: [
+            if (!compact) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
+                child: Row(children: [
+                  const Icon(Icons.battery_charging_full, size: 16, color: TimoColors.success),
+                  const SizedBox(width: 8),
+                  Text('$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 40,
+                    height: 6,
+                    decoration: BoxDecoration(color: TimoColors.border, borderRadius: BorderRadius.circular(999)),
+                    child: Stack(children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          width: (40 * battery / 100).clamp(0, 40),
+                          height: 6,
+                          decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
+                        ),
+                      )
+                    ]),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: 12),
             ],
-          ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.08),
+                border: Border.all(color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(children: [
+                Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
+                const SizedBox(width: 8),
+                Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? TimoColors.success : TimoColors.error)),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)),
+              child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
+            ),
+          ]),
         ],
       ),
     );
@@ -614,47 +605,154 @@ class _RobotStatusCard extends StatelessWidget {
   }
 }
 
-class _BatteryCard extends StatelessWidget {
+class _BatteryCard extends StatefulWidget {
   final int percent;
   final bool charging;
 
   const _BatteryCard({required this.percent, required this.charging});
 
   @override
+  State<_BatteryCard> createState() => _BatteryCardState();
+}
+
+class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1100),
+      vsync: this,
+    );
+    _animation = Tween<double>(begin: 0, end: widget.percent.toDouble()).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    Future.delayed(const Duration(milliseconds: 120), () {
+      if (mounted) _animationController.forward();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_BatteryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.percent != widget.percent) {
+      _animationController.reset();
+      _animation = Tween<double>(begin: _animation.value, end: widget.percent.toDouble()).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+      );
+      _animationController.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _McCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
-          Icon(charging ? Icons.bolt : Icons.battery_full, size: 18, color: TimoColors.primary),
+          Icon(widget.charging ? Icons.bolt : Icons.battery_full, size: 18, color: TimoColors.primary),
         ]),
-        const SizedBox(height: 4),
+        const SizedBox(height: 10),
         Center(
           child: SizedBox(
-            width: 80,
-            height: 80,
-            child: Stack(alignment: Alignment.center, children: [
-              CustomPaint(painter: _ProgressRingPainter(percent.toDouble(), TimoColors.primary, TimoColors.border, 7)),
-              Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text('$percent%', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, height: 1.0)),
-                const SizedBox(height: 0),
-                Text(charging ? 'Charging' : 'On Battery', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w600, letterSpacing: 0, color: TimoColors.textSecondary, height: 1.0)),
-              ]),
-            ]),
+            width: 104,
+            height: 104,
+            child: AnimatedBuilder(
+              animation: _animation,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter: _AnimatedProgressRingPainter(
+                    _animation.value,
+                    TimoColors.primary,
+                    const Color(0xFF2A2A2A),
+                    9,
+                  ),
+                  child: Center(
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Text('${widget.percent}%', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, height: 1.0)),
+                      const SizedBox(height: 4),
+                      Text(widget.charging ? 'Charging' : 'On Battery', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.05, color: TimoColors.textSecondary, height: 1.0)),
+                    ]),
+                  ),
+                );
+              },
+            ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 12),
         Divider(color: TimoColors.border, height: 1),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Text.rich(TextSpan(
-          text: charging ? 'Full in ' : 'Est. ',
+          text: widget.charging ? 'Full in ' : 'Est. ',
           style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textMuted),
-          children: [TextSpan(text: charging ? '~42 min' : '5h 10m remaining', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textMuted))],
+          children: [TextSpan(text: widget.charging ? '~42 min' : '5h 10m remaining', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textMuted))],
         )),
       ]),
     );
   }
+}
+
+class _AnimatedProgressRingPainter extends CustomPainter {
+  final double percent;
+  final Color color;
+  final Color track;
+  final double stroke;
+
+  _AnimatedProgressRingPainter(this.percent, this.color, this.track, this.stroke);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - stroke) / 2;
+    final circumference = 2 * 3.14159 * radius;
+
+    // Draw track circle
+    canvas.drawCircle(center, radius, Paint()
+      ..color = track
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke);
+
+    // Draw progress arc with drop-shadow effect
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Draw shadow effect
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -3.14159 / 2,
+      (percent / 100) * 2 * 3.14159,
+      false,
+      Paint()
+        ..color = color.withOpacity(0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke + 2
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Draw progress arc
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -3.14159 / 2,
+      (percent / 100) * 2 * 3.14159,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_AnimatedProgressRingPainter old) => old.percent != percent;
 }
 
 class _ProgressRingPainter extends CustomPainter {
@@ -1114,32 +1212,43 @@ class _EventStreamWidget extends StatelessWidget {
           ]),
         ),
         const Divider(color: TimoColors.border, height: 1),
+        // Table header row
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(children: [
+            SizedBox(width: 120, child: Text('TIME', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted, fontStyle: FontStyle.normal))),
+            SizedBox(width: 200, child: Text('EVENT', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
+            const SizedBox(width: 24),
+            Expanded(child: Text('DETAILS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
+            SizedBox(width: 120, child: Text('SESSION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
+          ]),
+        ),
+        Container(height: 1, color: const Color(0xFF2A2A2A)),
+        // Event rows
         ...events.asMap().entries.map((e) {
           final idx = e.key;
           final event = e.value;
-          return Column(children: [
-            Container(
-              color: idx % 2 == 1 ? Colors.white.withOpacity(0.012) : Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(children: [
-                SizedBox(width: 100, child: Text(event.ago, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textSecondary))),
-                SizedBox(
-                  width: 150,
-                  child: _EventChip(event.type),
-                ),
-                Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(event.details, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: Colors.white.withOpacity(0.85))))),
-                SizedBox(
-                  width: 100,
-                  child: Row(children: [
-                    Icon(event.session == 'admin' ? Icons.person : Icons.memory, size: 12, color: TimoColors.textSecondary),
-                    const SizedBox(width: 4),
-                    Text(event.session, style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary)),
-                  ]),
-                ),
-              ]),
-            ),
-            if (idx < events.length - 1) const Divider(color: TimoColors.borderFaint, height: 1, indent: 20, endIndent: 20),
-          ]);
+          return Container(
+            color: idx % 2 == 1 ? Colors.white.withOpacity(0.012) : Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(children: [
+              SizedBox(width: 120, child: Text(event.ago, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: TimoColors.textSecondary))),
+              SizedBox(
+                width: 200,
+                child: _EventChip(event.type),
+              ),
+              const SizedBox(width: 24),
+              Expanded(child: Text(event.details, style: GoogleFonts.jetBrainsMono(fontSize: 13, color: Colors.white.withOpacity(0.85)))),
+              SizedBox(
+                width: 120,
+                child: Row(children: [
+                  Icon(event.session == 'admin' ? Icons.person : Icons.memory, size: 14, color: TimoColors.textSecondary),
+                  const SizedBox(width: 6),
+                  Text(event.session, style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary)),
+                ]),
+              ),
+            ]),
+          );
         }),
       ]),
     );

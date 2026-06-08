@@ -58,7 +58,11 @@
       "Bash(tee /tmp/tsc_final.txt)",
       "Bash(pkill -9 flutter)",
       "Bash(python3)",
-      "Read(//Users/nishantkumar/development/Xboom/Project/Timo/design_handoff_mission_control/design_files/**)"
+      "Read(//Users/nishantkumar/development/Xboom/Project/Timo/design_handoff_mission_control/design_files/**)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(curl -s http://localhost:54321)",
+      "Bash(pkill -9 flutter; sleep 2; timeout 180 flutter run -d chrome -v 2>&1 > /tmp/flutter_verbose.log 2>&1 & *)"
     ],
     "additionalDirectories": [
       "/tmp",
