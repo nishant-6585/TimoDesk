@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
@@ -223,7 +224,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               Expanded(
                 child: Row(
                   children: [
-                    _McSidebar(active: 'dashboard', onNav: (_) {}),
+                    _McSidebar(active: 'dashboard', onNav: (route) {
+                      final routes = {
+                        'dashboard': '/',
+                        'control': '/control',
+                        'feed': '/live-feed',
+                        'gallery': '/gallery',
+                        'events': '/event-log',
+                        'settings': '/settings',
+                      };
+                      if (routes.containsKey(route)) {
+                        context.go(routes[route]!);
+                      }
+                    }),
                     Expanded(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.all(24),

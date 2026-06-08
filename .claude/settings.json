@@ -62,7 +62,12 @@
       "Skill(run)",
       "Skill(run:*)",
       "Bash(curl -s http://localhost:54321)",
-      "Bash(pkill -9 flutter; sleep 2; timeout 180 flutter run -d chrome -v 2>&1 > /tmp/flutter_verbose.log 2>&1 & *)"
+      "Bash(pkill -9 flutter; sleep 2; timeout 180 flutter run -d chrome -v 2>&1 > /tmp/flutter_verbose.log 2>&1 & *)",
+      "Bash(sed -i '' 's/spine\\\\.sendIntent/ref.read\\(spineProvider.notifier\\).sendIntent/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)",
+      "Bash(sed -i '' 's/ref.read\\(spineProvider\\).resume\\(\\)/ref.read\\(spineProvider.notifier\\).sendIntent\\({\"intent\": \"resume\"}\\)/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)",
+      "Bash(sed -i '' 's/ref.read\\(spineProvider\\).stop\\(\\)/ref.read\\(spineProvider.notifier\\).sendIntent\\({\"intent\": \"stop\"}\\)/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)",
+      "Bash(sed -i '' 's/return SliderTheme\\(data: SliderThemeData/return Material\\(color: Colors.transparent, child: SliderTheme\\(data: SliderThemeData/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)",
+      "Bash(sed -i '' 's/Slider\\(value: _value, min: widget.min, max: widget.max, activeColor: TimoColors.primary, inactiveColor: TimoColors.border, onChanged: \\(v\\) {setState\\(\\(\\) => _value = v\\); widget.onChanged\\(v\\);}/Slider\\(value: _value, min: widget.min, max: widget.max, activeColor: TimoColors.primary, inactiveColor: TimoColors.border, onChanged: \\(v\\) {setState\\(\\(\\) => _value = v\\); widget.onChanged\\(v\\);}\\)\\),\\);/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/control/screens/control_screen.dart)"
     ],
     "additionalDirectories": [
       "/tmp",
