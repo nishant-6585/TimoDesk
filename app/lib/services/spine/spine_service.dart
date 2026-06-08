@@ -32,13 +32,14 @@ class SpineService extends StateNotifier<SpineState> {
       final session = Supabase.instance.client.auth.currentSession;
       _jwt = session?.accessToken ?? 'dev';
 
-      // HARDCODED: Always use real robot Spine URL
-      // Robot is at 192.168.10.18 on WiFi
-      _spineUrl = 'ws://192.168.10.18:4000';
+      // HARDCODED: Use localhost for development (Spine runs on dev machine)
+      // In production, Spine will run on the robot itself at ws://192.168.10.18:4000
+      _spineUrl = 'ws://localhost:4000';
 
       print('[SpineService] ========================================');
-      print('[SpineService] CONNECTING TO REAL TIMO ROBOT');
+      print('[SpineService] CONNECTING TO SPINE BROKER');
       print('[SpineService] Spine WebSocket: $_spineUrl');
+      print('[SpineService] (Camera stream from robot: http://192.168.10.18:8080)');
       print('[SpineService] ========================================');
 
       await connect(_spineUrl!, _jwt!);
@@ -145,8 +146,8 @@ class SpineService extends StateNotifier<SpineState> {
       // Re-fetch JWT in case it expired
       final session = Supabase.instance.client.auth.currentSession;
       final newJwt = session?.accessToken ?? 'dev';
-      // HARDCODED: Always use real robot IP
-      final url = _spineUrl ?? 'ws://192.168.10.18:4000';
+      // HARDCODED: Use localhost (where Spine broker runs on dev machine)
+      final url = _spineUrl ?? 'ws://localhost:4000';
       connect(url, newJwt);
     });
   }
