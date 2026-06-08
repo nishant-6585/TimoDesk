@@ -7,6 +7,7 @@ import { RobotSDK } from './robot/interface';
 import { MockRobotSDK } from './robot/mock';
 import { RealRobotSDK } from './robot/real';
 import { startServer } from './server';
+import { startCameraServer } from './camera';
 import { isSupabaseConfigured } from './supabase/client';
 
 async function main() {
@@ -47,9 +48,9 @@ async function main() {
 
   console.log('');
 
-  // 4. Start server
+  // 4. Start servers
   try {
-    await startServer(sdk);
+    await Promise.all([startServer(sdk), startCameraServer()]);
     console.log('');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log('✓ Spine is running and ready for admin clients');
