@@ -44,15 +44,24 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
+    final spineState = ref.read(spineProvider);
     final notifier = ref.read(spineProvider.notifier);
-    if (ref.read(spineProvider).stopped) return;
+
+    print('[ControlScreen] Drive joystick: x=$x, y=$y, mag=$mag, status=$_driveStatus, stopped=${spineState.stopped}, connected=${spineState.connected}');
+
+    if (spineState.stopped) {
+      print('[ControlScreen] Robot is stopped, not sending drive intent');
+      return;
+    }
 
     // Only send movement intents when joystick is NOT idle
     if (_driveStatus != 'IDLE') {
       final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
+      print('[ControlScreen] Sending drive intent: dir=$dir');
       notifier.sendIntent({'intent': 'drive', 'dir': dir});
     } else {
       // When joystick returns to idle, send stop command
+      print('[ControlScreen] Joystick idle, sending stop command');
       notifier.sendIntent({'intent': 'stop'});
     }
   }
@@ -63,8 +72,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _headY = ((y + 1) / 2 * 100).clamp(0, 100);
     });
 
+    final spineState = ref.read(spineProvider);
     final notifier = ref.read(spineProvider.notifier);
-    if (ref.read(spineProvider).stopped) return;
+
+    print('[ControlScreen] Head joystick: x=$x, y=$y, lr=$_headX, ud=$_headY, stopped=${spineState.stopped}, connected=${spineState.connected}');
+
+    if (spineState.stopped) {
+      print('[ControlScreen] Robot is stopped, not sending head intent');
+      return;
+    }
+
+    print('[ControlScreen] Sending head intent: lr=${_headX.toInt()}, ud=${_headY.toInt()}');
     notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
   }
 
