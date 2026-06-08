@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../../core/constants.dart';
+import '../../features/settings/providers/settings_provider.dart';
 import 'spine_state.dart';
 
 class SpineService extends StateNotifier<SpineState> {
@@ -28,10 +29,11 @@ class SpineService extends StateNotifier<SpineState> {
       final session = Supabase.instance.client.auth.currentSession;
       _jwt = session?.accessToken ?? 'dev';
 
-      // Get spine URL from SharedPreferences (or use default)
-      // For now, use default since SharedPreferences setup happens in main
-      _spineUrl = 'ws://192.168.1.100:4000';
+      // Get spine URL from settings provider (defaults to real robot IP)
+      final settings = _ref.read(settingsProvider);
+      _spineUrl = settings.spineUrl;
 
+      print('[SpineService] Using spine URL from settings: $_spineUrl');
       await connect(_spineUrl!, _jwt!);
     } catch (e) {
       print('[SpineService] Init error: $e');
