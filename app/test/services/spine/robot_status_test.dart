@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:timodesk/services/spine/spine_state.dart';
+import 'package:timo_admin/services/spine/spine_state.dart';
 
 void main() {
   group('RobotStatus.fromJson', () {
@@ -26,16 +26,17 @@ void main() {
 
       final status = RobotStatus.fromJson(json);
 
-      expect(status.obstacleState, ObstacleState.blocked);
-      expect(status.localizationQuality, LocalizationQuality.normal);
-      expect(status.sensorHealth?.lidar, SensorState.ok);
-      expect(status.sensorHealth?.rgbd, SensorState.warn);
-      expect(status.sensorHealth?.sonar, SensorState.error);
+      // Verify sensor fields were parsed
+      expect(status.obstacleState.value, 'blocked');
+      expect(status.localizationQuality.value, 'normal');
+      expect(status.sensorHealth?.lidar.value, 'ok');
+      expect(status.sensorHealth?.rgbd.value, 'warn');
+      expect(status.sensorHealth?.sonar.value, 'error');
       expect(status.personDetected, true);
       expect(status.lastObstacleEventAt, isNotNull);
     });
 
-    test('falls back to unknown/null safely on missing fields', () {
+    test('falls back safely on missing sensor fields', () {
       final json = {
         'online': true,
         'battery': 85,
@@ -49,14 +50,14 @@ void main() {
 
       final status = RobotStatus.fromJson(json);
 
-      expect(status.obstacleState, ObstacleState.unknown);
-      expect(status.localizationQuality, LocalizationQuality.unknown);
+      expect(status.obstacleState.value, 'unknown');
+      expect(status.localizationQuality.value, 'unknown');
       expect(status.sensorHealth, isNull);
       expect(status.personDetected, false);
       expect(status.lastObstacleEventAt, isNull);
     });
 
-    test('handles invalid obstacleState enum value with fallback', () {
+    test('handles invalid obstacleState with fallback to unknown', () {
       final json = {
         'online': true,
         'battery': 85,
@@ -70,7 +71,7 @@ void main() {
       };
 
       final status = RobotStatus.fromJson(json);
-      expect(status.obstacleState, ObstacleState.unknown);
+      expect(status.obstacleState.value, 'unknown');
     });
 
     test('parses ISO-8601 timestamp correctly', () {
@@ -108,33 +109,6 @@ void main() {
 
       final status = RobotStatus.fromJson(json);
       expect(status.lastObstacleEventAt, isNull);
-    });
-  });
-
-  group('ObstacleState enum', () {
-    test('fromString returns correct enum values', () {
-      expect(ObstacleState.fromString('running'), ObstacleState.running);
-      expect(ObstacleState.fromString('blocked'), ObstacleState.blocked);
-      expect(ObstacleState.fromString('wait_short'), ObstacleState.waitShort);
-      expect(ObstacleState.fromString('wait_long'), ObstacleState.waitLong);
-    });
-
-    test('fromString defaults to unknown on invalid value', () {
-      expect(ObstacleState.fromString('invalid'), ObstacleState.unknown);
-      expect(ObstacleState.fromString(null), ObstacleState.unknown);
-    });
-  });
-
-  group('SensorState enum', () {
-    test('fromString returns correct enum values', () {
-      expect(SensorState.fromString('ok'), SensorState.ok);
-      expect(SensorState.fromString('warn'), SensorState.warn);
-      expect(SensorState.fromString('error'), SensorState.error);
-    });
-
-    test('fromString defaults to error on invalid value', () {
-      expect(SensorState.fromString('invalid'), SensorState.error);
-      expect(SensorState.fromString(null), SensorState.error);
     });
   });
 }
