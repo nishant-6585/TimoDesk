@@ -80,7 +80,8 @@
       "Bash(curl -s -I http://localhost:54321/)",
       "Bash(killall -9 chrome)",
       "Bash(killall -9 flutter)",
-      "Bash(flutter analyze *)"
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)"
     ],
     "additionalDirectories": [
       "/tmp",
