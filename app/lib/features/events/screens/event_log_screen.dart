@@ -25,10 +25,46 @@ class EventLogScreen extends ConsumerStatefulWidget {
 class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   String _filter = 'all';
   final List<Map<String, String>> _events = [
-    {'time': 'just now', 'type': 'command_head', 'details': 'lr:45 ud:50', 'session': 'admin'},
+    {'time': 'just now', 'type': 'command_head', 'details': 'lr:50 ud:50', 'session': 'admin'},
     {'time': '2 sec ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
     {'time': '5 sec ago', 'type': 'face_detected', 'details': 'confidence: 87%', 'session': 'system'},
-    {'time': '12 sec ago', 'type': 'safety_stop', 'details': 'triggered by admin', 'session': 'admin'},
+    {'time': '12 sec ago', 'type': 'safety_stop', 'details': 'triggered_by: admin', 'session': 'admin'},
+    {'time': '15 sec ago', 'type': 'command_head', 'details': 'lr:37 ud:57', 'session': 'admin'},
+    {'time': '18 sec ago', 'type': 'command_drive', 'details': 'dir: left', 'session': 'admin'},
+    {'time': '20 sec ago', 'type': 'visitor_checkin', 'details': 'guest #168', 'session': 'system'},
+    {'time': '25 sec ago', 'type': 'command_head', 'details': 'lr:50 ud:49', 'session': 'admin'},
+    {'time': '28 sec ago', 'type': 'command_head', 'details': 'lr:37 ud:54', 'session': 'admin'},
+    {'time': '30 sec ago', 'type': 'command_drive', 'details': 'dir: left', 'session': 'admin'},
+    {'time': '35 sec ago', 'type': 'visitor_checkin', 'details': 'guest #188', 'session': 'system'},
+    {'time': '38 sec ago', 'type': 'visitor_checkin', 'details': 'guest #114', 'session': 'system'},
+    {'time': '40 sec ago', 'type': 'visitor_checkin', 'details': 'guest #177', 'session': 'system'},
+    {'time': '42 sec ago', 'type': 'visitor_checkin', 'details': 'guest #161', 'session': 'system'},
+    {'time': '45 sec ago', 'type': 'command_head', 'details': 'lr:44 ud:40', 'session': 'admin'},
+    {'time': '48 sec ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
+    {'time': '50 sec ago', 'type': 'face_detected', 'details': 'confidence: 92%', 'session': 'system'},
+    {'time': '55 sec ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system'},
+    {'time': '1 min ago', 'type': 'battery_low', 'details': 'level: 25%', 'session': 'system'},
+    {'time': '1.5 min ago', 'type': 'snapshot_saved', 'details': 'visitor_001.jpg', 'session': 'system'},
+    {'time': '2 min ago', 'type': 'command_head', 'details': 'lr:45 ud:55', 'session': 'admin'},
+    {'time': '2.5 min ago', 'type': 'command_drive', 'details': 'dir: back', 'session': 'admin'},
+    {'time': '3 min ago', 'type': 'face_detected', 'details': 'confidence: 78%', 'session': 'system'},
+    {'time': '3.5 min ago', 'type': 'visitor_checkin', 'details': 'guest #200', 'session': 'system'},
+    {'time': '4 min ago', 'type': 'command_head', 'details': 'lr:50 ud:48', 'session': 'admin'},
+    {'time': '4.5 min ago', 'type': 'command_drive', 'details': 'dir: right', 'session': 'admin'},
+    {'time': '5 min ago', 'type': 'safety_stop', 'details': 'triggered_by: system', 'session': 'system'},
+    {'time': '5.5 min ago', 'type': 'admin_session', 'details': 'disconnected', 'session': 'system'},
+    {'time': '6 min ago', 'type': 'command_head', 'details': 'lr:60 ud:40', 'session': 'admin'},
+    {'time': '6.5 min ago', 'type': 'snapshot_saved', 'details': 'detection_001.jpg', 'session': 'system'},
+    {'time': '7 min ago', 'type': 'visitor_checkin', 'details': 'guest #205', 'session': 'system'},
+    {'time': '7.5 min ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
+    {'time': '8 min ago', 'type': 'face_detected', 'details': 'confidence: 85%', 'session': 'system'},
+    {'time': '8.5 min ago', 'type': 'command_head', 'details': 'lr:40 ud:60', 'session': 'admin'},
+    {'time': '9 min ago', 'type': 'battery_low', 'details': 'level: 30%', 'session': 'system'},
+    {'time': '9.5 min ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system'},
+    {'time': '10 min ago', 'type': 'command_drive', 'details': 'dir: left', 'session': 'admin'},
+    {'time': '10.5 min ago', 'type': 'visitor_checkin', 'details': 'guest #212', 'session': 'system'},
+    {'time': '11 min ago', 'type': 'snapshot_saved', 'details': 'reception_001.jpg', 'session': 'system'},
+    {'time': '11.5 min ago', 'type': 'command_head', 'details': 'lr:50 ud:50', 'session': 'admin'},
   ];
 
   @override
@@ -92,7 +128,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
                                   const SizedBox(width: 8),
                                   _FilterChip('system', _filter == 'system', () => setState(() => _filter = 'system')),
                                 ]),
-                                Text('${_events.length} of ${_events.length}', style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textMuted)),
+                                Text('${_events.length} of ${_events.length} events', style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textMuted)),
                               ]),
                               const SizedBox(height: 20),
                               Container(
@@ -170,7 +206,7 @@ class _FilterChip extends StatelessWidget {
   const _FilterChip(this.label, this.active, this.onTap);
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.15) : Colors.transparent, border: Border.all(color: active ? TimoColors.primary : TimoColors.border), borderRadius: BorderRadius.circular(20)), child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: active ? TimoColors.primary : TimoColors.textSecondary)))));
+    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: active ? TimoColors.primary : Colors.transparent, border: Border.all(color: active ? TimoColors.primary : TimoColors.border), borderRadius: BorderRadius.circular(20)), child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: active ? Colors.white : TimoColors.textSecondary)))));
   }
 }
 

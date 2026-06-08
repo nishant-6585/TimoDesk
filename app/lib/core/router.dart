@@ -87,7 +87,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: '/events',
+        path: '/event-log',
         name: 'events',
         builder: (context, state) => const EventLogScreen(),
       ),
