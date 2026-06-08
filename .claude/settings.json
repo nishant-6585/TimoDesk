@@ -71,7 +71,10 @@
       "Bash(sed -i '' 's/GalleryScreen\\(detailId: captureId\\)/GalleryScreen\\(\\)/g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/core/router.dart)",
       "Bash(sed -i '' 's/backdropFilter: ImageFilter.blur\\(sigmaX: 4, sigmaY: 4\\),//g' /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/gallery/screens/gallery_screen.dart)",
       "Bash(sed -i '' \"s/.toList\\(\\).reduce\\(\\(a, b\\) => Row\\(children: \\\\[a, b\\\\]\\)\\)/..toList\\(\\)/g\" /Users/nishantkumar/development/Xboom/Project/TimoDesk/app/lib/features/settings/screens/settings_screen.dart)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(find /Users/nishantkumar/.claude/projects -type f -name \"*.md\" 2>/dev/null | xargs grep -l -i \"map\\\\|patrol\\\\|slam\" 2>/dev/null)",
+      "Read(//Users/nishantkumar/.claude/projects/**)",
+      "Bash(grep -rn \"SdkDemo\\\\|demo\\\\|Demo\\\\|map.*ui\\\\|setMapPoint\\\\|location.*point\" /Users/nishantkumar/development/Xboom/Project/TimoDesk --include=\"*.md\" --include=\"*.dart\" --include=\"*.ts\" ! -path \"*/node_modules/*\" ! -path \"*/.dart_tool/*\")"
     ],
     "additionalDirectories": [
       "/tmp",
