@@ -9,6 +9,7 @@ import '../features/control/screens/control_screen.dart';
 import '../features/live_feed/screens/live_feed_screen.dart';
 import '../features/gallery/screens/gallery_screen.dart';
 import '../features/events/screens/event_log_screen.dart';
+import '../features/patrol_routes/screens/patrol_routes_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 
 // Fix 1: GoRouterRefreshStream listens to Supabase auth state changes
@@ -90,6 +91,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/event-log',
         name: 'events',
         builder: (context, state) => const EventLogScreen(),
+      ),
+      GoRoute(
+        path: '/patrol-routes',
+        name: 'patrol_routes',
+        builder: (context, state) => const PatrolRoutesScreen(),
       ),
       GoRoute(
         path: '/settings',

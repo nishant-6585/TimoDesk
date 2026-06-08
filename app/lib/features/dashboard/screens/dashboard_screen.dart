@@ -231,6 +231,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         'feed': '/live-feed',
                         'gallery': '/gallery',
                         'events': '/event-log',
+                        'patrol_routes': '/patrol-routes',
                         'settings': '/settings',
                       };
                       if (routes.containsKey(route)) {
@@ -510,6 +511,7 @@ class _McSidebar extends StatelessWidget {
               _NavItem('Live Feed', Icons.videocam, active == 'feed', () => onNav('feed')),
               _NavItem('Gallery', Icons.photo_library, active == 'gallery', () => onNav('gallery')),
               _NavItem('Event Log', Icons.receipt_long, active == 'events', () => onNav('events')),
+              _NavItem('Patrol Routes', Icons.route, active == 'patrol_routes', () => onNav('patrol_routes')),
               _NavItem('Settings', Icons.settings, active == 'settings', () => onNav('settings')),
             ],
           ),

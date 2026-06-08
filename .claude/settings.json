@@ -74,7 +74,12 @@
       "Bash(npm test *)",
       "Bash(find /Users/nishantkumar/.claude/projects -type f -name \"*.md\" 2>/dev/null | xargs grep -l -i \"map\\\\|patrol\\\\|slam\" 2>/dev/null)",
       "Read(//Users/nishantkumar/.claude/projects/**)",
-      "Bash(grep -rn \"SdkDemo\\\\|demo\\\\|Demo\\\\|map.*ui\\\\|setMapPoint\\\\|location.*point\" /Users/nishantkumar/development/Xboom/Project/TimoDesk --include=\"*.md\" --include=\"*.dart\" --include=\"*.ts\" ! -path \"*/node_modules/*\" ! -path \"*/.dart_tool/*\")"
+      "Bash(grep -rn \"SdkDemo\\\\|demo\\\\|Demo\\\\|map.*ui\\\\|setMapPoint\\\\|location.*point\" /Users/nishantkumar/development/Xboom/Project/TimoDesk --include=\"*.md\" --include=\"*.dart\" --include=\"*.ts\" ! -path \"*/node_modules/*\" ! -path \"*/.dart_tool/*\")",
+      "Bash(find /Users/nishantkumar/development/Xboom/Project/design_handoff_mission_control -name \"*.md\" -type f 2>/dev/null | sort)",
+      "Read(//Users/nishantkumar/development/Xboom/Project/design_handoff_mission_control/**)",
+      "Bash(curl -s -I http://localhost:54321/)",
+      "Bash(killall -9 chrome)",
+      "Bash(killall -9 flutter)"
     ],
     "additionalDirectories": [
       "/tmp",
