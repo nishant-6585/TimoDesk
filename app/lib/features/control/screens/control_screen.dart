@@ -46,8 +46,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     final notifier = ref.read(spineProvider.notifier);
     if (ref.read(spineProvider).stopped) return;
-    final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
-    notifier.sendIntent({'intent': 'drive', 'dir': dir});
+
+    // Only send movement intents when joystick is NOT idle
+    if (_driveStatus != 'IDLE') {
+      final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
+      notifier.sendIntent({'intent': 'drive', 'dir': dir});
+    } else {
+      // When joystick returns to idle, send stop command
+      notifier.sendIntent({'intent': 'stop'});
+    }
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
