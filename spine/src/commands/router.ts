@@ -43,18 +43,32 @@ export async function routeMessage(
     }
 
     const intent = msg.intent;
+    const intentType = intent.intent;
+
+    console.log('[Router] ======== INTENT RECEIVED ========');
+    console.log(`[Router] Intent type: ${intentType}`);
+    console.log(`[Router] Session ID: ${sessionId}`);
+    console.log(`[Router] Full intent payload: ${JSON.stringify(intent)}`);
 
     // 3. Check safety interlocks
+    console.log('[Router] Checking safety interlocks...');
     const interlock = await checkInterlocks(intent, sessionId);
+
     if (!interlock.allowed) {
+      console.log(`[Router] [INTERLOCK BLOCKED] Reason: ${interlock.reason}`);
       return {
         type: 'error',
         message: interlock.reason || 'Intent blocked by safety interlocks',
       };
     }
 
+    console.log('[Router] [INTERLOCK PASSED] Intent allowed to proceed');
+
     // 4. Route to handler
+    console.log('[Router] Routing to handler...');
     const response = await handleIntent(intent, sessionId, sdk);
+    console.log(`[Router] Handler response type: ${response.type}`);
+    console.log(`[Router] ======== INTENT COMPLETE ========`);
     return response;
   }
 

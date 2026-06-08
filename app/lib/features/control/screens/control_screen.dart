@@ -89,17 +89,26 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   void _resetHead() {
+    print('[ControlScreen] _resetHead called');
     setState(() {
       _headX = 50;
       _headY = 50;
     });
     final notifier = ref.read(spineProvider.notifier);
+    print('[ControlScreen] Sending head reset intent: {intent: head, lr: 50, ud: 50}');
     notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
   }
 
   void _sendGesture(String gesture) {
+    print('[ControlScreen] _sendGesture called with gesture: $gesture');
+    final spineState = ref.read(spineProvider);
+    print('[ControlScreen] Current stopped state: ${spineState.stopped}');
+    if (spineState.stopped) {
+      print('[ControlScreen] Robot is stopped, cannot send gesture $gesture');
+      return;
+    }
     final notifier = ref.read(spineProvider.notifier);
-    if (ref.read(spineProvider).stopped) return;
+    print('[ControlScreen] Sending gesture intent: {intent: $gesture}');
     notifier.sendIntent({'intent': gesture});
   }
 
@@ -318,7 +327,28 @@ class _ControlContent extends StatelessWidget {
         Expanded(child: _GesturesCard(onGesture: onGesture, onCenterHead: onCenterHead)),
       ]),
       const SizedBox(height: 24),
-      SizedBox(width: double.infinity, height: 56, child: ElevatedButton(onPressed: stopped ? () {} : () {}, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(stopped ? 'RESUME' : 'EMERGENCY STOP', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.05)))),
+      SizedBox(width: double.infinity, height: 56, child: ElevatedButton(
+        onPressed: () {
+          final notifier = ref.read(spineProvider.notifier);
+          if (stopped) {
+            print('[ControlScreen] RESUME button pressed');
+            print('[ControlScreen] Sending resume intent: {intent: resume}');
+            notifier.sendIntent({'intent': 'resume'});
+          } else {
+            print('[ControlScreen] EMERGENCY STOP button pressed');
+            print('[ControlScreen] Sending stop intent: {intent: stop}');
+            notifier.sendIntent({'intent': 'stop'});
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFEF4444),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+        ),
+        child: Text(
+          stopped ? 'RESUME' : 'EMERGENCY STOP',
+          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.05)
+        )
+      )),
     ]);
   }
 }

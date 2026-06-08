@@ -71,42 +71,53 @@ export class MockRobotSDK implements RobotSDK {
   }
 
   async drive(dir: 'forward' | 'back' | 'left' | 'right'): Promise<void> {
+    console.log(`[Mock SDK] ======== DRIVE ========`);
+    console.log(`[Mock SDK] Direction: ${dir}`);
+    console.log(`[Mock SDK] Setting isMoving = true`);
     this.status.isMoving = true;
-    console.log(`[Mock SDK] Drive: ${dir}`);
     // Emit movement event so browser gets real-time feedback
     this.eventHandlers.forEach(h => h({
       type: 'robot_status_update',
       payload: { isMoving: true, direction: dir },
       timestamp: Date.now(),
     } as any));
+    console.log('[Mock SDK] Movement event emitted to all handlers');
   }
 
   async stopDrive(): Promise<void> {
+    console.log(`[Mock SDK] ======== STOP DRIVE ========`);
+    console.log(`[Mock SDK] Setting isMoving = false`);
     this.status.isMoving = false;
-    console.log('[Mock SDK] Stop driving');
     // Emit stop event so browser knows robot stopped
     this.eventHandlers.forEach(h => h({
       type: 'robot_status_update',
       payload: { isMoving: false },
       timestamp: Date.now(),
     } as any));
+    console.log('[Mock SDK] Stop event emitted to all handlers');
+    console.log(`[Mock SDK] Robot is now idle`);
   }
 
   async setHeadPosition(lr: number, ud: number): Promise<void> {
+    console.log(`[Mock SDK] ======== SET HEAD POSITION ========`);
+    console.log(`[Mock SDK] Input: LR=${lr}, UD=${ud}`);
     this.status.headLR = Math.max(0, Math.min(100, lr));
     this.status.headUD = Math.max(0, Math.min(100, ud));
-    console.log(`[Mock SDK] Head position: LR=${this.status.headLR}, UD=${this.status.headUD}`);
+    console.log(`[Mock SDK] Clamped: LR=${this.status.headLR}, UD=${this.status.headUD}`);
   }
 
   async setArmPosition(left: number, right: number): Promise<void> {
+    console.log(`[Mock SDK] ======== SET ARM POSITION ========`);
+    console.log(`[Mock SDK] Input: L=${left}, R=${right}`);
     this.status.leftArm = Math.max(0, Math.min(100, left));
     this.status.rightArm = Math.max(0, Math.min(100, right));
-    console.log(`[Mock SDK] Arm position: L=${this.status.leftArm}, R=${this.status.rightArm}`);
+    console.log(`[Mock SDK] Clamped: L=${this.status.leftArm}, R=${this.status.rightArm}`);
   }
 
   async wave(): Promise<void> {
+    console.log(`[Mock SDK] ======== WAVE GESTURE ========`);
     this.status.isWaving = true;
-    console.log('[Mock SDK] Wave started');
+    console.log('[Mock SDK] Wave started (isWaving = true)');
   }
 
   async stopWave(): Promise<void> {
@@ -131,7 +142,18 @@ export class MockRobotSDK implements RobotSDK {
   }
 
   async getStatus(): Promise<RobotStatus> {
-    console.log('[Mock SDK] Status requested', this.status);
+    console.log(`[Mock SDK] ======== GET STATUS ========`);
+    console.log(`[Mock SDK] Current status:`, {
+      online: this.status.online,
+      battery: this.status.battery,
+      isMoving: this.status.isMoving,
+      headLR: this.status.headLR,
+      headUD: this.status.headUD,
+      leftArm: this.status.leftArm,
+      rightArm: this.status.rightArm,
+      isWaving: this.status.isWaving,
+      obstacleState: this.status.obstacleState,
+    });
     return { ...this.status };
   }
 
@@ -241,7 +263,11 @@ export class MockRobotSDK implements RobotSDK {
    * Emit a sensor event to all handlers — unless suppressed by a safety STOP.
    */
   private emitSensorEvent(event: SensorEvent): void {
-    if (this.isStopped()) return; // suppressed while stopped
+    if (this.isStopped()) {
+      console.log(`[Mock SDK] [SUPPRESSED] Sensor event '${event.type}' blocked - system is stopped`);
+      return; // suppressed while stopped
+    }
+    console.log(`[Mock SDK] Emitting sensor event: ${event.type}`);
     this.sensorHandlers.forEach(h => h(event));
   }
 

@@ -44,17 +44,23 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             ? Buffer.concat(rawData).toString()
             : rawData.toString();
 
+          console.log(`[Spine WebSocket] ======== MESSAGE RECEIVED ========`);
+          console.log(`[Spine WebSocket] Session: ${tempSessionId} (authenticated: ${authenticated})`);
+          console.log(`[Spine WebSocket] Raw data: ${data}`);
+
           const msg = JSON.parse(data) as AdminMessage;
+          console.log(`[Spine WebSocket] Parsed message type: ${msg.type}`);
 
           // 1. AUTH — must be first message
           if (msg.type === 'auth') {
+            console.log(`[Spine WebSocket] Processing AUTH message`);
             clearTimeout(authTimeout);
 
             const token = msg.token || '';
             const auth = verifyToken(token);
 
             if (!auth.valid) {
-              console.log(`[Spine] Auth failed: ${auth.reason}`);
+              console.log(`[Spine WebSocket] Auth failed: ${auth.reason}`);
               ws.send(
                 JSON.stringify({
                   type: 'error',
@@ -69,30 +75,28 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             ws.sessionId = tempSessionId;
             ws.userId = auth.userId;
 
-            console.log(`[Spine] Authenticated: ${ws.userId} (session ${ws.sessionId})`);
+            console.log(`[Spine WebSocket] Authenticated: ${ws.userId} (session ${ws.sessionId})`);
             await logAdminSession(ws.sessionId, 'connected', ws.userId);
 
-            ws.send(
-              JSON.stringify({
-                type: 'authenticated',
-                message: `Welcome ${ws.userId}`,
-              } as SpineMessage)
-            );
+            const authResponse = {
+              type: 'authenticated',
+              message: `Welcome ${ws.userId}`,
+            } as SpineMessage;
+            console.log(`[Spine WebSocket] Sending auth response: ${JSON.stringify(authResponse)}`);
+            ws.send(JSON.stringify(authResponse));
 
             // Emit initial robot status
+            console.log(`[Spine WebSocket] Fetching and sending initial robot status`);
             const status = await sdk.getStatus();
-            ws.send(
-              JSON.stringify({
-                type: 'robot_status',
-                status,
-              } as SpineMessage)
-            );
+            const statusResponse = { type: 'robot_status', status } as SpineMessage;
+            ws.send(JSON.stringify(statusResponse));
 
             return;
           }
 
           // 2. All other messages require auth
           if (!authenticated) {
+            console.log(`[Spine WebSocket] Received non-auth message but not authenticated`);
             ws.send(
               JSON.stringify({
                 type: 'error',
@@ -103,10 +107,15 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           }
 
           // 3. Route the message
+          console.log(`[Spine WebSocket] Authenticated message, routing to handler...`);
           const response = await routeMessage(msg, ws.sessionId!, ws.userId!, sdk);
+          console.log(`[Spine WebSocket] Handler returned response type: ${response.type}`);
+          console.log(`[Spine WebSocket] Sending response to client: ${JSON.stringify(response)}`);
           ws.send(JSON.stringify(response));
+          console.log(`[Spine WebSocket] ======== MESSAGE COMPLETE ========`);
         } catch (err) {
-          console.error('[Spine] Message handling error:', err);
+          console.error('[Spine WebSocket] !!!! MESSAGE HANDLING ERROR !!!!');
+          console.error('[Spine WebSocket] Error:', err);
           ws.send(
             JSON.stringify({
               type: 'error',

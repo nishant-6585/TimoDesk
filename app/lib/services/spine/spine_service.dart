@@ -92,35 +92,57 @@ class SpineService extends StateNotifier<SpineState> {
   }
 
   void _handleMessage(Map<String, dynamic> msg) {
-    print('[SpineService] Message: ${msg['type']}');
+    final msgType = msg['type'];
+    print('[SpineService] ======== MESSAGE RECEIVED ========');
+    print('[SpineService] Type: $msgType');
+    print('[SpineService] Full payload: $msg');
 
-    if (msg['type'] == 'authenticated') {
+    if (msgType == 'error') {
+      // Log detailed error message
+      final errorMsg = msg['message'];
+      print('[SpineService] [ERROR] Message: $errorMsg');
+      print('[SpineService] [ERROR] This error blocks the intent from executing');
+    } else if (msgType == 'authenticated') {
       // Cancel connection timeout - we got authenticated
+      print('[SpineService] [AUTH SUCCESS] Connected and authenticated');
       _connectionTimeoutTimer?.cancel();
       // Request initial status
+      print('[SpineService] Requesting initial robot status...');
       sendIntent({'intent': 'get_status'});
-    } else if (msg['type'] == 'robot_status' && msg['status'] != null) {
+    } else if (msgType == 'robot_status' && msg['status'] != null) {
+      print('[SpineService] [STATUS UPDATE] Received robot status');
       final status = RobotStatus.fromJson(msg['status']);
+      print('[SpineService] Status details: online=${status.online}, stopped=${status.stopped ?? false}, obstacleState=${status.obstacleState}');
       state = state.copyWith(status: status);
-    } else if (msg['type'] == 'stopped') {
+    } else if (msgType == 'stopped') {
+      print('[SpineService] [STOP ACK] System stopped - updating UI state to stopped=true');
       state = state.copyWith(stopped: true);
-    } else if (msg['type'] == 'resumed') {
+    } else if (msgType == 'resumed') {
+      print('[SpineService] [RESUME ACK] System resumed - updating UI state to stopped=false');
       state = state.copyWith(stopped: false);
-    } else if (msg['type'] == 'event') {
+    } else if (msgType == 'event') {
       final eventType = msg['event'] as String?;
       final eventPayload = msg['eventPayload'] as Map<String, dynamic>?;
       // Log for now — Phase 1B will wire these to UI
       print('[SpineService] Robot event: $eventType payload: $eventPayload');
+    } else if (msgType == 'ack') {
+      print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
     }
+    print('[SpineService] ======== END MESSAGE ========');
   }
 
   void sendIntent(Map<String, dynamic> intent) {
     if (!state.connected) {
-      print('[SpineService] Not connected, dropping intent: $intent');
+      print('[SpineService] !!!! NOT CONNECTED - DROPPING INTENT !!!!');
+      print('[SpineService] Dropped intent: $intent');
       return;
     }
-    print('[SpineService] Sending intent: $intent');
+    print('[SpineService] ======== SENDING INTENT ========');
+    print('[SpineService] Intent type: ${intent['intent']}');
+    print('[SpineService] Full intent: $intent');
+    print('[SpineService] Sending via WebSocket to Spine...');
     _channel?.sink.add(jsonEncode({'type': 'intent', 'intent': intent}));
+    print('[SpineService] Intent sent, waiting for response...');
   }
 
   void _onDisconnect() {

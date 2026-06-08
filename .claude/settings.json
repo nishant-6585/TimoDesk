@@ -112,7 +112,16 @@
       "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8082')",
       "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8083')",
       "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/8080')",
-      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8888')"
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8888')",
+      "Bash(timeout 1 bash -c 'exec 3<>/dev/tcp/192.168.10.18/4000')",
+      "Bash(killall -9 dart)",
+      "Bash(pgrep -f \"flutter run.*chrome\")",
+      "Bash(git commit -m 'debug\\(app\\): add logging to joystick handlers *)",
+      "Bash(git commit -m 'fix\\(app\\): use localhost for Spine WebSocket in development *)",
+      "Bash(git commit -m 'clean: remove debug logging from joystick handlers *)",
+      "Bash(git commit -m 'fix\\(app\\): throttle joystick intent updates to prevent UI freezing *)",
+      "Bash(git commit -m 'fix\\(app\\): reduce joystick deadzone from 0.28 to 0.15 *)",
+      "Bash(git commit -m 'fix\\(app\\): reduce deadzone to 0.10 and increase throttle to prevent UI freeze *)"
     ],
     "additionalDirectories": [
       "/tmp",
