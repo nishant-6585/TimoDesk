@@ -83,7 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'gallery_detail',
         builder: (context, state) {
           final captureId = state.pathParameters['captureId']!;
-          return GalleryScreen(detailId: captureId);
+          return GalleryScreen();
         },
       ),
       GoRoute(

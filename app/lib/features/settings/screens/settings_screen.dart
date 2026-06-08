@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
-import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -12,184 +12,279 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  late TextEditingController _spineUrlController;
-  late TextEditingController _robotIpController;
+  String _robotIp = '192.168.1.42';
+  String _port = '8080';
+  String _signalingServer = 'ws://192.168.1.42:8081';
+  String _reconnectTimeout = '5000';
+  bool _collisionSafety = true;
+  bool _autoSnapshot = false;
+  bool _notifications = true;
+  String _speed = '0.5x';
 
-  @override
-  void initState() {
-    super.initState();
-    final settings = ref.read(settingsProvider);
-    _spineUrlController = TextEditingController(text: settings.spineUrl);
-    _robotIpController = TextEditingController(text: settings.robotIp);
-  }
-
-  @override
-  void dispose() {
-    _spineUrlController.dispose();
-    _robotIpController.dispose();
-    super.dispose();
-  }
-
-  void _saveSettings() {
-    ref.read(settingsProvider.notifier).setSpineUrl(_spineUrlController.text);
-    ref.read(settingsProvider.notifier).setRobotIp(_robotIpController.text);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Settings saved')),
-    );
-  }
-
-  void _testConnection() async {
-    final success = await ref.read(settingsProvider.notifier).testConnection(_spineUrlController.text);
-
+  void _testConnection() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(success ? 'Connection OK' : 'Connection failed'),
-        backgroundColor: success ? TimoColors.success : TimoColors.error,
+        content: Row(children: [Icon(Icons.check_circle, color: TimoColors.success, size: 20), const SizedBox(width: 12), Text('Connection successful', style: GoogleFonts.inter(fontSize: 13))]),
+        backgroundColor: TimoColors.cardTop,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsProvider);
+    final compact = MediaQuery.of(context).size.width < 900;
 
     return Scaffold(
       backgroundColor: TimoColors.background,
-      appBar: AppBar(
-        title: const Text('Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Network Configuration',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: TimoColors.textPrimary,
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Container(
+                height: 64,
+                decoration: BoxDecoration(color: TimoColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: TimoColors.border))),
+                padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
+                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Row(children: [
+                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [TimoColors.primary, TimoColors.primaryDark]), boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
+                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0))])]
+                  ]),
+                  if (!compact) Text('Settings', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                  Row(children: [
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: TimoColors.success.withOpacity(0.08), border: Border.all(color: TimoColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: TimoColors.success))])),
+                    const SizedBox(width: 12),
+                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
+                  ]),
+                ]),
               ),
-            ),
-            const SizedBox(height: 24),
-
-            // Spine URL
-            Text(
-              'Spine URL',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: TimoColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _spineUrlController,
-              decoration: const InputDecoration(
-                hintText: 'ws://192.168.1.x:4000',
-                prefixIcon: Icon(Icons.cloud, color: TimoColors.textSecondary),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Robot IP
-            Text(
-              'Robot IP (for MJPEG)',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: TimoColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _robotIpController,
-              decoration: const InputDecoration(
-                hintText: '192.168.1.x',
-                prefixIcon: Icon(Icons.router, color: TimoColors.textSecondary),
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _saveSettings,
-                    child: const Text('Save'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: settings.isLoading ? null : _testConnection,
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: TimoColors.primary),
-                    ),
-                    child: settings.isLoading
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 1),
-                          )
-                        : const Text('Test Connection'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 48),
-
-            // About section
-            Text(
-              'About',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: TimoColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: TimoColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: TimoColors.border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'App Version',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: TimoColors.textSecondary,
+              Expanded(
+                child: Row(
+                  children: [
+                    if (!compact) _Sidebar(onNav: (route) {
+                      final routes = {'dashboard': '/', 'control': '/control', 'feed': '/live-feed', 'gallery': '/gallery', 'events': '/event-log', 'settings': '/settings'};
+                      if (routes.containsKey(route)) context.go(routes[route]!);
+                    }),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 760),
+                            child: Column(children: [
+                              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Row(children: [Icon(Icons.settings, size: 28, color: TimoColors.primary), const SizedBox(width: 12), Text('Settings', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+                                const SizedBox(height: 4),
+                                Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                              ]),
+                              const SizedBox(height: 24),
+                              _SettingCard('NETWORK', [
+                                _SettingField('Robot IP', _robotIp, (v) => setState(() => _robotIp = v)),
+                                _SettingField('Port', _port, (v) => setState(() => _port = v)),
+                                _SettingField('Signaling Server', _signalingServer, (v) => setState(() => _signalingServer = v)),
+                                _SettingField('Reconnect timeout', _reconnectTimeout, (v) => setState(() => _reconnectTimeout = v)),
+                              ], const SizedBox(height: 16), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: _testConnection, icon: const Icon(Icons.wifi, size: 16), label: Text('Test connection', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: TimoColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))),
+                              const SizedBox(height: 20),
+                              _SafetyCard(
+                                collisionSafety: _collisionSafety,
+                                autoSnapshot: _autoSnapshot,
+                                notifications: _notifications,
+                                speed: _speed,
+                                onCollisionChange: (v) => setState(() => _collisionSafety = v),
+                                onSnapshotChange: (v) => setState(() => _autoSnapshot = v),
+                                onNotificationsChange: (v) => setState(() => _notifications = v),
+                                onSpeedChange: (v) => setState(() => _speed = v),
+                              ),
+                              const SizedBox(height: 20),
+                              _AccountCard(),
+                            ]),
+                          ),
                         ),
                       ),
-                      Text(
-                        '0.1.0',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: TimoColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Built by xboom · Land + Air + Water',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: TimoColors.textSecondary,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Sidebar extends StatelessWidget {
+  final Function(String) onNav;
+  const _Sidebar({required this.onNav});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(color: TimoColors.surface, border: const Border(right: BorderSide(color: TimoColors.border))),
+      child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
+        _NavItem('Dashboard', Icons.space_dashboard, false, () => onNav('dashboard')),
+        _NavItem('Control', Icons.sports_esports, false, () => onNav('control')),
+        _NavItem('Live Feed', Icons.videocam, false, () => onNav('feed')),
+        _NavItem('Gallery', Icons.photo_library, false, () => onNav('gallery')),
+        _NavItem('Event Log', Icons.receipt_long, false, () => onNav('events')),
+        _NavItem('Settings', Icons.settings, true, () => onNav('settings')),
+      ]))]),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+  const _NavItem(this.label, this.icon, this.active, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(padding: const EdgeInsets.only(bottom: 4), child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? TimoColors.primary : TimoColors.textSecondary)))]),
+    ))));
+  }
+}
+
+class _SettingCard extends StatelessWidget {
+  final String title;
+  final List<Widget> fields;
+  final Widget spacing;
+  final Widget button;
+  const _SettingCard(this.title, this.fields, this.spacing, this.button);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        const SizedBox(height: 12),
+        GridView.count(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), childAspectRatio: 3, children: fields),
+        spacing,
+        button,
+      ]),
+    );
+  }
+}
+
+class _SettingField extends StatefulWidget {
+  final String label, initialValue;
+  final Function(String) onChanged;
+  const _SettingField(this.label, this.initialValue, this.onChanged);
+  @override
+  State<_SettingField> createState() => _SettingFieldState();
+}
+
+class _SettingFieldState extends State<_SettingField> {
+  late TextEditingController _controller;
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(widget.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary, height: 1.0)),
+      const SizedBox(height: 4),
+      TextField(
+        controller: _controller,
+        onChanged: widget.onChanged,
+        style: GoogleFonts.jetBrainsMono(fontSize: 12),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: TimoColors.primary.withOpacity(0.6), width: 1.5)),
+          filled: true,
+          fillColor: const Color(0xFF141414),
         ),
       ),
+    ]);
+  }
+}
+
+class _SafetyCard extends StatelessWidget {
+  final bool collisionSafety, autoSnapshot, notifications;
+  final String speed;
+  final Function(bool) onCollisionChange, onSnapshotChange, onNotificationsChange;
+  final Function(String) onSpeedChange;
+
+  const _SafetyCard({
+    required this.collisionSafety,
+    required this.autoSnapshot,
+    required this.notifications,
+    required this.speed,
+    required this.onCollisionChange,
+    required this.onSnapshotChange,
+    required this.onNotificationsChange,
+    required this.onSpeedChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('SAFETY & BEHAVIOR', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        const SizedBox(height: 16),
+        _SettingRow('Collision safety stop', collisionSafety, (v) => onCollisionChange(v)),
+        _SettingRow('Auto-snapshot on face detect', autoSnapshot, (v) => onSnapshotChange(v)),
+        _SettingRow('Event notifications', notifications, (v) => onNotificationsChange(v)),
+        Container(padding: const EdgeInsets.symmetric(vertical: 12), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Default drive speed', style: GoogleFonts.inter(fontSize: 12)), Row(children: ['0.3x', '0.5x', '0.8x'].asMap().entries.map((e) => [Padding(padding: EdgeInsets.only(left: e.key == 0 ? 0 : 8), child: _SpeedChip(e.value, speed == e.value, () => onSpeedChange(e.value)))]).expand((x) => x).toList())])),
+      ]),
+    );
+  }
+}
+
+class _SettingRow extends StatelessWidget {
+  final String label;
+  final bool value;
+  final Function(bool) onChanged;
+  const _SettingRow(this.label, this.value, this.onChanged);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 12)),
+        Switch(value: value, onChanged: onChanged, activeColor: TimoColors.primary),
+      ]),
+    );
+  }
+}
+
+class _SpeedChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _SpeedChip(this.label, this.active, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: active ? TimoColors.primary : TimoColors.inset, border: Border.all(color: active ? TimoColors.primary : TimoColors.border), borderRadius: BorderRadius.circular(6)), child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: active ? Colors.white : TimoColors.textSecondary)))));
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('ACCOUNT', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        const SizedBox(height: 16),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nishant K.', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('admin · NK · last login just now', style: GoogleFonts.inter(fontSize: 10, color: TimoColors.textSecondary))]), TextButton(onPressed: () {}, child: Text('Sign out', style: GoogleFonts.inter(fontSize: 12)))]),
+        const SizedBox(height: 16),
+        Divider(color: TimoColors.border, height: 1),
+        const SizedBox(height: 16),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('v2.4.1 · xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 10, color: TimoColors.textSecondary))]), Text('build 2406', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.textMuted))]),
+      ]),
     );
   }
 }
