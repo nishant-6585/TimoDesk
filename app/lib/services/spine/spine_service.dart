@@ -10,9 +10,12 @@ import 'spine_state.dart';
 class SpineService extends StateNotifier<SpineState> {
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
+  Timer? _connectionTimeoutTimer;
   late Ref _ref;
   String? _spineUrl;
   String? _jwt;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectDelay = 30000; // 30 seconds max
 
   SpineService(Ref ref) : super(SpineState.initial()) {
     _ref = ref;
@@ -50,8 +53,18 @@ class SpineService extends StateNotifier<SpineState> {
       _spineUrl = spineUrl;
       _jwt = jwt;
 
-      print('[SpineService] Connecting to $spineUrl');
+      print('[SpineService] Connecting to $spineUrl (attempt ${_reconnectAttempts + 1})');
       _channel = WebSocketChannel.connect(Uri.parse(spineUrl));
+
+      // Add connection timeout - fail if not authenticated within 10 seconds
+      _connectionTimeoutTimer?.cancel();
+      _connectionTimeoutTimer = Timer(const Duration(seconds: 10), () {
+        if (!state.connected) {
+          print('[SpineService] Connection timeout - no auth response');
+          _channel?.sink.close();
+          _onDisconnect();
+        }
+      });
 
       // Send auth first
       _channel!.sink.add(jsonEncode({'type': 'auth', 'token': jwt}));
@@ -67,7 +80,9 @@ class SpineService extends StateNotifier<SpineState> {
       );
 
       state = state.copyWith(connected: true);
-      print('[SpineService] Connected');
+      _reconnectAttempts = 0; // Reset attempts on successful connection
+      _connectionTimeoutTimer?.cancel();
+      print('[SpineService] Connected successfully');
     } catch (e) {
       print('[SpineService] Connection error: $e');
       state = state.copyWith(connected: false);
@@ -79,6 +94,8 @@ class SpineService extends StateNotifier<SpineState> {
     print('[SpineService] Message: ${msg['type']}');
 
     if (msg['type'] == 'authenticated') {
+      // Cancel connection timeout - we got authenticated
+      _connectionTimeoutTimer?.cancel();
       // Request initial status
       sendIntent({'intent': 'get_status'});
     } else if (msg['type'] == 'robot_status' && msg['status'] != null) {
@@ -107,18 +124,29 @@ class SpineService extends StateNotifier<SpineState> {
 
   void _onDisconnect() {
     print('[SpineService] Disconnected');
+    _connectionTimeoutTimer?.cancel();
     state = state.copyWith(connected: false);
     _scheduleReconnect();
   }
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    print('[SpineService] Scheduling reconnect in ${spineReconnectDelay.inSeconds}s');
-    _reconnectTimer = Timer(spineReconnectDelay, () {
+
+    // Exponential backoff: 3s, 6s, 12s, 24s, 30s max
+    final baseDelayMs = spineReconnectDelay.inMilliseconds;
+    final exponentialDelayMs = baseDelayMs * (1 << _reconnectAttempts); // 2^attempts
+    final delayMs = exponentialDelayMs.clamp(baseDelayMs, _maxReconnectDelay);
+    final delay = Duration(milliseconds: delayMs);
+
+    _reconnectAttempts++;
+
+    print('[SpineService] Scheduling reconnect in ${(delayMs / 1000).toStringAsFixed(1)}s (attempt $_reconnectAttempts)');
+    _reconnectTimer = Timer(delay, () {
       // Re-fetch JWT in case it expired
       final session = Supabase.instance.client.auth.currentSession;
       final newJwt = session?.accessToken ?? 'dev';
-      final url = _spineUrl ?? 'ws://192.168.1.100:4000';
+      // HARDCODED: Always use real robot IP
+      final url = _spineUrl ?? 'ws://192.168.10.18:4000';
       connect(url, newJwt);
     });
   }
@@ -126,6 +154,7 @@ class SpineService extends StateNotifier<SpineState> {
   @override
   void dispose() {
     _reconnectTimer?.cancel();
+    _connectionTimeoutTimer?.cancel();
     _channel?.sink.close();
     super.dispose();
   }
