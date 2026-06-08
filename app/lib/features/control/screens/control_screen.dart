@@ -35,7 +35,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     setState(() {
       _driveX = x;
       _driveY = y;
-      const deadzone = 0.28;
+      const deadzone = 0.15;  // 15% deadzone (was 28%, too high)
       if (mag < deadzone) {
         _driveStatus = 'IDLE';
         _throttle = 0;
