@@ -63,10 +63,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (_driveStatus != 'IDLE') {
       final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
       notifier.sendIntent({'intent': 'drive', 'dir': dir});
-    } else {
-      // When joystick returns to idle, send stop command
-      notifier.sendIntent({'intent': 'stop'});
     }
+    // When joystick returns to idle, do NOT send stop command
+    // (that would trigger global safety stop and freeze the UI)
+    // Instead, robot will naturally coast to a stop
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
