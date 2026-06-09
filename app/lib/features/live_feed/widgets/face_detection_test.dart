@@ -38,9 +38,9 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
       await _loadFaceApiScript();
       _addLog('✅ face-api.js loaded');
 
-      // Step 2: Wait for models to load
+      // Step 2: Initialize face-api models
       _addLog('Step 2: Loading face detection models...');
-      await Future.delayed(const Duration(seconds: 3));
+      await _initializeFaceApiModels();
       _addLog('✅ Models ready');
 
       // Step 3: Find the MJPEG img element
@@ -82,6 +82,36 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
 
     html.document.head!.append(script);
     return completer.future;
+  }
+
+  Future<void> _initializeFaceApiModels() async {
+    try {
+      final modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model/';
+
+      // Load models via JS interop
+      final jsCode = '''
+        (async function() {
+          const MODEL_URL = '$modelUrl';
+          await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+          return true;
+        })()
+      ''';
+
+      final jsFunc = js.context.callMethod('eval', [jsCode]);
+      final completer = Completer<bool>();
+
+      jsFunc.callMethod('then', [
+        (result) => completer.complete(result == true),
+      ]).callMethod('catch', [
+        (error) => completer.completeError('Model load failed: $error'),
+      ]);
+
+      return completer.future;
+    } catch (e) {
+      throw Exception('Failed to initialize models: $e');
+    }
   }
 
   html.ImageElement? _findMjpegImage() {
