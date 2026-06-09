@@ -1,0 +1,42 @@
+{
+  "test-identity-1": {
+    "full_name": "Test Identity 1",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-PLACEHOLDER-1",
+    "consent_at": "2026-06-09T12:36:18.957Z",
+    "consent_method": "test_dataset"
+  },
+  "test-identity-2": {
+    "full_name": "Test Identity 2",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-PLACEHOLDER-2",
+    "consent_at": "2026-06-09T12:36:18.958Z",
+    "consent_method": "test_dataset"
+  },
+  "test-identity-3": {
+    "full_name": "Test Identity 3",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-PLACEHOLDER-3",
+    "consent_at": "2026-06-09T12:36:18.958Z",
+    "consent_method": "test_dataset"
+  },
+  "test-identity-4": {
+    "full_name": "Test Identity 4",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-PLACEHOLDER-4",
+    "consent_at": "2026-06-09T12:36:18.958Z",
+    "consent_method": "test_dataset"
+  },
+  "test-identity-5": {
+    "full_name": "Test Identity 5",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-PLACEHOLDER-5",
+    "consent_at": "2026-06-09T12:36:18.958Z",
+    "consent_method": "test_dataset"
+  }
+}

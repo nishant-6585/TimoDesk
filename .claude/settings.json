@@ -153,7 +153,20 @@
       "Bash(git commit -m 'chore\\(spine\\): update initial battery to match real robot *)",
       "Bash(git commit -m 'refactor: remove old battery monitoring implementation *)",
       "Bash(git commit -m 'feat: implement Approach A - HTTP endpoint for battery *)",
-      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part A - enrollment pipeline *)"
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part A - enrollment pipeline *)",
+      "Bash(curl -L -o lfw.tgz http://vis-www.cs.umass.edu/lfw/lfw.tgz)",
+      "Bash(tar -xzf lfw.tgz)",
+      "Bash(chmod +x prepare_test_data.sh)",
+      "Bash(./prepare_test_data.sh)",
+      "Bash(node create_test_faces.js)",
+      "Bash(npx supabase *)",
+      "Bash(node --loader ts-node/esm enroll.ts --consent-manifest consent_manifest_test.json)",
+      "Bash(node enroll.js --consent-manifest consent_manifest_test.json)",
+      "Bash(npm install *)",
+      "Bash(npm rebuild *)",
+      "Bash(SUPABASE_URL=https://agjygqllxdclyzfxidgy.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanlncWxseGRjbHl6ZnhpZGd5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY1NjQzMiwiZXhwIjoyMDk2MjMyNDMyfQ.nInesiBkIz9UsYGPGqA3604IrBPLnhkKN_FQ5HAGy-Q node enroll.js --consent-manifest consent_manifest_test.json)",
+      "Bash(tee enroll_output.log)",
+      "Bash(SUPABASE_URL=https://agjygqllxdclyzfxidgy.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanlncWxseGRjbHl6ZnhpZGd5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY1NjQzMiwiZXhwIjoyMDk2MjMyNDMyfQ.nInesiBkIz9UsYGPGqA3604IrBPLnhkKN_FQ5HAGy-Q node seed-test-embeddings.js)"
     ],
     "additionalDirectories": [
       "/tmp",
