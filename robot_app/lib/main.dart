@@ -399,9 +399,14 @@ final armProvider =
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-void main() {
+void main() async {
   // Start battery HTTP server
-  BatteryService().start();
+  final batteryService = BatteryService();
+  batteryService.start();
+
+  // Set initial battery to a reasonable default
+  // Phase 2: Will query CSJBot SDK directly for actual value
+  BatteryService.setBattery(85);
 
   runApp(const ProviderScope(child: _App()));
 }
