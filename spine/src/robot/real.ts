@@ -123,12 +123,15 @@ export class RealRobotSDK implements RobotSDK {
         };
         this.eventHandlers.forEach(h => h(event));
       } else if (msg.type === 'battery_update') {
-        this.status.battery = msg.payload?.level ?? this.status.battery;
+        const batteryLevel = msg.payload?.level ?? msg.level ?? this.status.battery;
+        this.status.battery = batteryLevel;
+        console.log(`[Real SDK] Battery updated: ${batteryLevel}%`);
         const event: RobotEvent = {
           type: 'battery_update',
           payload: { level: this.status.battery },
           timestamp: Date.now(),
         };
+        console.log('[Real SDK] Emitting battery event:', event);
         this.eventHandlers.forEach(h => h(event));
       }
     } catch (err) {
