@@ -13,6 +13,7 @@ Widget buildMjpegView(BuildContext context, String url, BoxFit fit) {
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
       final img = html.ImageElement()
         ..src = url
+        ..crossOrigin = 'anonymous'  // Allow canvas pixel-reading for face detection
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = fit == BoxFit.contain ? 'contain' : 'cover'
