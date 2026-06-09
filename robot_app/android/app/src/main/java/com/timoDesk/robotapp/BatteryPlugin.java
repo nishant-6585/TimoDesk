@@ -7,10 +7,13 @@ import android.content.Intent;
 import android.content.BroadcastReceiver;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
+import io.flutter.plugin.common.MethodChannel.MethodCall;
+import io.flutter.plugin.common.MethodChannel.Result;
 import java.util.HashMap;
 import java.util.Map;
 
-public class BatteryPlugin implements MethodChannel.MethodCallHandler {
+public class BatteryPlugin implements MethodCallHandler {
     private static final String BATTERY_CHANNEL = "com.timoDesk/battery";
     private final Context context;
     private MethodChannel methodChannel;
@@ -28,7 +31,7 @@ public class BatteryPlugin implements MethodChannel.MethodCallHandler {
     }
 
     @Override
-    public void onMethodCall(MethodChannel.MethodCall call, MethodChannel.Result result) {
+    public void onMethodCall(MethodCall call, Result result) {
         switch (call.method) {
             case "getBatteryLevel":
                 getBatteryLevel(result);
@@ -77,7 +80,7 @@ public class BatteryPlugin implements MethodChannel.MethodCallHandler {
         }
     }
 
-    private void broadcastBatteryUpdate(MethodChannel.MethodCall call, MethodChannel.Result result) {
+    private void broadcastBatteryUpdate(MethodCall call, Result result) {
         try {
             // Extract battery data from arguments
             @SuppressWarnings("unchecked")

@@ -3,8 +3,7 @@ package com.timoDesk.robotapp;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import org.json.JSONObject;
 
 /**
  * Singleton that manages broadcasting messages to all connected WebSocket clients.
@@ -13,7 +12,6 @@ import com.google.gson.JsonObject;
 public class WebSocketBroadcaster {
     private static WebSocketBroadcaster instance;
     private final Set<WebSocketClient> connectedClients = new CopyOnWriteArraySet<>();
-    private final Gson gson = new Gson();
 
     private WebSocketBroadcaster() {}
 
@@ -44,23 +42,27 @@ public class WebSocketBroadcaster {
      * Broadcast battery update to all connected clients
      */
     public void broadcastBatteryUpdate(int batteryPercentage) {
-        JsonObject message = new JsonObject();
-        message.addProperty("type", "battery_update");
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "battery_update");
 
-        JsonObject payload = new JsonObject();
-        payload.addProperty("level", batteryPercentage);
-        message.add("payload", payload);
+            JSONObject payload = new JSONObject();
+            payload.put("level", batteryPercentage);
+            message.put("payload", payload);
 
-        String jsonMessage = gson.toJson(message);
-        System.out.println("[WebSocketBroadcaster] Broadcasting battery update: " + jsonMessage);
-        System.out.println("[WebSocketBroadcaster] Total clients: " + connectedClients.size());
+            String jsonMessage = message.toString();
+            System.out.println("[WebSocketBroadcaster] Broadcasting battery update: " + jsonMessage);
+            System.out.println("[WebSocketBroadcaster] Total clients: " + connectedClients.size());
 
-        for (WebSocketClient client : connectedClients) {
-            try {
-                client.sendMessage(jsonMessage);
-            } catch (Exception e) {
-                System.err.println("[WebSocketBroadcaster] Error sending to client: " + e.getMessage());
+            for (WebSocketClient client : connectedClients) {
+                try {
+                    client.sendMessage(jsonMessage);
+                } catch (Exception e) {
+                    System.err.println("[WebSocketBroadcaster] Error sending to client: " + e.getMessage());
+                }
             }
+        } catch (Exception e) {
+            System.err.println("[WebSocketBroadcaster] Error creating message: " + e.getMessage());
         }
     }
 
