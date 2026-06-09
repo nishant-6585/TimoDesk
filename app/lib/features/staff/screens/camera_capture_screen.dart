@@ -41,7 +41,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   void initState() {
     super.initState();
     _initializeCamera();
-    _faceDetector = FaceDetector();
+    _faceDetector = FaceDetector(options: FaceDetectorOptions());
   }
 
   Future<void> _initializeCamera() async {
@@ -85,8 +85,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       try {
         final inputImage = _convertToInputImage(image);
         final faces = await _faceDetector.processImage(inputImage);
-
-        inputImage.close();
 
         setState(() {
           if (faces.isEmpty) {
@@ -154,7 +152,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       buffer.putUint8List(plane.bytes);
     }
 
-    final bytes = buffer.done().asUint8List();
+    final bytes = buffer.done().buffer.asUint8List();
 
     final imageSize = Size(image.width.toDouble(), image.height.toDouble());
     final inputImageFormat = InputImageFormatValue.fromRawValue(image.format.raw);
