@@ -7,6 +7,7 @@ import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../widgets/mjpeg_view.dart';
+import '../widgets/face_detection_test.dart';
 
 class LiveFeedScreen extends ConsumerStatefulWidget {
   const LiveFeedScreen({Key? key}) : super(key: key);
@@ -32,6 +33,18 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
 
   void _toggleRecord() {
     setState(() => _isRecording = !_isRecording);
+  }
+
+  void _openFaceDetectionTest() {
+    final settings = ref.read(settingsProvider);
+    final url = 'http://${settings.robotIp}:${settings.robotCameraPort}/stream';
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: FaceDetectionTest(mjpegUrl: url),
+      ),
+    );
   }
 
   @override
@@ -85,6 +98,12 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                 ]),
                                 Row(children: [
                                   TextButton.icon(onPressed: _takeSnapshot, icon: const Icon(Icons.photo_camera, size: 20), label: Text('Snapshot', style: GoogleFonts.inter(fontSize: 13))),
+                                  const SizedBox(width: 12),
+                                  TextButton.icon(
+                                    onPressed: _openFaceDetectionTest,
+                                    icon: const Icon(Icons.face, size: 20),
+                                    label: Text('Face Test', style: GoogleFonts.inter(fontSize: 13)),
+                                  ),
                                   const SizedBox(width: 12),
                                   ElevatedButton(
                                     onPressed: _toggleRecord,

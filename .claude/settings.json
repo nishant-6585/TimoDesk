@@ -187,7 +187,8 @@
       "Bash(git commit -m 'fix\\(navigation\\): add enrollment route to sidebar routes map *)",
       "Bash(git push *)",
       "Bash(git commit -m 'fix\\(blockers\\): CORS OPTIONS + robust MJPEG frame extraction *)",
-      "Bash(git commit -m 'feat\\(milestone-a\\): face-api.js detection test + CORS setup *)"
+      "Bash(git commit -m 'feat\\(milestone-a\\): face-api.js detection test + CORS setup *)",
+      "Bash(git commit -m 'feat\\(milestone-a\\): wire face detection test into live feed *)"
     ],
     "additionalDirectories": [
       "/tmp",
