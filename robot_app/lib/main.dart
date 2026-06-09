@@ -223,8 +223,7 @@ class BatteryNotifier extends StateNotifier<BatteryState> {
 }
 
 final batteryProvider =
-    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier())
-        .keepAlive();
+    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier());
 
 class StreamNotifier extends StateNotifier<StreamState> {
   StreamNotifier() : super(const StreamState()) {
@@ -508,6 +507,9 @@ class _StreamScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Start battery monitoring (keeps BatteryNotifier alive)
+    ref.watch(batteryProvider);
+
     final mjpeg   = ref.watch(streamProvider);
     final mNotifier = ref.read(streamProvider.notifier);
     final head = ref.watch(headProvider);
