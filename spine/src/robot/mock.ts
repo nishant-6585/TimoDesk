@@ -159,8 +159,19 @@ export class MockRobotSDK implements RobotSDK {
 
   onEvent(handler: (event: RobotEvent) => void): void {
     this.eventHandlers.push(handler);
-    // DISABLED: All mock events (face_detected, battery_update, etc)
-    // Only real events (drive, head) are sent by their respective handlers
+
+    // Emit battery_update every 60 seconds (for admin dashboard)
+    const batteryInterval = setInterval(() => {
+      this.status.battery = Math.max(10, this.status.battery - 1); // slowly drain
+      const event: RobotEvent = {
+        type: 'battery_update',
+        payload: { level: this.status.battery },
+        timestamp: Date.now(),
+      };
+      this.eventHandlers.forEach(h => h(event));
+    }, 60000); // every 60 seconds
+
+    this.eventIntervals.push(batteryInterval);
   }
 
   onSensorEvent(handler: (event: SensorEvent) => void): void {

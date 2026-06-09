@@ -123,8 +123,17 @@ class SpineService extends StateNotifier<SpineState> {
     } else if (msgType == 'event') {
       final eventType = msg['event'] as String?;
       final eventPayload = msg['eventPayload'] as Map<String, dynamic>?;
-      // Log for now — Phase 1B will wire these to UI
       print('[SpineService] Robot event: $eventType payload: $eventPayload');
+
+      // Handle battery_update events
+      if (eventType == 'battery_update' && eventPayload != null) {
+        final batteryLevel = eventPayload['payload']?['level'] as int?;
+        if (batteryLevel != null && state.status != null) {
+          print('[SpineService] [BATTERY UPDATE] Battery: $batteryLevel%');
+          final updatedStatus = state.status!.copyWith(battery: batteryLevel);
+          state = state.copyWith(status: updatedStatus);
+        }
+      }
     } else if (msgType == 'ack') {
       print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
     }
