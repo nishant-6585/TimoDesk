@@ -121,7 +121,21 @@
       "Bash(git commit -m 'clean: remove debug logging from joystick handlers *)",
       "Bash(git commit -m 'fix\\(app\\): throttle joystick intent updates to prevent UI freezing *)",
       "Bash(git commit -m 'fix\\(app\\): reduce joystick deadzone from 0.28 to 0.15 *)",
-      "Bash(git commit -m 'fix\\(app\\): reduce deadzone to 0.10 and increase throttle to prevent UI freeze *)"
+      "Bash(git commit -m 'fix\\(app\\): reduce deadzone to 0.10 and increase throttle to prevent UI freeze *)",
+      "Bash(git commit -m 'docs: add quick debug checklist for tracing System stopped issue *)",
+      "Bash(killall -9 flutter node \"Google Chrome\" chrome)",
+      "Bash(tee /tmp/spine_full.log)",
+      "Read(//Users/nishantkumar/development/Xboom/Project/**)",
+      "Bash(tee /tmp/flutter_full.log)",
+      "Bash(tee /tmp/robot_full.log)",
+      "Bash(tee /tmp/flutter_fixed.log)",
+      "Bash(flutter devices *)",
+      "Bash(tee /tmp/robot_app.log)",
+      "Bash(killall -9 node npm)",
+      "Bash(rm -rf build/)",
+      "Bash(rm -rf .dart_tool/)",
+      "Bash(kill 8590)",
+      "Bash(git commit -m 'milestone: full joystick control working end-to-end *)"
     ],
     "additionalDirectories": [
       "/tmp",

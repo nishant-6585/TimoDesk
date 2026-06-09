@@ -112,7 +112,7 @@ class SpineService extends StateNotifier<SpineState> {
     } else if (msgType == 'robot_status' && msg['status'] != null) {
       print('[SpineService] [STATUS UPDATE] Received robot status');
       final status = RobotStatus.fromJson(msg['status']);
-      print('[SpineService] Status details: online=${status.online}, stopped=${status.stopped ?? false}, obstacleState=${status.obstacleState}');
+      print('[SpineService] Status details: online=${status.online}, isMoving=${status.isMoving}, obstacleState=${status.obstacleState}');
       state = state.copyWith(status: status);
     } else if (msgType == 'stopped') {
       print('[SpineService] [STOP ACK] System stopped - updating UI state to stopped=true');

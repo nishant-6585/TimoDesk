@@ -112,6 +112,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     notifier.sendIntent({'intent': gesture});
   }
 
+  void _handleStopResume() {
+    final spineState = ref.read(spineProvider);
+    final notifier = ref.read(spineProvider.notifier);
+    if (spineState.stopped) {
+      print('[ControlScreen] Sending resume intent');
+      notifier.sendIntent({'intent': 'resume'});
+    } else {
+      print('[ControlScreen] Sending stop intent');
+      notifier.sendIntent({'intent': 'stop'});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final spine = ref.watch(spineProvider);
@@ -201,6 +213,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                               onHeadJoystick: _handleHeadJoystick,
                               onGesture: _sendGesture,
                               onCenterHead: _resetHead,
+                              onStopResume: _handleStopResume,
                               stopped: stopped,
                               status: spine.status,
                             ),
@@ -277,6 +290,7 @@ class _ControlContent extends StatelessWidget {
   final Function(double, double, double) onHeadJoystick;
   final Function(String) onGesture;
   final VoidCallback onCenterHead;
+  final VoidCallback onStopResume;
   final bool stopped;
   final RobotStatus? status;
 
@@ -291,6 +305,7 @@ class _ControlContent extends StatelessWidget {
     required this.onHeadJoystick,
     required this.onGesture,
     required this.onCenterHead,
+    required this.onStopResume,
     required this.stopped,
     this.status,
   });
@@ -329,16 +344,14 @@ class _ControlContent extends StatelessWidget {
       const SizedBox(height: 24),
       SizedBox(width: double.infinity, height: 56, child: ElevatedButton(
         onPressed: () {
-          final notifier = ref.read(spineProvider.notifier);
           if (stopped) {
             print('[ControlScreen] RESUME button pressed');
             print('[ControlScreen] Sending resume intent: {intent: resume}');
-            notifier.sendIntent({'intent': 'resume'});
           } else {
             print('[ControlScreen] EMERGENCY STOP button pressed');
             print('[ControlScreen] Sending stop intent: {intent: stop}');
-            notifier.sendIntent({'intent': 'stop'});
           }
+          onStopResume();
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFEF4444),
