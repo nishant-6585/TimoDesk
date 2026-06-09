@@ -177,7 +177,8 @@
       "Bash(node test-face-api-real.js /tmp/robot_frame.jpg)",
       "Bash(exit 1)",
       "Bash(timeout 60 node test-face-api-real-v2.js /tmp/robot_frame.jpg)",
-      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - enrollment infrastructure *)"
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - enrollment infrastructure *)",
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Flutter enrollment UI + full stack ready *)"
     ],
     "additionalDirectories": [
       "/tmp",

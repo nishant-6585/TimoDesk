@@ -20,6 +20,9 @@ dependencies:
   # Streamed HTTP GET for the mobile/desktop MJPEG camera parser
   http: ^1.2.0
 
+  # Image picker for camera/gallery
+  image_picker: ^1.0.0
+
   # Routing with auth guard
   go_router: ^13.0.0
 
