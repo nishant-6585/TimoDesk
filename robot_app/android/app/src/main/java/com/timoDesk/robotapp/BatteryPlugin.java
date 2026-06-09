@@ -7,13 +7,12 @@ import android.content.Intent;
 import android.content.BroadcastReceiver;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
-import io.flutter.plugin.common.MethodChannel.MethodCall;
+import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel.Result;
 import java.util.HashMap;
 import java.util.Map;
 
-public class BatteryPlugin implements MethodCallHandler {
+public class BatteryPlugin implements MethodChannel.MethodCallHandler {
     private static final String BATTERY_CHANNEL = "com.timoDesk/battery";
     private final Context context;
     private MethodChannel methodChannel;
