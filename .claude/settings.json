@@ -181,7 +181,11 @@
       "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Flutter enrollment UI + full stack ready *)",
       "Bash(git commit -m 'feat\\(staff-enrollment\\): add routing + sidebar button *)",
       "Bash(git commit -m 'fix\\(enrollment\\): blocking bugs + CORS + UUID + sequential photos *)",
-      "Bash(git commit -m 'feat\\(staff-enrollment\\): auto-capture with live face detection \\(mobile\\) *)"
+      "Bash(git commit -m 'feat\\(staff-enrollment\\): auto-capture with live face detection \\(mobile\\) *)",
+      "Bash(sed -n '145,195p' spine/src/handlers/enroll.ts)",
+      "Bash(sed -n '26,45p' spine/src/server.ts)",
+      "Bash(git commit -m 'fix\\(navigation\\): add enrollment route to sidebar routes map *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/tmp",

@@ -235,6 +235,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         'gallery': '/gallery',
                         'events': '/event-log',
                         'patrol_routes': '/patrol-routes',
+                        'enroll_staff': '/enroll-staff',
                         'settings': '/settings',
                       };
                       if (routes.containsKey(route)) {
