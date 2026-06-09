@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'battery_service.dart';
 
 // ── Channels ──────────────────────────────────────────────────────────────────
 
@@ -398,7 +399,12 @@ final armProvider =
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-void main() => runApp(const ProviderScope(child: _App()));
+void main() {
+  // Start battery HTTP server
+  BatteryService().start();
+
+  runApp(const ProviderScope(child: _App()));
+}
 
 const _orange = Color(0xFFFF6B35);
 

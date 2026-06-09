@@ -151,7 +151,8 @@
       "Bash(git commit -m 'fix\\(robot_app\\): correct BatteryState const constructor *)",
       "Bash(git commit -m 'feat\\(spine\\): add periodic battery status refresh *)",
       "Bash(git commit -m 'chore\\(spine\\): update initial battery to match real robot *)",
-      "Bash(git commit -m 'refactor: remove old battery monitoring implementation *)"
+      "Bash(git commit -m 'refactor: remove old battery monitoring implementation *)",
+      "Bash(git commit -m 'feat: implement Approach A - HTTP endpoint for battery *)"
     ],
     "additionalDirectories": [
       "/tmp",

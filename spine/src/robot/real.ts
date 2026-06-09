@@ -47,6 +47,27 @@ export class RealRobotSDK implements RobotSDK {
     this.headPort = options.headPort ?? 8081;
     this.chassisPort = options.chassisPort ?? 8082;
     this.armPort = options.armPort ?? 8083;
+
+    // Start periodic battery fetch from robot_app HTTP endpoint
+    this.startBatteryFetch();
+  }
+
+  private startBatteryFetch() {
+    setInterval(async () => {
+      try {
+        const response = await fetch(`http://${this.robotIP}:8090/battery`);
+        if (response.ok) {
+          const data = await response.json();
+          const battery = data.battery as number;
+          if (battery >= 0 && battery <= 100) {
+            this.status.battery = battery;
+            console.log(`[Real SDK] Battery updated: ${battery}%`);
+          }
+        }
+      } catch (err) {
+        // Silently fail - battery endpoint might not be available yet
+      }
+    }, 60000); // Every 60 seconds
   }
 
   /**
