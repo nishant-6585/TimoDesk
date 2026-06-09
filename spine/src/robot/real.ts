@@ -28,7 +28,7 @@ export class RealRobotSDK implements RobotSDK {
   private eventHandlers: Array<(event: RobotEvent) => void> = [];
   private status: RobotStatus = {
     online: false,
-    battery: 0,
+    battery: 85,
     isMoving: false,
     headLR: 50,
     headUD: 50,
