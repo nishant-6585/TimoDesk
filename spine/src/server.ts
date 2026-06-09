@@ -184,5 +184,16 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       );
       sdk.onSensorEvent(handleSensorEvent);
     });
+
+    // Periodically refresh robot status (battery, etc) every 60 seconds
+    setInterval(async () => {
+      try {
+        const freshStatus = await sdk.getStatus();
+        console.log(`[Spine] Battery refresh: ${freshStatus.battery}%`);
+        broadcastStatus(freshStatus);
+      } catch (err) {
+        console.error(`[Spine] Status refresh error: ${err}`);
+      }
+    }, 60000);
   });
 }
