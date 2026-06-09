@@ -56,16 +56,17 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     final notifier = ref.read(enrollmentProvider.notifier);
     final consentRef = 'consent-${DateTime.now().toIso8601String()}';
 
+    // POST photos SEQUENTIALLY (first creates staff, rest find it)
     for (int i = 0; i < _selectedPhotos!.length; i++) {
       setState(() => _currentPhotoIndex = i);
 
       try {
         final bytes = await _selectedPhotos![i].readAsBytes();
-        final result = await notifier.enrollStaff(
+        final result = await notifier.enrollOnePhoto(
           fullName: _nameCtr.text,
           role: _roleCtr.text,
           notifyChannel: _channelCtr.text,
-          consentRef: '$consentRef-$i',
+          consentRef: '$consentRef-photo-$i',
           imageBytes: bytes,
         );
 
@@ -74,7 +75,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
             _photoEnrolled[i] = true;
             _photoErrors[i] = null;
           } else {
-            _photoErrors[i] = result.reason ?? 'Unknown error';
+            _photoErrors[i] = result.reason ?? 'Unknown error (facesFound: ${result.facesFound})';
           }
         });
       } catch (err) {

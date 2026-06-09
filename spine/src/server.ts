@@ -28,6 +28,18 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
     // Create HTTP server (used for both WebSocket + HTTP routes)
     const httpServer = http.createServer(async (req, res) => {
+      // CORS headers on every response
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
+
+      // Handle preflight OPTIONS
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       // Handle HTTP routes
       if (req.url === '/enroll' && req.method === 'POST') {
         await handleEnroll(req, res, supabase);

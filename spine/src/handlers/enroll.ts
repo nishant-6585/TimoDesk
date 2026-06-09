@@ -145,40 +145,57 @@ export async function handleEnroll(
 
         const embedding = embeddingResult.embedding!;
 
-        // 6. UPSERT STAFF (create if new)
-        const staffId = enrollReq.full_name
-          .toLowerCase()
-          .replace(/\s+/g, '-')
-          .replace(/[^a-z0-9-]/g, '');
-
-        const { error: staffError } = await supabase
+        // 6. SELECT OR CREATE STAFF (UUID, not slug)
+        // First: try to find existing staff by full_name
+        let staffId: string;
+        const { data: existingStaff, error: selectError } = await supabase
           .from('staff')
-          .upsert(
-            {
-              id: staffId,
+          .select('id')
+          .eq('full_name', enrollReq.full_name)
+          .maybeSingle();
+
+        if (selectError && selectError.code !== 'PGRST116') {
+          console.error(`[Enroll] Staff select failed: ${selectError.message}`);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: 'Failed to check staff' }));
+          return;
+        }
+
+        if (existingStaff) {
+          // Reuse existing staff UUID
+          staffId = existingStaff.id;
+          console.log(`[Enroll] Found existing staff: ${staffId}`);
+        } else {
+          // Create new staff (id will be auto-generated UUID)
+          const { data: newStaff, error: insertError } = await supabase
+            .from('staff')
+            .insert({
               full_name: enrollReq.full_name,
               role: enrollReq.role,
               notify_channel: enrollReq.notify_channel,
               active: true,
-            },
-            { onConflict: 'id' }
-          )
-          .select('id')
-          .single();
+            })
+            .select('id')
+            .single();
 
-        if (staffError) {
-          console.error(`[Enroll] Staff upsert failed: ${staffError.message}`);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, reason: 'Failed to create staff record' }));
-          return;
+          if (insertError || !newStaff) {
+            console.error(`[Enroll] Staff creation failed: ${insertError?.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, reason: 'Failed to create staff record' }));
+            return;
+          }
+
+          staffId = newStaff.id;
+          console.log(`[Enroll] Created new staff: ${staffId}`);
         }
 
-        // 7. INSERT EMBEDDING
+        // 7. INSERT EMBEDDING (pgvector: pass as string array)
+        const embeddingString = '[' + embedding.join(',') + ']';
         const { data: embeddingData, error: embedError } = await supabase
           .from('staff_face_embedding')
           .insert({
             staff_id: staffId,
-            embedding,
+            embedding: embeddingString,
             consent_at: new Date().toISOString(),
             consent_ref: enrollReq.consent_ref,
           })
