@@ -167,7 +167,17 @@
       "Bash(SUPABASE_URL=https://agjygqllxdclyzfxidgy.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanlncWxseGRjbHl6ZnhpZGd5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY1NjQzMiwiZXhwIjoyMDk2MjMyNDMyfQ.nInesiBkIz9UsYGPGqA3604IrBPLnhkKN_FQ5HAGy-Q node enroll.js --consent-manifest consent_manifest_test.json)",
       "Bash(tee enroll_output.log)",
       "Bash(SUPABASE_URL=https://agjygqllxdclyzfxidgy.supabase.co SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanlncWxseGRjbHl6ZnhpZGd5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDY1NjQzMiwiZXhwIjoyMDk2MjMyNDMyfQ.nInesiBkIz9UsYGPGqA3604IrBPLnhkKN_FQ5HAGy-Q node seed-test-embeddings.js)",
-      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - recognition service foundation *)"
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - recognition service foundation *)",
+      "Bash(node test-face-api-real.js ./enroll/photos/test-identity-1/1.jpg)",
+      "Bash(curl -s -o lfw_sample.tar.gz https://vis-www.cs.umass.edu/lfw/lfw-deepfunneled.tgz)",
+      "Bash(curl -s -o lfw_sample.tar.gz http://vis-www.cs.umass.edu/lfw/lfw.tgz)",
+      "Bash(tar -xzf lfw_sample.tar.gz)",
+      "Bash(ping -c 1 192.168.10.18)",
+      "Bash(timeout 5 curl -I http://192.168.10.18:8080/stream)",
+      "Bash(node test-face-api-real.js /tmp/robot_frame.jpg)",
+      "Bash(exit 1)",
+      "Bash(timeout 60 node test-face-api-real-v2.js /tmp/robot_frame.jpg)",
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - enrollment infrastructure *)"
     ],
     "additionalDirectories": [
       "/tmp",

@@ -19,6 +19,7 @@
     "@vladmandic/face-api": "^1.7.15",
     "canvas": "^3.2.3",
     "jsonwebtoken": "^9.0.2",
+    "sharp": "^0.34.5",
     "supabase": "^2.105.0",
     "uuid": "^14.0.0",
     "ws": "^8.14.2"

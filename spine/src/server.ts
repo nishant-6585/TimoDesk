@@ -1,8 +1,10 @@
 /**
- * server.ts — WebSocket server for admin clients
+ * server.ts — WebSocket server + HTTP endpoints (admin clients + enrollment)
  * Clients connect → auth → session established → route intents
+ * POST /enroll → face enrollment (JWT auth + DPDP gates)
  */
 
+import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
 import { SpineMessage, AdminMessage, RobotStatus } from './types';
@@ -10,6 +12,8 @@ import { routeMessage } from './commands/router';
 import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
+import { handleEnroll } from './handlers/enroll';
+import { getSupabaseClient } from './supabase/client';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -20,7 +24,23 @@ interface AuthenticatedSocket extends WebSocket {
 
 export function startServer(sdk: RobotSDK): Promise<void> {
   return new Promise((resolve, reject) => {
-    const wss = new WebSocketServer({ port: PORT });
+    const supabase = getSupabaseClient();
+
+    // Create HTTP server (used for both WebSocket + HTTP routes)
+    const httpServer = http.createServer(async (req, res) => {
+      // Handle HTTP routes
+      if (req.url === '/enroll' && req.method === 'POST') {
+        await handleEnroll(req, res, supabase);
+        return;
+      }
+
+      // 404 for unknown routes
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    // Attach WebSocket server to HTTP server
+    const wss = new WebSocketServer({ server: httpServer });
 
     console.log(`[Spine] WebSocket server starting on port ${PORT}`);
 
@@ -138,12 +158,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       });
     });
 
-    wss.on('listening', () => {
-      console.log(`✓ Spine WebSocket server listening on port ${PORT}`);
+    httpServer.listen(PORT, () => {
+      console.log(`✓ Spine server listening on port ${PORT} (WebSocket + HTTP routes)`);
       resolve();
     });
 
-    wss.on('error', (err) => {
+    httpServer.on('error', (err) => {
       console.error('[Spine] Server error:', err);
       reject(err);
     });
