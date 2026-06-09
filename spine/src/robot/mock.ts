@@ -159,29 +159,8 @@ export class MockRobotSDK implements RobotSDK {
 
   onEvent(handler: (event: RobotEvent) => void): void {
     this.eventHandlers.push(handler);
-
-    // Emit face_detected every eventIntervalMs
-    const faceInterval = setInterval(() => {
-      const event: RobotEvent = {
-        type: 'face_detected',
-        payload: { count: Math.floor(Math.random() * 3) + 1 },
-        timestamp: Date.now(),
-      };
-      this.eventHandlers.forEach(h => h(event));
-    }, this.eventIntervalMs);
-
-    // Emit battery_update every 3x eventIntervalMs
-    const batteryInterval = setInterval(() => {
-      this.status.battery = Math.max(10, this.status.battery - 2); // slowly drain
-      const event: RobotEvent = {
-        type: 'battery_update',
-        payload: { level: this.status.battery },
-        timestamp: Date.now(),
-      };
-      this.eventHandlers.forEach(h => h(event));
-    }, this.eventIntervalMs * 3);
-
-    this.eventIntervals.push(faceInterval, batteryInterval);
+    // DISABLED: All mock events (face_detected, battery_update, etc)
+    // Only real events (drive, head) are sent by their respective handlers
   }
 
   onSensorEvent(handler: (event: SensorEvent) => void): void {
@@ -198,36 +177,8 @@ export class MockRobotSDK implements RobotSDK {
    * sensorSim.enabled is false. Idempotent.
    */
   startSensorSim(): void {
-    if (this.sensorSimRunning) return;
-    this.sensorSimRunning = true;
-
-    this.scheduleObstacle();
-
-    this.sensorTimers.push(
-      // sensor health — every 30s (95% all-ok, 5% one sensor degraded to 'warn')
-      setInterval(() => {
-        this.emitSensorEvent({
-          type: 'sensor_health',
-          sensors: this.pickSensorHealth(),
-          timestamp: Date.now(),
-        });
-      }, this.sensorSim.sensorHealthMs),
-
-      // localization quality — every 45s (90% normal lq 70–95, 10% low lq 30–55)
-      setInterval(() => {
-        const { quality, lq } = this.pickLocalization();
-        this.emitSensorEvent({ type: 'localization_lq', quality, lq, timestamp: Date.now() });
-      }, this.sensorSim.localizationMs),
-
-      // person detection — every 20s (30% detected)
-      setInterval(() => {
-        this.emitSensorEvent({
-          type: 'person_detected',
-          detected: Math.random() < 0.3,
-          timestamp: Date.now(),
-        });
-      }, this.sensorSim.personMs)
-    );
+    // DISABLED: All sensor simulation events
+    // No background obstacle, health, localization, or person detection events
   }
 
   /**
