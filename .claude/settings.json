@@ -180,7 +180,8 @@
       "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part B - enrollment infrastructure *)",
       "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Flutter enrollment UI + full stack ready *)",
       "Bash(git commit -m 'feat\\(staff-enrollment\\): add routing + sidebar button *)",
-      "Bash(git commit -m 'fix\\(enrollment\\): blocking bugs + CORS + UUID + sequential photos *)"
+      "Bash(git commit -m 'fix\\(enrollment\\): blocking bugs + CORS + UUID + sequential photos *)",
+      "Bash(git commit -m 'feat\\(staff-enrollment\\): auto-capture with live face detection \\(mobile\\) *)"
     ],
     "additionalDirectories": [
       "/tmp",

@@ -23,6 +23,12 @@ dependencies:
   # Image picker for camera/gallery
   image_picker: ^1.0.0
 
+  # Camera + live preview (mobile)
+  camera: ^0.10.0
+
+  # Face detection (mobile) - on-device ML Kit
+  google_mlkit_face_detection: ^0.10.0
+
   # Routing with auth guard
   go_router: ^13.0.0
 
