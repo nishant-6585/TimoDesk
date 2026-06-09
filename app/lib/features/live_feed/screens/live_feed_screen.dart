@@ -37,11 +37,11 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
 
   void _openFaceDetectionTest() {
     final settings = ref.read(settingsProvider);
-    final url = 'http://${settings.robotIp}:${settings.robotCameraPort}/stream';
+    final url = 'http://${settings.robotIp}:8080/stream'; // Camera port always 8080
 
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         child: FaceDetectionTest(mjpegUrl: url),
       ),
     );

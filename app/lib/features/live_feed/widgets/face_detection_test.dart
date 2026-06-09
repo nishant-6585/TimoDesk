@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:js_interop';
+import 'dart:js' as js;
 import 'package:flutter/material.dart';
-import 'package:js/js.dart' as js;
 
 /// Quick test: prove face-api can detect faces on the live MJPEG stream
 /// Tests: 1) load face-api, 2) find img element, 3) detect faces, 4) read pixels (no taint)
@@ -89,7 +88,7 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
     try {
       final imgs = html.document.querySelectorAll('img');
       for (final img in imgs) {
-        if (img is html.ImageElement && img.src.contains(widget.mjpegUrl)) {
+        if (img is html.ImageElement && (img.src?.contains(widget.mjpegUrl) ?? false)) {
           return img;
         }
       }
@@ -139,11 +138,8 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
       ''';
 
       // Call via JS interop, passing the img element
-      final result = await js.context.callMethod('eval', [jsCode]).callAsFunction(
-        js.context,
-        [img],
-      ) as Future;
-
+      final jsFunc = js.context['eval'].apply([jsCode]);
+      final result = jsFunc.apply([img]) as Future;
       return await result as List<dynamic>;
     } catch (e) {
       _addLog('Detection error: $e');
