@@ -26,16 +26,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   String _driveStatus = 'IDLE';
   int _throttle = 0;
 
-  // Throttle joystick updates to prevent UI freezing on rapid pointer events
-  DateTime _lastDriveSend = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastHeadSend = DateTime.fromMillisecondsSinceEpoch(0);
-  static const throttleDurationMs = 100; // 100ms = 10 updates/second (prevents UI freeze)
-
   void _handleDriveJoystick(double x, double y, double mag) {
+    // Update UI state
     setState(() {
       _driveX = x;
       _driveY = y;
-      const deadzone = 0.10;  // 10% deadzone (lower = more responsive)
+      const deadzone = 0.15;
       if (mag < deadzone) {
         _driveStatus = 'IDLE';
         _throttle = 0;
@@ -49,24 +45,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
-    final spineState = ref.read(spineProvider);
     final notifier = ref.read(spineProvider.notifier);
 
-    if (spineState.stopped) return;
-
-    // Throttle: only send intent if enough time has passed
-    final now = DateTime.now();
-    if (now.difference(_lastDriveSend).inMilliseconds < throttleDurationMs) return;
-    _lastDriveSend = now;
-
-    // Only send movement intents when joystick is NOT idle
+    // Send drive command ONLY if joystick is not in deadzone
     if (_driveStatus != 'IDLE') {
-      final dir = _driveStatus == 'FORWARD' ? 'forward' : _driveStatus == 'REVERSE' ? 'back' : _driveStatus == 'RIGHT' ? 'right' : 'left';
+      final dir = _driveStatus == 'FORWARD' ? 'forward' :
+                  _driveStatus == 'REVERSE' ? 'back' :
+                  _driveStatus == 'RIGHT' ? 'right' : 'left';
       notifier.sendIntent({'intent': 'drive', 'dir': dir});
     }
-    // When joystick returns to idle, do NOT send stop command
-    // (that would trigger global safety stop and freeze the UI)
-    // Instead, robot will naturally coast to a stop
+    // Do NOT send any command when idle - let robot coast
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
@@ -75,16 +63,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _headY = ((y + 1) / 2 * 100).clamp(0, 100);
     });
 
-    final spineState = ref.read(spineProvider);
     final notifier = ref.read(spineProvider.notifier);
-
-    if (spineState.stopped) return;
-
-    // Throttle: only send intent if enough time has passed
-    final now = DateTime.now();
-    if (now.difference(_lastHeadSend).inMilliseconds < throttleDurationMs) return;
-    _lastHeadSend = now;
-
     notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
   }
 
