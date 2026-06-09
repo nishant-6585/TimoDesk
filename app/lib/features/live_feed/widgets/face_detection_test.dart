@@ -152,13 +152,27 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
               new faceapi.TinyFaceDetectorOptions()
             ).then(detections => {
               console.log('[FaceDetectionTest] Detected ' + detections.length + ' faces');
-              return detections.map(d => ({
-                x: d.detection.box.x,
-                y: d.detection.box.y,
-                width: d.detection.box.width,
-                height: d.detection.box.height,
-                score: d.detection.score
-              }));
+              console.log('[FaceDetectionTest] Detection structure:', JSON.stringify(detections[0]));
+
+              if (!detections || detections.length === 0) {
+                return [];
+              }
+
+              return detections.map(d => {
+                // Handle both possible structures
+                const box = d.box || (d.detection && d.detection.box);
+                if (!box) {
+                  console.error('[FaceDetectionTest] No box found in detection:', d);
+                  return null;
+                }
+                return {
+                  x: box.x,
+                  y: box.y,
+                  width: box.width,
+                  height: box.height,
+                  score: d.score || (d.detection && d.detection.score) || 0
+                };
+              }).filter(d => d !== null);
             });
           } catch(err) {
             console.error('[FaceDetectionTest] Detection failed:', err.message);
