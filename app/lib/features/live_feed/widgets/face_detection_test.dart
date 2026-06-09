@@ -108,7 +108,7 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
         (error) => completer.completeError('Model load failed: $error'),
       ]);
 
-      return completer.future;
+      await completer.future;
     } catch (e) {
       throw Exception('Failed to initialize models: $e');
     }
