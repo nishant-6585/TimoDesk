@@ -15,7 +15,6 @@ const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
 const _chassisEventCh  = EventChannel('com.timoDesk/chassis_events');
 const _armMethodCh = MethodChannel('com.timoDesk/arm_control');
 const _armEventCh  = EventChannel('com.timoDesk/arm_events');
-const _batteryMethodCh = MethodChannel('com.timoDesk/battery');
 
 // ── MJPEG state ───────────────────────────────────────────────────────────────
 
@@ -145,85 +144,6 @@ class ArmState {
     isWaving: isWaving ?? this.isWaving,
   );
 }
-
-// ── Battery state ──────────────────────────────────────────────────────────────
-
-class BatteryState {
-  final int percentage;
-  final bool isCharging;
-  final DateTime? lastUpdate;
-
-  const BatteryState({
-    this.percentage = 85,
-    this.isCharging = false,
-    this.lastUpdate,
-  });
-
-  BatteryState copyWith({
-    int? percentage,
-    bool? isCharging,
-    DateTime? lastUpdate,
-  }) => BatteryState(
-    percentage: percentage ?? this.percentage,
-    isCharging: isCharging ?? this.isCharging,
-    lastUpdate: lastUpdate ?? this.lastUpdate,
-  );
-}
-
-// ── Battery notifier ───────────────────────────────────────────────────────────
-
-class BatteryNotifier extends StateNotifier<BatteryState> {
-  BatteryNotifier() : super(const BatteryState()) {
-    _startBatteryMonitoring();
-  }
-
-  Timer? _batteryTimer;
-
-  void _startBatteryMonitoring() {
-    _batteryTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
-      await _updateBattery();
-    });
-    _updateBattery();
-  }
-
-  Future<void> _updateBattery() async {
-    try {
-      final res = await _batteryMethodCh.invokeMethod<Map>('getBatteryLevel');
-      if (res != null) {
-        final percentage = (res['level'] as num?)?.toInt() ?? 85;
-        final isCharging = res['isCharging'] as bool? ?? false;
-        state = state.copyWith(
-          percentage: percentage,
-          isCharging: isCharging,
-          lastUpdate: DateTime.now(),
-        );
-        _broadcastBatteryUpdate(percentage);
-      }
-    } on PlatformException catch (e) {
-      debugPrint('[BatteryNotifier] Error getting battery: $e');
-    }
-  }
-
-  void _broadcastBatteryUpdate(int percentage) {
-    try {
-      _methodCh.invokeMethod('broadcastBatteryUpdate', {
-        'type': 'battery_update',
-        'payload': {'level': percentage},
-      });
-    } on PlatformException catch (e) {
-      debugPrint('[BatteryNotifier] Broadcast error: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _batteryTimer?.cancel();
-    super.dispose();
-  }
-}
-
-final batteryProvider =
-    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier());
 
 class StreamNotifier extends StateNotifier<StreamState> {
   StreamNotifier() : super(const StreamState()) {
@@ -507,9 +427,6 @@ class _StreamScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Start battery monitoring (keeps BatteryNotifier alive)
-    ref.watch(batteryProvider);
-
     final mjpeg   = ref.watch(streamProvider);
     final mNotifier = ref.read(streamProvider.notifier);
     final head = ref.watch(headProvider);

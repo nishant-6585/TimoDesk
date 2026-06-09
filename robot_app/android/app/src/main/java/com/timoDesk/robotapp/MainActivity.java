@@ -15,7 +15,6 @@ public class MainActivity extends FlutterActivity {
     private static final String CHASSIS_EVENT_CH  = "com.timoDesk/chassis_events";
     private static final String ARM_METHOD_CH = "com.timoDesk/arm_control";
     private static final String ARM_EVENT_CH  = "com.timoDesk/arm_events";
-    private static final String BATTERY_METHOD_CH = "com.timoDesk/battery";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -59,8 +58,5 @@ public class MainActivity extends FlutterActivity {
 
         ArmControlPlugin armPlugin = new ArmControlPlugin();
         armPlugin.setup(flutterEngine);
-
-        BatteryPlugin batteryPlugin = new BatteryPlugin(this);
-        batteryPlugin.setup(flutterEngine);
     }
 }
