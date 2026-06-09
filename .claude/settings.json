@@ -152,7 +152,8 @@
       "Bash(git commit -m 'feat\\(spine\\): add periodic battery status refresh *)",
       "Bash(git commit -m 'chore\\(spine\\): update initial battery to match real robot *)",
       "Bash(git commit -m 'refactor: remove old battery monitoring implementation *)",
-      "Bash(git commit -m 'feat: implement Approach A - HTTP endpoint for battery *)"
+      "Bash(git commit -m 'feat: implement Approach A - HTTP endpoint for battery *)",
+      "Bash(git commit -m 'feat\\(phase-2-face-recognition\\): Part A - enrollment pipeline *)"
     ],
     "additionalDirectories": [
       "/tmp",

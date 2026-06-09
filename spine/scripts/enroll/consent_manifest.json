@@ -1,0 +1,42 @@
+{
+  "test-lfw-1": {
+    "full_name": "Test LFW Identity 1",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-LFW-001",
+    "consent_at": "2024-06-09T00:00:00Z",
+    "consent_method": "test_dataset"
+  },
+  "test-lfw-2": {
+    "full_name": "Test LFW Identity 2",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-LFW-002",
+    "consent_at": "2024-06-09T00:00:00Z",
+    "consent_method": "test_dataset"
+  },
+  "test-lfw-3": {
+    "full_name": "Test LFW Identity 3",
+    "role": "TEST_DATASET",
+    "notify_channel": "none",
+    "consent_ref": "TEST-LFW-003",
+    "consent_at": "2024-06-09T00:00:00Z",
+    "consent_method": "test_dataset"
+  },
+  "alice-johnson": {
+    "full_name": "Alice Johnson",
+    "role": "Reception",
+    "notify_channel": "slack_alice",
+    "consent_ref": "consent-2024-06-09-alice",
+    "consent_at": "2024-06-09T10:00:00Z",
+    "consent_method": "signed_form_v1"
+  },
+  "bob-smith": {
+    "full_name": "Bob Smith",
+    "role": "Manager",
+    "notify_channel": "slack_bob",
+    "consent_ref": "consent-2024-06-09-bob",
+    "consent_at": "2024-06-09T10:00:00Z",
+    "consent_method": "signed_form_v1"
+  }
+}
