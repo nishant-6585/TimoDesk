@@ -153,7 +153,7 @@ export class FaceRecognitionService {
   }
 
   /**
-   * Capture frame from MJPEG stream
+   * Capture frame from MJPEG stream (robust boundary + Content-Length parsing)
    */
   private async captureFrame(): Promise<Buffer | null> {
     try {
@@ -163,19 +163,60 @@ export class FaceRecognitionService {
         timeout: 5000,
       });
 
-      // Extract first JPEG frame from MJPEG stream
+      // Parse MJPEG: read until we find Content-Length, then read exact bytes
       const buffer = await new Promise<Buffer>((resolve, reject) => {
-        let data = Buffer.alloc(0);
+        let accumulated = Buffer.alloc(0);
+        let contentLength = 0;
+        let readingJpeg = false;
+        let jpegData = Buffer.alloc(0);
+
         response.data.on('data', (chunk: Buffer) => {
-          data = Buffer.concat([data, chunk]);
+          accumulated = Buffer.concat([accumulated, chunk]);
 
-          // Look for JPEG start/end markers
-          const jpegStart = data.indexOf(Buffer.from([0xff, 0xd8]));
-          const jpegEnd = data.indexOf(Buffer.from([0xff, 0xd9]));
+          while (accumulated.length > 0) {
+            // If we're already reading a JPEG
+            if (readingJpeg) {
+              const remaining = contentLength - jpegData.length;
+              if (accumulated.length >= remaining) {
+                jpegData = Buffer.concat([jpegData, accumulated.slice(0, remaining)]);
+                resolve(jpegData);
+                response.data.destroy();
+                return;
+              } else {
+                jpegData = Buffer.concat([jpegData, accumulated]);
+                accumulated = Buffer.alloc(0);
+                break;
+              }
+            }
 
-          if (jpegStart >= 0 && jpegEnd > jpegStart) {
-            resolve(data.slice(jpegStart, jpegEnd + 2));
-            response.data.destroy();
+            // Look for Content-Length header
+            const headerEnd = accumulated.indexOf('\r\n\r\n');
+            if (headerEnd >= 0) {
+              const header = accumulated.slice(0, headerEnd).toString('utf-8');
+              const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
+
+              if (lengthMatch) {
+                contentLength = parseInt(lengthMatch[1], 10);
+                accumulated = accumulated.slice(headerEnd + 4);
+                readingJpeg = true;
+
+                // Check if we already have enough data
+                if (accumulated.length >= contentLength) {
+                  resolve(accumulated.slice(0, contentLength));
+                  response.data.destroy();
+                  return;
+                } else {
+                  jpegData = accumulated;
+                  accumulated = Buffer.alloc(0);
+                }
+              } else {
+                // No Content-Length found, skip this chunk
+                accumulated = accumulated.slice(headerEnd + 4);
+              }
+            } else {
+              // Not enough data for full header yet
+              break;
+            }
           }
         });
 
@@ -185,6 +226,7 @@ export class FaceRecognitionService {
 
       return buffer;
     } catch (err) {
+      console.error(`[FaceRecognition] Frame capture failed: ${(err as Error).message}`);
       return null;
     }
   }

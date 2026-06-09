@@ -455,7 +455,18 @@ public class CameraStreamPlugin
                 int    n   = in.read(buf);
                 String req = n > 0 ? new String(buf, 0, n, "UTF-8") : "";
 
-                if (req.startsWith("GET /stream")) {
+                // Handle CORS preflight OPTIONS request
+                if (req.startsWith("OPTIONS")) {
+                    String cors = "HTTP/1.1 204 No Content\r\n"
+                            + "Access-Control-Allow-Origin: *\r\n"
+                            + "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+                            + "Access-Control-Allow-Headers: content-type\r\n"
+                            + "Access-Control-Max-Age: 86400\r\n"
+                            + "\r\n";
+                    out.write(cors.getBytes("UTF-8"));
+                    out.flush();
+                    sock.close();
+                } else if (req.startsWith("GET /stream")) {
                     serveMjpegStream(sock, out);
                 } else if (req.startsWith("GET /snapshot")) {
                     serveSnapshot(out);
