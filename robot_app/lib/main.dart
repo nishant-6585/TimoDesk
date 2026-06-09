@@ -151,13 +151,13 @@ class ArmState {
 class BatteryState {
   final int percentage;
   final bool isCharging;
-  final DateTime lastUpdate;
+  final DateTime? lastUpdate;
 
   const BatteryState({
     this.percentage = 85,
     this.isCharging = false,
-    DateTime? lastUpdate,
-  }) : lastUpdate = lastUpdate ?? const DateTime(2000);
+    this.lastUpdate,
+  });
 
   BatteryState copyWith({
     int? percentage,
