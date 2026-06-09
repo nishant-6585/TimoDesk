@@ -223,7 +223,8 @@ class BatteryNotifier extends StateNotifier<BatteryState> {
 }
 
 final batteryProvider =
-    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier());
+    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier())
+        .keepAlive();
 
 class StreamNotifier extends StateNotifier<StreamState> {
   StreamNotifier() : super(const StreamState()) {
