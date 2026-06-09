@@ -103,7 +103,7 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
     try {
       // Use JS to run detection (face-api is globally available)
       final jsCode = '''
-        (async function() {
+        (function() {
           try {
             // Create canvas and draw image to it (tests pixel-reading)
             const canvas = document.createElement('canvas');
@@ -116,31 +116,48 @@ class _FaceDetectionTestState extends State<FaceDetectionTest> {
             const imgData = ctx.getImageData(0, 0, 1, 1);
             console.log('[FaceDetectionTest] Canvas pixel-read OK');
 
-            // Run face detection
-            const detections = await faceapi.detectAllFaces(
+            // Return async detection wrapped in Promise
+            return faceapi.detectAllFaces(
               arguments[0],
               new faceapi.TinyFaceDetectorOptions()
-            );
-
-            console.log('[FaceDetectionTest] Detected ' + detections.length + ' faces');
-            return detections.map(d => ({
-              x: d.detection.box.x,
-              y: d.detection.box.y,
-              width: d.detection.box.width,
-              height: d.detection.box.height,
-              score: d.detection.score
-            }));
+            ).then(detections => {
+              console.log('[FaceDetectionTest] Detected ' + detections.length + ' faces');
+              return detections.map(d => ({
+                x: d.detection.box.x,
+                y: d.detection.box.y,
+                width: d.detection.box.width,
+                height: d.detection.box.height,
+                score: d.detection.score
+              }));
+            });
           } catch(err) {
             console.error('[FaceDetectionTest] Detection failed:', err.message);
-            throw err;
+            return Promise.reject(err);
           }
         })
       ''';
 
       // Call via JS interop, passing the img element
-      final jsFunc = js.context['eval'].apply([jsCode]);
-      final result = jsFunc.apply([img]) as Future;
-      return await result as List<dynamic>;
+      final jsFunc = js.context.callMethod('eval', [jsCode]);
+      final promise = jsFunc.apply([img]) as js.JsObject;
+
+      // Convert JS Promise to Dart Future
+      final completer = Completer<List<dynamic>>();
+      promise.callMethod('then', [
+        (result) {
+          if (result is List) {
+            completer.complete(result);
+          } else {
+            completer.complete(js.JsArray.from(result as List).toList());
+          }
+        }
+      ]).callMethod('catch', [
+        (error) {
+          completer.completeError('JS Error: $error');
+        }
+      ]);
+
+      return completer.future;
     } catch (e) {
       _addLog('Detection error: $e');
       return [];
