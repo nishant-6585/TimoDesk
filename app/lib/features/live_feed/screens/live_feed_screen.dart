@@ -246,19 +246,19 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     if (!_modelsLoaded) return;
 
     try {
-      // Find MJPEG img element
-      final imgElements = web.document.querySelectorAll('img');
-      web.HTMLImageElement? mjpegImg;
-
-      for (int i = 0; i < imgElements.length; i++) {
-        final img = imgElements[i] as web.HTMLImageElement;
-        if (img.src != null && img.src!.contains(widget.mjpegUrl)) {
-          mjpegImg = img;
-          break;
+      // Find MJPEG img element (use JS interop since NodeList doesn't support indexing)
+      final findImgCode = '''(function() {
+        const imgs = document.querySelectorAll('img');
+        for (let i = 0; i < imgs.length; i++) {
+          if (imgs[i].src && imgs[i].src.includes('${widget.mjpegUrl}')) {
+            return imgs[i];
+          }
         }
-      }
+        return null;
+      })()''';
 
-      if (mjpegImg == null || mjpegImg.naturalWidth == 0) return;
+      final mjpegImg = js.context.callMethod('eval', [findImgCode]);
+      if (mjpegImg == null) return;
 
       // Run detection via JS interop
       final jsDetectionCode = '''(async function() {
