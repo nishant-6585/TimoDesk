@@ -192,7 +192,8 @@
       "Bash(git commit -m 'fix: compilation errors in face detection test *)",
       "Bash(git commit -m 'fix\\(face-detection-test\\): actually load face-api models from CDN *)",
       "Bash(git commit -m 'fix: return type in model initialization *)",
-      "Bash(git commit -m 'fix\\(face-detection-test\\): handle detection structure robustly *)"
+      "Bash(git commit -m 'fix\\(face-detection-test\\): handle detection structure robustly *)",
+      "Bash(git commit -m 'feat\\(milestone-b+\\): staff enrollment backend — add phone + person_type *)"
     ],
     "additionalDirectories": [
       "/tmp",

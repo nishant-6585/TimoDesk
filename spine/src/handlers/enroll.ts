@@ -21,8 +21,10 @@ import { extractEmbedding } from '../services/face-embedding';
 export interface EnrollRequest {
   jwt?: string; // Deprecated: use Authorization header instead
   full_name: string;
-  role: string;
-  notify_channel: string;
+  phone?: string;
+  person_type?: string; // 'Employee' or 'Staff'
+  role?: string;
+  notify_channel?: string;
   consent: boolean;
   consent_ref: string;
   image_base64: string; // Base64-encoded JPEG/PNG
@@ -162,8 +164,21 @@ export async function handleEnroll(
         }
 
         if (existingStaff) {
-          // Reuse existing staff UUID
+          // Reuse existing staff UUID, optionally update phone/person_type
           staffId = existingStaff.id;
+
+          // Update phone and person_type if provided
+          if (enrollReq.phone || enrollReq.person_type) {
+            const updateData: any = {};
+            if (enrollReq.phone) updateData.phone = enrollReq.phone;
+            if (enrollReq.person_type) updateData.person_type = enrollReq.person_type;
+
+            await supabase
+              .from('staff')
+              .update(updateData)
+              .eq('id', staffId);
+          }
+
           console.log(`[Enroll] Found existing staff: ${staffId}`);
         } else {
           // Create new staff (id will be auto-generated UUID)
@@ -171,6 +186,8 @@ export async function handleEnroll(
             .from('staff')
             .insert({
               full_name: enrollReq.full_name,
+              phone: enrollReq.phone,
+              person_type: enrollReq.person_type || 'Employee',
               role: enrollReq.role,
               notify_channel: enrollReq.notify_channel,
               active: true,
