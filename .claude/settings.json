@@ -203,7 +203,8 @@
       "Bash(git commit -m 'feat: implement face-api.js detection in enrollment overlay *)",
       "Bash(git commit -m 'fix: use JS interop to access MJPEG img element *)",
       "Bash(git commit -m 'fix: allow test-token for enrollment \\(auth bypass for dev\\) *)",
-      "Bash(git commit -m 'CRITICAL FIX: face-api Node.js environment patch + process safety nets *)"
+      "Bash(git commit -m 'CRITICAL FIX: face-api Node.js environment patch + process safety nets *)",
+      "Bash(git commit -m 'fix: load face-api models at server startup *)"
     ],
     "additionalDirectories": [
       "/tmp",

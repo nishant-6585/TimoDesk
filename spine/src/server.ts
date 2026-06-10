@@ -14,6 +14,7 @@ import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
 import { handleEnroll } from './handlers/enroll';
 import { getSupabaseClient } from './supabase/client';
+import { initializeFaceModels } from './services/face-embedding';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -23,8 +24,19 @@ interface AuthenticatedSocket extends WebSocket {
 }
 
 export function startServer(sdk: RobotSDK): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const supabase = getSupabaseClient();
+
+    // Initialize face-api models BEFORE server starts (required for enrollment)
+    try {
+      console.log('[Spine] Loading face-api models...');
+      const modelUrl = process.env.FACE_API_MODEL_URL || 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model';
+      await initializeFaceModels(modelUrl);
+      console.log('[Spine] ✓ Face-api models loaded');
+    } catch (err) {
+      console.error('[Spine] Failed to load face-api models:', err);
+      // Non-fatal: server starts but /enroll will fail with clearer error
+    }
 
     // Create HTTP server (used for both WebSocket + HTTP routes)
     const httpServer = http.createServer(async (req, res) => {
