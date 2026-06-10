@@ -236,6 +236,7 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
           Expanded(
             child: StaffEnrollmentLiveView(
               onFramesCaptured: _handleFrameCapture,
+              onUploadPhotos: _uploadManualPhotos,
             ),
           ),
         ],
@@ -247,10 +248,12 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
 /// Live detection view with overlay + auto-capture
 class StaffEnrollmentLiveView extends StatefulWidget {
   final Function(List<Uint8List>) onFramesCaptured;
+  final VoidCallback onUploadPhotos;
 
   const StaffEnrollmentLiveView({
     Key? key,
     required this.onFramesCaptured,
+    required this.onUploadPhotos,
   }) : super(key: key);
 
   @override
@@ -260,18 +263,21 @@ class StaffEnrollmentLiveView extends StatefulWidget {
 class _StaffEnrollmentLiveViewState extends State<StaffEnrollmentLiveView> {
   @override
   Widget build(BuildContext context) {
-    // TODO: Integrate live detection overlay with color-coded box
-    // For now, show the MJPEG feed (Milestone A verified)
-    // Next iteration adds the overlay canvas + detection state machine
+    const mjpegUrl = 'http://192.168.10.18:8080/stream';
 
     return Stack(
       children: [
         // Live MJPEG feed from robot
-        Scaffold(
-          body: buildMjpegView(
-            context,
-            'http://192.168.10.18:8080/stream',
-            BoxFit.cover,
+        SizedBox.expand(
+          child: Image.network(
+            mjpegUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Container(
+              color: Colors.black,
+              child: const Center(
+                child: Text('Camera unavailable', style: TextStyle(color: Colors.white)),
+              ),
+            ),
           ),
         ),
         // TODO: Overlay canvas for face detection box
@@ -283,7 +289,7 @@ class _StaffEnrollmentLiveViewState extends State<StaffEnrollmentLiveView> {
           bottom: 20,
           right: 20,
           child: FloatingActionButton(
-            onPressed: _uploadManualPhotos,
+            onPressed: widget.onUploadPhotos,
             tooltip: 'Upload photos manually',
             child: const Icon(Icons.image),
           ),
