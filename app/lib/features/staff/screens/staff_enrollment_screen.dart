@@ -267,15 +267,36 @@ class _StaffEnrollmentLiveViewState extends State<StaffEnrollmentLiveView> {
 
     return Stack(
       children: [
-        // Live MJPEG feed from robot
+        // Live MJPEG feed from robot (or placeholder)
         SizedBox.expand(
-          child: Image.network(
-            mjpegUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => Container(
-              color: Colors.black,
-              child: const Center(
-                child: Text('Camera unavailable', style: TextStyle(color: Colors.white)),
+          child: Container(
+            color: Colors.black,
+            child: Image.network(
+              mjpegUrl,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, progress) => Container(
+                color: Colors.black,
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: Colors.black,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 48),
+                      const SizedBox(height: 16),
+                      const Text('Camera unavailable', style: TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: widget.onUploadPhotos,
+                        child: const Text('Upload Photos Instead'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
