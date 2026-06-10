@@ -1,11 +1,14 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../settings/providers/settings_provider.dart';
+import '../../staff/providers/enrollment_provider.dart';
 import '../widgets/mjpeg_view.dart';
 import '../widgets/face_detection_test.dart';
 
@@ -43,6 +46,15 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
       context: context,
       builder: (dialogContext) => Dialog(
         child: FaceDetectionTest(mjpegUrl: url),
+      ),
+    );
+  }
+
+  void _openEnrollmentDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: _EnrollmentModal(),
       ),
     );
   }
@@ -103,6 +115,12 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                     onPressed: _openFaceDetectionTest,
                                     icon: const Icon(Icons.face, size: 20),
                                     label: Text('Face Test', style: GoogleFonts.inter(fontSize: 13)),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  TextButton.icon(
+                                    onPressed: _openEnrollmentDialog,
+                                    icon: const Icon(Icons.person_add, size: 20),
+                                    label: Text('Enroll Staff', style: GoogleFonts.inter(fontSize: 13)),
                                   ),
                                   const SizedBox(width: 12),
                                   ElevatedButton(
@@ -325,6 +343,214 @@ class _StatRow extends StatelessWidget {
         Text(label, style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary)),
         Text(value, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.w500)),
       ]),
+    );
+  }
+}
+
+/// Staff enrollment modal for Live Feed
+class _EnrollmentModal extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_EnrollmentModal> createState() => _EnrollmentModalState();
+}
+
+class _EnrollmentModalState extends ConsumerState<_EnrollmentModal> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtr = TextEditingController();
+  final _phoneCtr = TextEditingController();
+  final _roleCtr = TextEditingController();
+  String _personType = 'Employee';
+  bool _consent = false;
+  List<Uint8List>? _selectedPhotos;
+  bool _enrolling = false;
+
+  @override
+  void dispose() {
+    _nameCtr.dispose();
+    _phoneCtr.dispose();
+    _roleCtr.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhotos() async {
+    final picker = ImagePicker();
+    final photos = await picker.pickMultiImage();
+    if (photos.isNotEmpty) {
+      final frames = await Future.wait(photos.map((p) => p.readAsBytes()));
+      setState(() => _selectedPhotos = frames);
+    }
+  }
+
+  Future<void> _submitEnrollment() async {
+    if (_selectedPhotos == null || _selectedPhotos!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select photos')),
+      );
+      return;
+    }
+
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _enrolling = true);
+
+    final notifier = ref.read(enrollmentProvider.notifier);
+    final consentRef = 'consent-${DateTime.now().toIso8601String()}';
+    int successCount = 0;
+
+    for (int i = 0; i < _selectedPhotos!.length; i++) {
+      try {
+        final result = await notifier.enrollOnePhoto(
+          fullName: _nameCtr.text,
+          role: _roleCtr.text,
+          notifyChannel: '',
+          consentRef: '$consentRef-photo-$i',
+          imageBytes: _selectedPhotos![i],
+          phone: _phoneCtr.text,
+          personType: _personType,
+        );
+
+        if (result.ok) {
+          successCount++;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Photo $i failed: ${result.reason}')),
+            );
+          }
+        }
+      } catch (err) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Photo $i error: $err')),
+          );
+        }
+      }
+    }
+
+    setState(() => _enrolling = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Enrolled $successCount/${_selectedPhotos!.length} photos')),
+      );
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 500,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: TimoColors.surface, borderRadius: BorderRadius.circular(12)),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Enroll Staff Member', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 20),
+              // Photo upload
+              _selectedPhotos == null
+                  ? GestureDetector(
+                      onTap: _pickPhotos,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(32),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: TimoColors.border, style: BorderStyle.solid),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(Icons.image_outlined, size: 48, color: TimoColors.textSecondary),
+                            const SizedBox(height: 12),
+                            Text('Click to select photos', style: GoogleFonts.inter(color: TimoColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        Text('Selected ${_selectedPhotos!.length} photo(s)', style: GoogleFonts.inter(color: TimoColors.success)),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: _pickPhotos,
+                          child: const Text('Change'),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+              const SizedBox(height: 20),
+              // Form fields
+              TextFormField(
+                controller: _nameCtr,
+                decoration: const InputDecoration(labelText: 'Full Name *'),
+                validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _phoneCtr,
+                decoration: const InputDecoration(labelText: 'Phone'),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _personType,
+                decoration: const InputDecoration(labelText: 'Person Type *'),
+                items: const [
+                  DropdownMenuItem(value: 'Employee', child: Text('Employee')),
+                  DropdownMenuItem(value: 'Staff', child: Text('Staff')),
+                ].map((item) => DropdownMenuItem(value: item.value, child: item.child)).toList(),
+                onChanged: (v) => setState(() => _personType = v ?? 'Employee'),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _roleCtr,
+                decoration: const InputDecoration(labelText: 'Role'),
+              ),
+              const SizedBox(height: 20),
+              // Consent
+              Row(
+                children: [
+                  Checkbox(
+                    value: _consent,
+                    onChanged: (v) => setState(() => _consent = v ?? false),
+                  ),
+                  const Expanded(
+                    child: Text('I consent to enroll my face for identification'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _consent && _formKey.currentState?.validate() == true && !_enrolling
+                          ? _submitEnrollment
+                          : null,
+                      child: _enrolling
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Enroll'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: TimoColors.cardTop),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

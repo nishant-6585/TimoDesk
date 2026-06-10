@@ -195,7 +195,8 @@
       "Bash(git commit -m 'fix\\(face-detection-test\\): handle detection structure robustly *)",
       "Bash(git commit -m 'feat\\(milestone-b+\\): staff enrollment backend — add phone + person_type *)",
       "Bash(git commit -m 'feat: wire staff enrollment screen + manual upload for Step 1 test *)",
-      "Bash(git commit -m 'fix: staff enrollment screen scope errors *)"
+      "Bash(git commit -m 'fix: staff enrollment screen scope errors *)",
+      "Bash(git commit -m 'refactor: move enrollment to Live Feed screen + remove from sidebar *)"
     ],
     "additionalDirectories": [
       "/tmp",

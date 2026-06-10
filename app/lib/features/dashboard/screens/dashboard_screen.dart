@@ -235,7 +235,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         'gallery': '/gallery',
                         'events': '/event-log',
                         'patrol_routes': '/patrol-routes',
-                        'enroll_staff': '/enroll-staff',
                         'settings': '/settings',
                       };
                       if (routes.containsKey(route)) {
@@ -516,7 +515,6 @@ class _McSidebar extends StatelessWidget {
               _NavItem('Gallery', Icons.photo_library, active == 'gallery', () => onNav('gallery')),
               _NavItem('Event Log', Icons.receipt_long, active == 'events', () => onNav('events')),
               _NavItem('Patrol Routes', Icons.route, active == 'patrol_routes', () => onNav('patrol_routes')),
-              _NavItem('Enroll Staff', Icons.person_add, active == 'enroll_staff', () => onNav('enroll_staff')),
               _NavItem('Settings', Icons.settings, active == 'settings', () => onNav('settings')),
             ],
           ),

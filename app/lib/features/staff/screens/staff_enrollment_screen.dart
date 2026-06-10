@@ -263,56 +263,33 @@ class StaffEnrollmentLiveView extends StatefulWidget {
 class _StaffEnrollmentLiveViewState extends State<StaffEnrollmentLiveView> {
   @override
   Widget build(BuildContext context) {
-    const mjpegUrl = 'http://192.168.10.18:8080/stream';
+    // TODO: Load robotIp from settings instead of hardcoded IP
+    // For now, show upload button directly to test backend path
 
     return Stack(
       children: [
-        // Live MJPEG feed from robot (or placeholder)
-        SizedBox.expand(
-          child: Container(
-            color: Colors.black,
-            child: Image.network(
-              mjpegUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) => Container(
-                color: Colors.black,
-                child: const Center(
-                  child: CircularProgressIndicator(),
+        // Placeholder (camera will be integrated with live detection overlay later)
+        Container(
+          color: Colors.black,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 64),
+                const SizedBox(height: 24),
+                const Text(
+                  'Live Detection Overlay\nComing Next',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 18),
                 ),
-              ),
-              errorBuilder: (context, error, stackTrace) => Container(
-                color: Colors.black,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 48),
-                      const SizedBox(height: 16),
-                      const Text('Camera unavailable', style: TextStyle(color: Colors.white70)),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: widget.onUploadPhotos,
-                        child: const Text('Upload Photos Instead'),
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: widget.onUploadPhotos,
+                  icon: const Icon(Icons.image),
+                  label: const Text('Upload Photos to Enroll'),
                 ),
-              ),
+              ],
             ),
-          ),
-        ),
-        // TODO: Overlay canvas for face detection box
-        // TODO: State machine for color (none/red → orange → green)
-        // TODO: Auto-capture trigger on green gate
-
-        // Manual upload button (for testing backend path)
-        Positioned(
-          bottom: 20,
-          right: 20,
-          child: FloatingActionButton(
-            onPressed: widget.onUploadPhotos,
-            tooltip: 'Upload photos manually',
-            child: const Icon(Icons.image),
           ),
         ),
       ],
