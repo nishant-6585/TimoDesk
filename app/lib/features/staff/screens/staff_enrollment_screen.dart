@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/theme.dart';
 import '../models/staff_enroll_model.dart';
 import '../providers/enrollment_provider.dart';
@@ -50,6 +51,15 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
 
     // Show form for captured frames
     _showDetailsForm();
+  }
+
+  Future<void> _uploadManualPhotos() async {
+    final picker = ImagePicker();
+    final photos = await picker.pickMultiImage();
+    if (photos.isNotEmpty) {
+      final frames = await Future.wait(photos.map((p) => p.readAsBytes()));
+      _handleFrameCapture(frames);
+    }
   }
 
   void _showDetailsForm() {
@@ -268,19 +278,14 @@ class _StaffEnrollmentLiveViewState extends State<StaffEnrollmentLiveView> {
         // TODO: State machine for color (none/red → orange → green)
         // TODO: Auto-capture trigger on green gate
 
-        // Placeholder: Manual capture button (fallback)
+        // Manual upload button (for testing backend path)
         Positioned(
           bottom: 20,
           right: 20,
           child: FloatingActionButton(
-            onPressed: () {
-              // TODO: Implement manual frame capture
-              // For now, show a dialog explaining next step
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Live detection overlay coming next')),
-              );
-            },
-            child: const Icon(Icons.camera),
+            onPressed: _uploadManualPhotos,
+            tooltip: 'Upload photos manually',
+            child: const Icon(Icons.image),
           ),
         ),
       ],

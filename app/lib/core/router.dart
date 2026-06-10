@@ -12,6 +12,7 @@ import '../features/events/screens/event_log_screen.dart';
 import '../features/patrol_routes/screens/patrol_routes_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/enroll_screen.dart';
+import '../features/staff/screens/staff_enrollment_screen.dart';
 
 // Fix 1: GoRouterRefreshStream listens to Supabase auth state changes
 // This ensures the router re-evaluates the redirect condition when auth changes
@@ -106,7 +107,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/enroll-staff',
         name: 'enroll_staff',
-        builder: (context, state) => const EnrollmentScreen(),
+        builder: (context, state) => const StaffEnrollmentScreen(),
       ),
     ],
   );
