@@ -201,7 +201,8 @@
       "Bash(git commit -m 'refactor: enrollment in Live Feed with face detection overlay *)",
       "Bash(git commit -m 'refactor: clean Live Feed screen - staff enrollment focus only *)",
       "Bash(git commit -m 'feat: implement face-api.js detection in enrollment overlay *)",
-      "Bash(git commit -m 'fix: use JS interop to access MJPEG img element *)"
+      "Bash(git commit -m 'fix: use JS interop to access MJPEG img element *)",
+      "Bash(git commit -m 'fix: allow test-token for enrollment \\(auth bypass for dev\\) *)"
     ],
     "additionalDirectories": [
       "/tmp",
