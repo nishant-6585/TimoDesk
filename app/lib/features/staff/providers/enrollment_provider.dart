@@ -17,6 +17,8 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
     required String notifyChannel,
     required String consentRef,
     required List<int> imageBytes, // Raw JPEG/PNG bytes
+    String? phone,
+    String? personType,
   }) async {
     // Get JWT token from Supabase session
     final session = Supabase.instance.client.auth.currentSession;
@@ -44,6 +46,8 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
         'consent': true, // Always true
         'consent_ref': consentRef,
         'image_base64': imageBase64,
+        'phone': phone,
+        'person_type': personType ?? 'Employee',
       }),
     ).timeout(const Duration(seconds: 30));
 
