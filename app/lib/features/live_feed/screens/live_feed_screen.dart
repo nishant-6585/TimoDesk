@@ -23,6 +23,8 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   bool _isRecording = false;
   String _resolution = '640x480';
   String _quality = 'High';
+  bool _enrollmentMode = false;
+  Uint8List? _capturedFrame;
 
   void _takeSnapshot() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -50,11 +52,29 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     );
   }
 
-  void _openEnrollmentDialog() {
+  void _toggleEnrollmentMode() {
+    setState(() {
+      _enrollmentMode = !_enrollmentMode;
+      if (!_enrollmentMode) {
+        _capturedFrame = null;
+      }
+    });
+  }
+
+  void _onFrameCaptured(Uint8List frame) {
+    setState(() {
+      _capturedFrame = frame;
+      _enrollmentMode = false; // Exit detection mode
+    });
+    // Show enrollment form with captured frame
+    _showEnrollmentForm(frame);
+  }
+
+  void _showEnrollmentForm(Uint8List capturedFrame) {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        child: _EnrollmentModal(),
+        child: _EnrollmentFormModal(capturedFrame: capturedFrame),
       ),
     );
   }
@@ -118,9 +138,9 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                   ),
                                   const SizedBox(width: 12),
                                   TextButton.icon(
-                                    onPressed: _openEnrollmentDialog,
+                                    onPressed: _toggleEnrollmentMode,
                                     icon: const Icon(Icons.person_add, size: 20),
-                                    label: Text('Enroll Staff', style: GoogleFonts.inter(fontSize: 13)),
+                                    label: Text(_enrollmentMode ? 'Cancel Enroll' : 'Enroll Staff', style: GoogleFonts.inter(fontSize: 13)),
                                   ),
                                   const SizedBox(width: 12),
                                   ElevatedButton(
@@ -132,7 +152,13 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                               ]),
                               const SizedBox(height: 20),
                               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Expanded(flex: 3, child: _LiveFeedCard()),
+                                Expanded(
+                                  flex: 3,
+                                  child: _LiveFeedCard(
+                                    enrollmentMode: _enrollmentMode,
+                                    onFrameCaptured: _onFrameCaptured,
+                                  ),
+                                ),
                                 const SizedBox(width: 20),
                                 Expanded(flex: 1, child: Column(children: [
                                   _CameraCard(resolution: _resolution, quality: _quality, onResolutionChange: (v) => setState(() => _resolution = v), onQualityChange: (v) => setState(() => _quality = v)),
@@ -203,6 +229,14 @@ class _NavItem extends StatelessWidget {
 }
 
 class _LiveFeedCard extends ConsumerStatefulWidget {
+  final bool enrollmentMode;
+  final Function(Uint8List) onFrameCaptured;
+
+  const _LiveFeedCard({
+    required this.enrollmentMode,
+    required this.onFrameCaptured,
+  });
+
   @override
   ConsumerState<_LiveFeedCard> createState() => _LiveFeedCardState();
 }
@@ -231,12 +265,22 @@ class _LiveFeedCardState extends ConsumerState<_LiveFeedCard> {
         ),
         AspectRatio(
           aspectRatio: 16 / 9,
-          child: _streaming
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: MjpegView(url: url),
-                )
-              : _StreamPlaceholder(onStart: () => setState(() => _streaming = true)),
+          child: Stack(
+            children: [
+              _streaming
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: MjpegView(url: url),
+                    )
+                  : _StreamPlaceholder(onStart: () => setState(() => _streaming = true)),
+              // Enrollment detection overlay
+              if (widget.enrollmentMode && _streaming)
+                _EnrollmentDetectionOverlay(
+                  mjpegUrl: url,
+                  onFrameCaptured: widget.onFrameCaptured,
+                ),
+            ],
+          ),
         ),
         Padding(
           padding: const EdgeInsets.all(12),
@@ -338,29 +382,91 @@ class _StatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary)),
-        Text(value, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.w500)),
-      ]),
+/// Face detection overlay for enrollment
+class _EnrollmentDetectionOverlay extends StatefulWidget {
+  final String mjpegUrl;
+  final Function(Uint8List) onFrameCaptured;
+
+  const _EnrollmentDetectionOverlay({
+    required this.mjpegUrl,
+    required this.onFrameCaptured,
+  });
+
+  @override
+  State<_EnrollmentDetectionOverlay> createState() => _EnrollmentDetectionOverlayState();
+}
+
+class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay> {
+  String _status = 'Detecting face...';
+  bool _faceDetected = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _faceDetected ? Colors.green : Colors.orange,
+            width: 3,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Semi-transparent overlay
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.black.withOpacity(0.2),
+              ),
+            ),
+            // Center hint
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _faceDetected ? Icons.check_circle : Icons.face,
+                    size: 64,
+                    color: _faceDetected ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _faceDetected ? 'Face Detected - Capturing...' : 'Position your face',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-/// Staff enrollment modal for Live Feed
-class _EnrollmentModal extends ConsumerStatefulWidget {
+/// Enrollment form modal with captured frame
+class _EnrollmentFormModal extends ConsumerStatefulWidget {
+  final Uint8List capturedFrame;
+
+  const _EnrollmentFormModal({required this.capturedFrame});
+
   @override
-  ConsumerState<_EnrollmentModal> createState() => _EnrollmentModalState();
+  ConsumerState<_EnrollmentFormModal> createState() => _EnrollmentFormModalState();
 }
 
-class _EnrollmentModalState extends ConsumerState<_EnrollmentModal> {
+class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtr = TextEditingController();
   final _phoneCtr = TextEditingController();
   final _roleCtr = TextEditingController();
   String _personType = 'Employee';
   bool _consent = false;
-  List<Uint8List>? _selectedPhotos;
   bool _enrolling = false;
 
   @override
@@ -371,68 +477,46 @@ class _EnrollmentModalState extends ConsumerState<_EnrollmentModal> {
     super.dispose();
   }
 
-  Future<void> _pickPhotos() async {
-    final picker = ImagePicker();
-    final photos = await picker.pickMultiImage();
-    if (photos.isNotEmpty) {
-      final frames = await Future.wait(photos.map((p) => p.readAsBytes()));
-      setState(() => _selectedPhotos = frames);
-    }
-  }
-
   Future<void> _submitEnrollment() async {
-    if (_selectedPhotos == null || _selectedPhotos!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select photos')),
-      );
-      return;
-    }
-
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _enrolling = true);
 
     final notifier = ref.read(enrollmentProvider.notifier);
     final consentRef = 'consent-${DateTime.now().toIso8601String()}';
-    int successCount = 0;
 
-    for (int i = 0; i < _selectedPhotos!.length; i++) {
-      try {
-        final result = await notifier.enrollOnePhoto(
-          fullName: _nameCtr.text,
-          role: _roleCtr.text,
-          notifyChannel: '',
-          consentRef: '$consentRef-photo-$i',
-          imageBytes: _selectedPhotos![i],
-          phone: _phoneCtr.text,
-          personType: _personType,
-        );
+    try {
+      final result = await notifier.enrollOnePhoto(
+        fullName: _nameCtr.text,
+        role: _roleCtr.text,
+        notifyChannel: '',
+        consentRef: consentRef,
+        imageBytes: widget.capturedFrame,
+        phone: _phoneCtr.text,
+        personType: _personType,
+      );
 
+      setState(() => _enrolling = false);
+
+      if (mounted) {
         if (result.ok) {
-          successCount++;
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Photo $i failed: ${result.reason}')),
-            );
-          }
-        }
-      } catch (err) {
-        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Photo $i error: $err')),
+            SnackBar(content: Text('✅ ${_nameCtr.text} enrolled successfully!')),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: ${result.reason}')),
           );
         }
       }
-    }
-
-    setState(() => _enrolling = false);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Enrolled $successCount/${_selectedPhotos!.length} photos')),
-      );
-      Navigator.pop(context);
+    } catch (err) {
+      setState(() => _enrolling = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $err')),
+        );
+      }
     }
   }
 
@@ -451,37 +535,16 @@ class _EnrollmentModalState extends ConsumerState<_EnrollmentModal> {
             children: [
               Text('Enroll Staff Member', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 20),
-              // Photo upload
-              _selectedPhotos == null
-                  ? GestureDetector(
-                      onTap: _pickPhotos,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: TimoColors.border, style: BorderStyle.solid),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(Icons.image_outlined, size: 48, color: TimoColors.textSecondary),
-                            const SizedBox(height: 12),
-                            Text('Click to select photos', style: GoogleFonts.inter(color: TimoColors.textSecondary)),
-                          ],
-                        ),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        Text('Selected ${_selectedPhotos!.length} photo(s)', style: GoogleFonts.inter(color: TimoColors.success)),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: _pickPhotos,
-                          child: const Text('Change'),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
+              // Captured image preview
+              Container(
+                width: double.infinity,
+                height: 200,
+                decoration: BoxDecoration(
+                  border: Border.all(color: TimoColors.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Image.memory(widget.capturedFrame, fit: BoxFit.cover),
+              ),
               const SizedBox(height: 20),
               // Form fields
               TextFormField(
