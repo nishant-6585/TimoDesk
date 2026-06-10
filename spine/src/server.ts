@@ -180,6 +180,18 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       reject(err);
     });
 
+    // CRITICAL: Process-level safety nets to prevent enrollment crashes from killing the broker
+    // These MUST stay in place: a bad face image must not take down robot control/camera/WS
+    process.on('unhandledRejection', (err) => {
+      console.error('[Spine] UNHANDLED REJECTION:', err);
+      // Log but don't exit — /enroll handler should still return 500
+    });
+
+    process.on('uncaughtException', (err) => {
+      console.error('[Spine] UNCAUGHT EXCEPTION:', err);
+      // Log but don't exit — keep server alive for robot control
+    });
+
     // Register robot event handler to broadcast to all clients
     sdk.onEvent((event) => {
       const { type: eventType, ...rest } = event;

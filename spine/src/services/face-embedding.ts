@@ -12,6 +12,11 @@
 import faceapi from '@vladmandic/face-api';
 import * as canvas from 'canvas';
 
+// CRITICAL: Monkey-patch face-api for Node.js environment
+// Must run ONCE at module load before any detectAllFaces calls
+const { Canvas, Image, ImageData } = canvas as any;
+faceapi.env.monkeyPatch({ Canvas, Image, ImageData } as any);
+
 export interface FaceEmbeddingResult {
   ok: boolean;
   embedding?: number[]; // 128-dim vector
