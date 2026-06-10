@@ -1,7 +1,11 @@
 import 'dart:typed_data';
+import 'dart:async';
+import 'dart:convert' show base64Decode;
+import 'dart:js' as js;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:web/web.dart' as web;
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../settings/providers/settings_provider.dart';
@@ -159,7 +163,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 }
 
-/// Face detection overlay for enrollment
+/// Face detection overlay for enrollment with real face-api detection
 class _EnrollmentDetectionOverlay extends StatefulWidget {
   final String mjpegUrl;
   final Function(Uint8List) onFrameCaptured;
@@ -176,6 +180,212 @@ class _EnrollmentDetectionOverlay extends StatefulWidget {
 class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay> {
   String _status = 'Center your face';
   bool _faceDetected = false;
+  bool _modelsLoaded = false;
+  Timer? _detectionTimer;
+  int _stableFrames = 0;
+  static const int _stabilityThreshold = 10; // ~0.5s at 20fps
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAndDetect();
+  }
+
+  @override
+  void dispose() {
+    _detectionTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initializeAndDetect() async {
+    await _loadFaceApiModels();
+    if (!mounted) return;
+
+    // Start continuous detection loop
+    _detectionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (mounted) {
+        _detectAndCapture();
+      }
+    });
+  }
+
+  Future<void> _loadFaceApiModels() async {
+    try {
+      final modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model/';
+      final jsCode = '''(async function() {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/dist/face-api.min.js';
+        document.head.appendChild(script);
+
+        return new Promise(resolve => {
+          script.onload = async () => {
+            await faceapi.nets.tinyFaceDetector.loadFromUri('$modelUrl');
+            await faceapi.nets.faceLandmark68Net.loadFromUri('$modelUrl');
+            await faceapi.nets.faceRecognitionNet.loadFromUri('$modelUrl');
+            resolve(true);
+          };
+        });
+      })()''';
+
+      final result = await js.context.callMethod('eval', [jsCode]);
+      final completer = Completer<bool>();
+      result.callMethod('then', [(val) => completer.complete(true)]).callMethod('catch', [(err) {
+        completer.complete(false);
+      }]);
+
+      await completer.future;
+      if (mounted) {
+        setState(() => _modelsLoaded = true);
+      }
+    } catch (err) {
+      print('[EnrollmentDetection] Model load error: $err');
+    }
+  }
+
+  void _detectAndCapture() {
+    if (!_modelsLoaded) return;
+
+    try {
+      // Find MJPEG img element
+      final imgElements = web.document.querySelectorAll('img');
+      web.HTMLImageElement? mjpegImg;
+
+      for (int i = 0; i < imgElements.length; i++) {
+        final img = imgElements[i] as web.HTMLImageElement;
+        if (img.src != null && img.src!.contains(widget.mjpegUrl)) {
+          mjpegImg = img;
+          break;
+        }
+      }
+
+      if (mjpegImg == null || mjpegImg.naturalWidth == 0) return;
+
+      // Run detection via JS interop
+      final jsDetectionCode = '''(async function() {
+        const img = document.querySelector('img[src*="${widget.mjpegUrl}"]');
+        if (!img || img.naturalWidth === 0) return {faces: 0, ready: false};
+
+        try {
+          const detections = await faceapi
+            .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptors();
+
+          if (detections.length !== 1) return {faces: detections.length, ready: false};
+
+          const det = detections[0];
+          const box = det.box || (det.detection && det.detection.box);
+          if (!box) return {faces: 1, ready: false};
+
+          // Check if face is centered and large enough
+          const imgW = img.naturalWidth;
+          const imgH = img.naturalHeight;
+          const facePct = (box.width * box.height) / (imgW * imgH);
+          const centerX = (box.x + box.width/2) / imgW;
+          const centerY = (box.y + box.height/2) / imgH;
+
+          const isCentered = centerX > 0.3 && centerX < 0.7 && centerY > 0.3 && centerY < 0.7;
+          const isLargeEnough = facePct > 0.05;
+
+          return {
+            faces: 1,
+            ready: isCentered && isLargeEnough,
+            box: {x: box.x, y: box.y, width: box.width, height: box.height}
+          };
+        } catch(e) {
+          return {faces: 0, ready: false};
+        }
+      })()''';
+
+      final jsFunc = js.context.callMethod('eval', [jsDetectionCode]);
+      final completer = Completer<Map<String, dynamic>>();
+
+      jsFunc.callMethod('then', [(result) {
+        try {
+          final resultMap = <String, dynamic>{
+            'faces': result['faces'] ?? 0,
+            'ready': result['ready'] ?? false,
+          };
+          completer.complete(resultMap);
+        } catch (e) {
+          completer.complete({'faces': 0, 'ready': false});
+        }
+      }]).callMethod('catch', [(err) {
+        completer.complete({'faces': 0, 'ready': false});
+      }]);
+
+      completer.future.then((result) {
+        if (!mounted) return;
+
+        final faces = result['faces'] as int? ?? 0;
+        final ready = result['ready'] as bool? ?? false;
+
+        setState(() {
+          _faceDetected = ready;
+          if (ready) {
+            _stableFrames++;
+            _status = 'Hold still... ${_stableFrames ~/ 2}s';
+          } else {
+            _stableFrames = 0;
+            if (faces == 0) {
+              _status = 'No face detected';
+            } else if (faces > 1) {
+              _status = 'Only one face allowed';
+            } else {
+              _status = 'Move closer & center';
+            }
+          }
+        });
+
+        // Auto-capture when stable
+        if (ready && _stableFrames >= _stabilityThreshold) {
+          _captureFrame();
+        }
+      });
+    } catch (err) {
+      print('[EnrollmentDetection] Detection error: $err');
+    }
+  }
+
+  Future<void> _captureFrame() async {
+    _detectionTimer?.cancel();
+
+    try {
+      final captureCode = '''(async function() {
+        const img = document.querySelector('img[src*="${widget.mjpegUrl}"]');
+        if (!img) return null;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        return canvas.toDataURL('image/jpeg', 0.9);
+      })()''';
+
+      final jsFunc = js.context.callMethod('eval', [captureCode]);
+      final completer = Completer<String?>();
+
+      jsFunc.callMethod('then', [(dataUrl) {
+        completer.complete(dataUrl as String?);
+      }]).callMethod('catch', [(err) {
+        completer.complete(null);
+      }]);
+
+      final dataUrl = await completer.future;
+      if (dataUrl != null && dataUrl.isNotEmpty) {
+        // Extract base64 from data URL
+        final base64 = dataUrl.split(',').last;
+        final bytes = base64Decode(base64);
+        if (mounted) {
+          widget.onFrameCaptured(bytes);
+        }
+      }
+    } catch (err) {
+      print('[EnrollmentDetection] Capture error: $err');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,17 +414,17 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  _status,
+                  _modelsLoaded ? _status : 'Loading face detection...',
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (_faceDetected) ...[
+                if (_faceDetected && _stableFrames < _stabilityThreshold) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Hold still for capture',
+                    'Keep still',
                     style: GoogleFonts.inter(
                       color: Colors.green,
                       fontSize: 14,
