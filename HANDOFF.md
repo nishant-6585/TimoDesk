@@ -14,6 +14,8 @@
 - **Phase 1.5** (5 more SDK listener integrations — battery, errors, snapshot, head touch, expressions) — **NOT STARTED.** Blocked on resolving the Windows-only orphan-rewriter (task #54).
 - **Phase 1.7, Phase 2, Phase 3** — queued.
 
+> **⚠️ 2026-06 reality update (much of the detail below is stale).** The project has moved well past Phase 1B: it now runs against the **real Timo robot (192.168.10.18)** — joystick drive, head, live MJPEG camera, and battery all work on hardware. **Phase 2 face recognition is in progress:** staff enrollment works end-to-end (browser face-api live detection on the robot feed → `/enroll` → spine `@vladmandic/face-api` → 128-d vector in `staff_face_embedding`, migrations 006=vector(128) + 007=phone/person_type). Enrollment is **staff/employee only** (no customer biometrics — DPDP). Still pending: threshold calibration on real faces, the **autonomous spine recognizer** (emits `face_detected`), the dashboard detection card, and a fix-verify of spine-side MJPEG frame extraction. **Security debt:** a `test-token` auth bypass on `/enroll` (commit `1c83169`) must be removed/gated before production. The numbered tasks (#42–#64) and "branch `claude/clever-brown-8kLaJ`" references below are historical — that branch was deleted; work now happens directly on `main`.
+
 ---
 
 ## What just shipped
@@ -117,6 +119,26 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 - **#62** Swap the **mock camera** (cycling RGB frames, per `README.md:96`) for the real CSJBot camera feed in `CameraStreamPlugin`. MJPEG server + admin-app `MjpegView` already work against the mock; this swaps the source.
 - **#63** Wire the native sensor bridge (`robot_app/docs/SENSOR_BRIDGE.md`) into `RealRobotSDK.onSensorEvent` (currently a no-op) so Phase 1A obstacle/health/localization events flow from real hardware.
 - **#64** Real-hardware safety pass: STOP interlock + obstacle-blocked behaviour validated with the robot physically moving. Highest-risk item — do last, supervised.
+
+**🟦 Reception workflow epic (#70–#71) — "customer arrived → tell the right staff member." Added to pipeline 2026-06 per user request. NOT built.**
+
+The reception robot's core job: when a visitor/customer arrives, inform the staff member they're here to see. Two features, do them in this order — notification is the reliable baseline, navigate-and-announce is the premium layer on top.
+
+- **#70 — Host notification on visitor arrival (Phase 2, moderate effort).** Customer arrives → notify the host staff member via their channel.
+  - **Data model already exists — NO schema change:** `visitor.host_staff_id` (FK→staff) links a visitor to their host; `staff.notify_channel` holds `slack_id` / `whatsapp_phone` / `email` (the comment literally says "for host handoff").
+  - **What's missing:** (a) a visitor-intake step that sets `host_staff_id` — either face recognition (Phase 2 recognizer, in progress) identifies a pre-booked visitor, OR a simple "who are you here to see?" check-in UI; (b) a **notification SENDER in spine** — none exists today; `notify_channel` is only *stored* (it appears in `handlers/enroll.ts` as a field, never sent). Build a sender keyed off the channel type (Slack webhook / WhatsApp / email).
+  - **Reuse:** `xboom-flow` (separate repo) already sends WhatsApp via Interakt/MyOperator — reuse that for the WhatsApp channel rather than rebuilding.
+  - **Can ship without recognition:** start with manual check-in (visitor picks/says the host) → notify. Recognition just automates the "who" later.
+
+- **#71 — Navigate to the employee's desk and announce (Phase 3, large effort, multi-track).** Robot physically drives to the staff member's location and announces the customer.
+  - **CRITICAL design rule:** navigate to the staff member's **assigned location/desk (a fixed waypoint)** and announce — do **NOT** "roam and hunt for a moving person by face." Hunting is the unreliable anti-pattern; a notification reaches a wandering person far faster. Model it as "go to John's sales desk = waypoint 5," not "search the building for John."
+  - **Dependencies — none exist today:**
+    1. **Navigation integration in spine.** There is currently **NO** navigate/goto/waypoint intent — spine only accepts `drive | head | arm | wave | stop | resume | snapshot | get_status` (`spine/src/types.ts`). Must add a `navigate`/`goto` intent + wire `RealRobotSDK` to CSJBot's point-to-point navigation API. This is the biggest missing piece.
+    2. **A mapped office** built with the CSJBot mapping tool (the robot needs a floor map). CSJBot *can* navigate (it's a delivery/guidance platform) but uses its high-level nav API + a pre-built map — raw LIDAR is not exposed (see LIDAR research notes).
+    3. **Staff → location mapping** ("John = sales zone / waypoint 5"). New small data — add a location/waypoint field to `staff` or a `staff_location` table.
+    4. **Arrival announcement** — TTS/voice or chest-screen message.
+    5. **Obstacle avoidance / localization** — ties to the Hardware bring-up epic (#63 sensor bridge); the sensor pipeline is scaffolded but not wired to real hardware.
+  - **Relationship to #70:** layered on top. #70 (notification) is the dependable baseline that works even when the robot is busy, blocked, or the person isn't at their desk. Build #70 first; #71 is the Phase-3 "escort/announce" premium experience.
 
 **🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
 
