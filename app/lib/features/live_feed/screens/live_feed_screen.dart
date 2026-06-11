@@ -29,16 +29,16 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     });
   }
 
-  void _onFrameCaptured(Uint8List frame) {
+  void _onFramesCaptured(List<Uint8List> frames) {
     setState(() => _enrollmentMode = false);
-    _showEnrollmentForm(frame);
+    _showEnrollmentForm(frames);
   }
 
-  void _showEnrollmentForm(Uint8List capturedFrame) {
+  void _showEnrollmentForm(List<Uint8List> capturedFrames) {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        child: _EnrollmentFormModal(capturedFrame: capturedFrame),
+        child: _EnrollmentFormModal(capturedFrames: capturedFrames),
       ),
     );
   }
@@ -147,7 +147,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                           if (_enrollmentMode && _streaming)
                             _EnrollmentDetectionOverlay(
                               mjpegUrl: url,
-                              onFrameCaptured: _onFrameCaptured,
+                              onFramesCaptured: _onFramesCaptured,
                             ),
                         ],
                       ),
@@ -163,14 +163,14 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 }
 
-/// Face detection overlay for enrollment with real face-api detection
+/// Face detection overlay for multi-capture enrollment (5 poses)
 class _EnrollmentDetectionOverlay extends StatefulWidget {
   final String mjpegUrl;
-  final Function(Uint8List) onFrameCaptured;
+  final Function(List<Uint8List>) onFramesCaptured;
 
   const _EnrollmentDetectionOverlay({
     required this.mjpegUrl,
-    required this.onFrameCaptured,
+    required this.onFramesCaptured,
   });
 
   @override
@@ -178,12 +178,16 @@ class _EnrollmentDetectionOverlay extends StatefulWidget {
 }
 
 class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay> {
-  String _status = 'Center your face';
-  bool _faceDetected = false;
   bool _modelsLoaded = false;
   Timer? _detectionTimer;
   int _stableFrames = 0;
   static const int _stabilityThreshold = 10; // ~0.5s at 20fps
+
+  // Multi-capture state
+  int _currentPoseIndex = 0;
+  final List<String> _poses = ['Front', 'Left', 'Right', 'Up', 'Down'];
+  final List<Uint8List> _capturedFrames = [];
+  bool _faceDetected = false;
 
   @override
   void initState() {
@@ -375,11 +379,28 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
 
       final dataUrl = await completer.future;
       if (dataUrl != null && dataUrl.isNotEmpty) {
-        // Extract base64 from data URL
         final base64 = dataUrl.split(',').last;
         final bytes = base64Decode(base64);
+
         if (mounted) {
-          widget.onFrameCaptured(bytes);
+          setState(() => _capturedFrames.add(bytes));
+
+          // Move to next pose or finish
+          if (_currentPoseIndex < _poses.length - 1) {
+            setState(() {
+              _currentPoseIndex++;
+              _stableFrames = 0;
+              _faceDetected = false;
+            });
+            // Restart detection timer for next pose
+            _detectionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+              if (mounted) _detectAndCapture();
+            });
+          } else {
+            // All 5 poses captured
+            _detectionTimer?.cancel();
+            widget.onFramesCaptured(_capturedFrames);
+          }
         }
       }
     } catch (err) {
@@ -402,29 +423,52 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
           Container(
             color: Colors.black.withOpacity(0.2),
           ),
-          // Center hint
+          // Center hint with pose guidance
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Progress indicator (1/5, 2/5, etc)
+                Text(
+                  '${_currentPoseIndex + 1}/${_poses.length}',
+                  style: GoogleFonts.inter(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Pose instruction
+                Text(
+                  'Position: ${_poses[_currentPoseIndex]}',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Face detection icon
                 Icon(
                   _faceDetected ? Icons.check_circle : Icons.face,
                   size: 80,
                   color: _faceDetected ? Colors.green : Colors.orange,
                 ),
                 const SizedBox(height: 20),
+                // Status text
                 Text(
-                  _modelsLoaded ? _status : 'Loading face detection...',
+                  _modelsLoaded
+                      ? (_faceDetected ? 'Hold still...' : 'Center your face')
+                      : 'Loading face detection...',
                   style: GoogleFonts.inter(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 if (_faceDetected && _stableFrames < _stabilityThreshold) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Keep still',
+                    'Capturing in ${(_stabilityThreshold - _stableFrames) ~/ 2}s',
                     style: GoogleFonts.inter(
                       color: Colors.green,
                       fontSize: 14,
@@ -440,11 +484,11 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   }
 }
 
-/// Enrollment form modal with captured frame
+/// Enrollment form modal with multiple captured frames
 class _EnrollmentFormModal extends ConsumerStatefulWidget {
-  final Uint8List capturedFrame;
+  final List<Uint8List> capturedFrames;
 
-  const _EnrollmentFormModal({required this.capturedFrame});
+  const _EnrollmentFormModal({required this.capturedFrames});
 
   @override
   ConsumerState<_EnrollmentFormModal> createState() => _EnrollmentFormModalState();
@@ -474,40 +518,55 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
 
     final notifier = ref.read(enrollmentProvider.notifier);
     final consentRef = 'consent-${DateTime.now().toIso8601String()}';
+    int successCount = 0;
+    int failureCount = 0;
 
-    try {
-      final result = await notifier.enrollOnePhoto(
-        fullName: _nameCtr.text,
-        role: _roleCtr.text,
-        notifyChannel: '',
-        consentRef: consentRef,
-        imageBytes: widget.capturedFrame,
-        phone: _phoneCtr.text,
-        personType: _personType,
-      );
+    // Upload each captured frame (from each pose)
+    for (int i = 0; i < widget.capturedFrames.length; i++) {
+      try {
+        final result = await notifier.enrollOnePhoto(
+          fullName: _nameCtr.text,
+          role: _roleCtr.text,
+          notifyChannel: '',
+          consentRef: '$consentRef-pose-$i',
+          imageBytes: widget.capturedFrames[i],
+          phone: _phoneCtr.text,
+          personType: _personType,
+        );
 
-      setState(() => _enrolling = false);
-
-      if (mounted) {
         if (result.ok) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ ${_nameCtr.text} enrolled successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context);
+          successCount++;
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${result.reason}')),
-          );
+          failureCount++;
+          if (mounted) {
+            print('Frame $i error: ${result.reason}');
+          }
+        }
+      } catch (err) {
+        failureCount++;
+        if (mounted) {
+          print('Frame $i exception: $err');
         }
       }
-    } catch (err) {
-      setState(() => _enrolling = false);
-      if (mounted) {
+    }
+
+    setState(() => _enrolling = false);
+
+    if (mounted) {
+      if (successCount > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $err')),
+          SnackBar(
+            content: Text('✅ ${_nameCtr.text} enrolled! ($successCount/${widget.capturedFrames.length} poses)'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Enrollment failed ($failureCount poses)'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -537,15 +596,55 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Captured image preview
-              Container(
-                width: double.infinity,
-                height: 200,
-                decoration: BoxDecoration(
-                  border: Border.all(color: TimoColors.border),
-                  borderRadius: BorderRadius.circular(8),
+              // Captured frames preview grid
+              Text(
+                'Captured ${widget.capturedFrames.length} poses:',
+                style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: widget.capturedFrames.length,
+                  itemBuilder: (ctx, idx) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Container(
+                      width: 100,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: TimoColors.border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Stack(
+                        children: [
+                          Image.memory(
+                            widget.capturedFrames[idx],
+                            fit: BoxFit.cover,
+                          ),
+                          Positioned(
+                            bottom: 4,
+                            left: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black87,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                const ['Front', 'Left', 'Right', 'Up', 'Down'][idx],
+                                style: GoogleFonts.inter(
+                                  fontSize: 9,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                child: Image.memory(widget.capturedFrame, fit: BoxFit.cover),
               ),
               const SizedBox(height: 24),
               // Form fields
