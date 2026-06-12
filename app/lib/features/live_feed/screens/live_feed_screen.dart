@@ -188,6 +188,7 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   final List<String> _poses = ['Front', 'Left', 'Right', 'Up', 'Down'];
   final List<Uint8List> _capturedFrames = [];
   bool _faceDetected = false;
+  String _status = 'Center your face';
 
   @override
   void initState() {
@@ -456,9 +457,7 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
                 const SizedBox(height: 20),
                 // Status text
                 Text(
-                  _modelsLoaded
-                      ? (_faceDetected ? 'Hold still...' : 'Center your face')
-                      : 'Loading face detection...',
+                  _modelsLoaded ? _status : 'Loading face detection...',
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 18,

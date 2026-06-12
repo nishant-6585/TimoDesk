@@ -205,7 +205,8 @@
       "Bash(git commit -m 'fix: allow test-token for enrollment \\(auth bypass for dev\\) *)",
       "Bash(git commit -m 'CRITICAL FIX: face-api Node.js environment patch + process safety nets *)",
       "Bash(git commit -m 'fix: load face-api models at server startup *)",
-      "Bash(git commit -m 'feat: multi-capture enrollment \\(5 poses per person\\) *)"
+      "Bash(git commit -m 'feat: multi-capture enrollment \\(5 poses per person\\) *)",
+      "Bash(git commit -m 'fix: restore _status field in enrollment detection overlay *)"
     ],
     "additionalDirectories": [
       "/tmp",
