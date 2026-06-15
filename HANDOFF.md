@@ -140,6 +140,30 @@ The reception robot's core job: when a visitor/customer arrives, inform the staf
     5. **Obstacle avoidance / localization** — ties to the Hardware bring-up epic (#63 sensor bridge); the sensor pipeline is scaffolded but not wired to real hardware.
   - **Relationship to #70:** layered on top. #70 (notification) is the dependable baseline that works even when the robot is busy, blocked, or the person isn't at their desk. Build #70 first; #71 is the Phase-3 "escort/announce" premium experience.
 
+**🟪 Voice interaction epic (#80) — voice Q&A / conversational reception. Added to pipeline 2026-06 per user request. NOT built.**
+
+Visitor/staff asks a question out loud → robot answers from the knowledge base, grounded by Claude. Pipeline: **wake word → STT → KB vector search → Claude RAG → TTS.**
+  - **Groundwork already exists:** `kb_chunk` table with `embedding vector(1536)` (comment: *"NULL until voice pipeline populates it"*) + IVFFlat cosine index (migration 004) for FAQ/Q&A retrieval; `conversation` table for transcript logging. So the retrieval half of RAG is schema-ready.
+  - **What's missing (all of it):**
+    1. **KB ingestion** — chunk xboom's FAQ/KB content (Vishal owns KB content), embed each chunk (text-embedding model, 1536-dim to match), populate `kb_chunk.embedding`.
+    2. **STT (speech-to-text)** — capture mic audio from the CSJBot SDK and transcribe (Deepgram or similar). Relates to old roadmap #48 (mic volume) + #50 (wake word / hotword — CSJBot exposes a wake-word listener).
+    3. **Retrieval + RAG** — embed the question → pgvector cosine search over `kb_chunk` → feed top chunks to **Claude** (`claude-opus-4-8` / latest) as grounding context → generate the answer. Use the latest Claude model; read the claude-api skill before wiring the API.
+    4. **TTS (text-to-speech)** — speak the answer through the robot speaker (CSJBot SDK audio out).
+    5. **Conversation logging** — write turns to `conversation` (retention-bound, DPDP).
+  - **Sequencing:** KB ingestion + retrieval can be built/tested in spine against text input FIRST (no audio), then bolt on STT/TTS/wake-word once the RAG answers are good. Mic/speaker pieces depend on real-hardware audio access (ties to Hardware bring-up).
+  - **Effort:** large, multi-part (a Phase-2/3 track of its own).
+
+**🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
+
+Phase 1A built the **entire** obstacle/sensor pipeline (types, `createSensorPipeline`, mock emitter, Flutter `SensorStatusCard` + `BlockedOverlay`) — but on the real robot it is **fed by nothing**, so the UI sits at `obstacleState: 'unknown'` forever. "Activation" = connect the real sensor source to the existing pipeline.
+  - **Reality (don't expect raw LIDAR):** CSJBot does **not** expose a raw LIDAR point cloud — only high-level nav events (`NAVI_ROBOT_BLOCKED_NTF`, `WAITSHORT`, `LQ_LOW`, etc.). "LIDAR feature" here = consuming those high-level obstacle/health/localization events, not rendering a point cloud.
+  - **What's already done:** spine pipeline is wired (`server.ts:241` registers `sdk.onSensorEvent`); Flutter `SensorStatusCard`/`BlockedOverlay` exist.
+  - **What's missing (the 3 breaks in the chain):**
+    1. **`RealRobotSDK.onSensorEvent` is a no-op** (`spine/src/robot/real.ts:301`) — must invoke the handler with parsed events.
+    2. **`real.ts` doesn't parse obstacle messages** — `handleRobotMessage` only handles `face_detected`/`battery_update`; add parsing for the CSJBot nav/obstacle events.
+    3. **The native bridge was never built/deployed** — the Kotlin/Dart in `robot_app/docs/SENSOR_BRIDGE.md` (reference only) must be built into `robot_app` to capture CSJBot SDK events and forward them over the chassis WebSocket to spine.
+  - **Same as Hardware bring-up #63.** Requires the physical robot. Once fed, the existing `SensorStatusCard`/`BlockedOverlay` light up with no further UI work. Note the old mock emitter was disabled (`49ee0da`) because its synthetic "blocked" events were tripping the STOP interlock — re-enable carefully / behind a flag if used for dev.
+
 **🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
 
 - **Live camera view in the admin app** — new cross-platform `MjpegView` (`app/lib/features/live_feed/widgets/`): native `<img>`/HtmlElementView on web, pure-Dart JPEG frame parser (`mjpeg_parser.dart`, unit-tested) on mobile/desktop. Wired into the Live Feed screen + Control screen feed cards with a start/stop toggle, reading the robot IP from `settingsProvider` → `http://<ip>:8080/stream`. Closes the gap where those panels were static `videocam` icons. Works against the mock camera today; "just works" when #62 swaps in the real feed.
