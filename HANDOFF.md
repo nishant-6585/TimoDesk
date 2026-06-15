@@ -153,6 +153,21 @@ Visitor/staff asks a question out loud → robot answers from the knowledge base
   - **Sequencing:** KB ingestion + retrieval can be built/tested in spine against text input FIRST (no audio), then bolt on STT/TTS/wake-word once the RAG answers are good. Mic/speaker pieces depend on real-hardware audio access (ties to Hardware bring-up).
   - **Effort:** large, multi-part (a Phase-2/3 track of its own).
 
+**🟩 Animated avatar face — full-screen "robot personality" UI (#82). Pairs with #80 voice. Added 2026-06 per user request. NOT built.**
+
+A full-screen animated face on the **robot's chest screen** (`robot_app/`, Flutter on Android 7.1.2) so interacting with Timo *feels like talking to a being* — **eyes that look/blink + lip-sync to speech.** This is the visible "personality" layer over the voice pipeline.
+  - **Where:** `robot_app/` (the chest screen), NOT the admin app. Currently `robot_app` is the MJPEG streamer + control plugins; this adds a foreground avatar UI.
+  - **State machine driven by the #80 voice pipeline:**
+    - **Idle** — gentle blink + subtle look-around / breathing.
+    - **Attentive** — eyes track the detected person (drive gaze from the face-detection bounding-box position when someone is recognized/present).
+    - **Listening** — visual cue while STT is capturing (e.g. pulsing).
+    - **Thinking** — during KB retrieval + Claude RAG.
+    - **Speaking** — **lip-sync** the mouth to the TTS audio.
+  - **Lip-sync approach:** start with **amplitude-driven** mouth open/close synced to TTS audio playback (simple, "good enough" and robust). Phoneme/viseme-accurate lip-sync is a later upgrade (needs phoneme timing from the TTS engine).
+  - **Tech suggestion:** **Rive** is well-suited — a state-machine-driven interactive character with named inputs (gaze x/y, blink, mouth-open level, state), lightweight enough for the modest chest-screen hardware. Lottie or Flutter `CustomPainter` are alternatives. Keep it GPU-light (Android 7.1.2, modest device).
+  - **Dependencies:** the avatar *states* come from #80's pipeline events (listening/thinking/speaking) and from #42/face recognition (who/where the person is). Build the avatar with **mock state inputs first** (a debug toggle to cycle idle→listening→thinking→speaking), then wire it to the real voice/recognition events once #80 lands.
+  - **Effort:** medium (animation + state wiring); the heavy lifting is the #80 voice pipeline it visualizes.
+
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
 Phase 1A built the **entire** obstacle/sensor pipeline (types, `createSensorPipeline`, mock emitter, Flutter `SensorStatusCard` + `BlockedOverlay`) — but on the real robot it is **fed by nothing**, so the UI sits at `obstacleState: 'unknown'` forever. "Activation" = connect the real sensor source to the existing pipeline.
