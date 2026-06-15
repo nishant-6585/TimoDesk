@@ -179,6 +179,53 @@ Phase 1A built the **entire** obstacle/sensor pipeline (types, `createSensorPipe
     3. **The native bridge was never built/deployed** — the Kotlin/Dart in `robot_app/docs/SENSOR_BRIDGE.md` (reference only) must be built into `robot_app` to capture CSJBot SDK events and forward them over the chassis WebSocket to spine.
   - **Same as Hardware bring-up #63.** Requires the physical robot. Once fed, the existing `SensorStatusCard`/`BlockedOverlay` light up with no further UI work. Note the old mock emitter was disabled (`49ee0da`) because its synthetic "blocked" events were tripping the STOP interlock — re-enable carefully / behind a flag if used for dev.
 
+**🟦 Mapping & Navigation foundation (#83) — prerequisite for ALL physical autonomy. Added 2026-06 per user request.**
+
+**Honest framing (important):** on CSJBot you do **NOT** implement SLAM yourself. The robot's firmware runs SLAM/localization internally (it reports `OnPositioningQualityListener` quality; waypoints are `{x, y, heading}` in the robot's own map frame). So this feature = **use the CSJBot mapping mode to build the map, then integrate its navigate-to-point API** — not writing a SLAM/particle-filter algorithm. Don't reinvent what the platform already does.
+  - **What it unlocks (everything physical):** #71 navigate-to-desk, autonomous patrol, auto-return-to-charge, escort/guide. Nothing moves intelligently without it.
+  - **Pieces to build:**
+    1. **Build maps** with the CSJBot vendor mapping tool (drive the floor once); save named maps.
+    2. **`navigate`/`goto` intent in spine** (MISSING today — only drive/head/arm/wave/stop) + wire `RealRobotSDK` to CSJBot's point-to-point nav API; surface nav state via the existing sensor pipeline (`running/blocked/wait`).
+    3. **Waypoint & zone management** in the admin app — name points ("reception", "sales desk", "charging dock"). Data model partly ready: `patrol_route.waypoints jsonb [{x,y,heading,dwell_s,narration}]`; Flutter `patrol_routes` feature (`MapCanvas`, `patrol_panels`) is UI scaffolding.
+    4. **Map + live robot-position visualization** in admin.
+  - **Dependencies:** physical robot + CSJBot mapping tools (Hardware bring-up gated).
+  - **"Is it THE most important feature?"** It's the *foundation for an entire category* (all physical autonomy), so critically important — but **not the immediate next step.** Recognition + voice + notification deliver reception value *without* navigation. Build the brain first; #83 unlocks the legs (Phase 3).
+
+---
+
+## Candidate feature backlog (exploration — 2026-06)
+
+A menu to prioritize from. Many are already anticipated in the schema (grounding noted in parens). Not scheduled.
+
+**Physical autonomy (all need #83 mapping):**
+- **Autonomous night patrol** — `patrol_route` table built (`active_from`/`active_to`, `narration`, `enabled`); `capture_patrol` kind exists.
+- **Auto-return-to-charge / docking** — battery-low → navigate to dock (CSJBot dock/charge listeners; Phase 1.5 #43).
+- **Escort / guide visitor to a room**; lead-mode (visitor follows).
+- **Multi-floor** — elevator/door integration (CSJBot SDK supports; site-specific).
+
+**Security / monitoring:**
+- **Intrusion detection** — after-hours person detection → alert + frame capture (schema ready: `capture_intrusion`, 365-day retention).
+- Incident/anomaly capture + alerts.
+
+**Reception / visitor experience:**
+- Visitor check-in + host notification (#70); appointment/calendar pre-booking.
+- **Greet-by-name** (recognition → personalized greeting); multi-language; touchscreen directory/FAQ on chest screen.
+- Visitor badge — QR/print or send-to-phone pass.
+- **Telepresence** — visitor ↔ remote staff video call through the robot.
+
+**Conversational (with #80 voice / #82 avatar):**
+- Voice Q&A; animated avatar; sentiment/engagement read.
+
+**Admin / analytics:**
+- **Mission Control dashboard** (in progress — `MISSION_CONTROL_BUILD.md`).
+- Footfall / dwell / peak-time analytics; staff attendance via recognition.
+- Health & diagnostics (battery, motor overload, self-check — Phase 1.5 #44).
+
+**Platform / robustness:**
+- OTA update + lifecycle (#49); SDK auth visibility (#51); **WebRTC camera upgrade** (lower latency than MJPEG).
+
+---
+
 **🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
 
 - **Live camera view in the admin app** — new cross-platform `MjpegView` (`app/lib/features/live_feed/widgets/`): native `<img>`/HtmlElementView on web, pure-Dart JPEG frame parser (`mjpeg_parser.dart`, unit-tested) on mobile/desktop. Wired into the Live Feed screen + Control screen feed cards with a start/stop toggle, reading the robot IP from `settingsProvider` → `http://<ip>:8080/stream`. Closes the gap where those panels were static `videocam` icons. Works against the mock camera today; "just works" when #62 swaps in the real feed.
