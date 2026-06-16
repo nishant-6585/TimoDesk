@@ -370,6 +370,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final det = ref.watch(faceDetectionProvider);
+                          if (det == null) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _FaceDetectionCard(det: det),
+                          );
+                        },
+                      ),
                       _LiveFeedWidget(stopped: stopped, timeString: _timeString),
                       const SizedBox(height: 12),
                       _QuickControlsPanel(

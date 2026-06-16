@@ -127,13 +127,17 @@ class SpineService extends StateNotifier<SpineState> {
       print('[SpineService] Robot event: $eventType payload: $eventPayload');
 
       if (eventType == 'face_detected' && eventPayload != null) {
-        final name = (eventPayload['name'] as String?) ?? 'unknown';
+        // The broker spreads RobotEvent.payload into eventPayload, so the fields
+        // live under eventPayload['payload']. Fall back to flat for safety.
+        final inner = (eventPayload['payload'] as Map<String, dynamic>?) ?? eventPayload;
+        final name = (inner['name'] as String?) ?? 'unknown';
         final matched = name != 'unknown';
-        final distance = (eventPayload['distance'] as num?)?.toDouble() ?? 0.0;
+        final distance = (inner['distance'] as num?)?.toDouble() ?? 0.0;
+        print('[SpineService] Face detection → $name (L2 $distance)');
         _ref.read(faceDetectionProvider.notifier).report(
               FaceDetection(
                 name: name,
-                staffId: eventPayload['staff_id'] as String?,
+                staffId: inner['staff_id'] as String?,
                 matched: matched,
                 distance: distance,
                 at: DateTime.now(),
