@@ -10,12 +10,13 @@ export const FACE_CONFIG = {
   metric: 'euclidean', // L2 distance
 
   // Matching
-  // L2 threshold, CALIBRATED on real enrolled faces (3 people × 5 poses) via
+  // L2 threshold, CALIBRATED on real enrolled faces (4 people, 19 poses) via
   // scripts/enroll/calibrate.js on 2026-06-16. Nearest-neighbour gap was
-  // [genuine.max 0.552, impostor.min 0.584]; 0.57 is the gap midpoint.
-  // Recognizer rule: nearest enrolled distance < threshold → match; ≥ → unknown.
-  // Re-run calibrate.js and update THIS value if enrollment data changes.
-  threshold: 0.57, // single source of truth — do not hardcode elsewhere
+  // [genuine.max 0.557, impostor.min 0.572]; 0.56 is the gap midpoint.
+  // Gap is thin (0.014) — the match_margin + voting guards below do the heavy
+  // lifting against inference noise. Recognizer rule: nearest enrolled distance
+  // < threshold → match; ≥ → unknown. Re-run calibrate.js if enrollment changes.
+  threshold: 0.56, // single source of truth — do not hardcode elsewhere
   min_confidence: 0.50, // Require 50%+ confidence to identify staff
   confidence_clip: true, // Clip confidence to [0, 1]
 
@@ -43,11 +44,12 @@ export const FACE_CONFIG = {
 };
 
 /**
- * Calibration notes (real data, 3 people × 5 poses, 2026-06-16):
+ * Calibration notes (real data, 4 people / 19 poses, 2026-06-16):
  * - Match by NEAREST enrolled embedding (not all-pairwise); L2 < threshold = match.
- * - Genuine nearest-neighbour : 0.256–0.552 (mean 0.342)
- * - Impostor nearest-neighbour: 0.584–0.714 (mean 0.640)
- * - Clean gap [0.552, 0.584]; rank-1 accuracy 15/15 = 100%.
- * - Threshold 0.57 = gap midpoint. Margin is ~0.015 each side with only 3
- *   people; re-run scripts/enroll/calibrate.js as more staff enroll and retune.
+ * - Genuine nearest-neighbour : 0.256–0.557 (mean 0.358)
+ * - Impostor nearest-neighbour: 0.572–0.696 (mean 0.614)
+ * - Clean gap [0.557, 0.572]; rank-1 accuracy 19/19 = 100%.
+ * - Threshold 0.56 = gap midpoint. Gap is razor-thin (~0.014) so two people are
+ *   embedding-close; match_margin + voting carry inference robustness. Re-run
+ *   scripts/enroll/calibrate.js as staff enroll and retune.
  */
