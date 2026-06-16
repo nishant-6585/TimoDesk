@@ -120,6 +120,15 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 - **#63** Wire the native sensor bridge (`robot_app/docs/SENSOR_BRIDGE.md`) into `RealRobotSDK.onSensorEvent` (currently a no-op) so Phase 1A obstacle/health/localization events flow from real hardware.
 - **#64** Real-hardware safety pass: STOP interlock + obstacle-blocked behaviour validated with the robot physically moving. Highest-risk item — do last, supervised.
 
+**🔋 Battery telemetry — fix wrong value + add robot_app display (#87) — NEAR-TERM, real bug (robot exists). Added 2026-06 per user request.**
+
+- **#87a — Admin app shows INCORRECT battery (bug).** Likely root cause traced:
+  - `robot_app/lib/battery_service.dart` serves `_currentBattery` on port **8090**, but it's **hardcoded to 85** and only changes via `setBattery(level)`. **Nothing appears to feed the real CSJBot battery into `setBattery()`** — so the robot reports a static 85% regardless of actual charge. This is almost certainly the wrong value. Fix: in `robot_app` native, subscribe to the CSJBot battery API (`OnPowerStatusListener` / charge listeners — Phase 1.5 #43) and call `BatteryService.setBattery(realLevel)` so 8090 reports real charge.
+  - Chain is otherwise fine: `spine/src/robot/real.ts:58` correctly polls `http://<ip>:8090/battery` and updates `status.battery` → broadcast → admin. So spine faithfully relays whatever robot_app reports (the static 85).
+  - **Also clean up admin-side fallbacks that mask/fake the value:** `dashboard_screen.dart:205` does `spineState.status?.battery ?? 78` (shows a hardcoded **78** when status is missing), and there's a **mock** `battery_low level: 20%` event hardcoded in the dashboard events list. Remove/replace these so the UI reflects real telemetry only.
+- **#87b — Display battery in the robot_app (chest-screen) UI (feature).** The `robot_app` Flutter app runs the battery HTTP server but doesn't show the level on its own screen. Add a battery indicator to the robot_app UI (`robot_app/lib/main.dart`), reading the same real source (`BatteryService` / CSJBot SDK) — so the chest screen shows charge too.
+- Effort: small–medium. The real unlock is wiring the actual CSJBot battery level (#43) — until then everything downstream shows the placeholder 85.
+
 **🟦 Reception workflow epic (#70–#71) — "customer arrived → tell the right staff member." Added to pipeline 2026-06 per user request. NOT built.**
 
 The reception robot's core job: when a visitor/customer arrives, inform the staff member they're here to see. Two features, do them in this order — notification is the reliable baseline, navigate-and-announce is the premium layer on top.
