@@ -4,9 +4,9 @@ const Duration joystickThrottleMs = Duration(milliseconds: 50);
 const int joystickRadius = 90;
 
 // REAL ROBOT NETWORK SETTINGS - HARDCODED FOR TIMO
-// Robot IP: 192.168.10.18 (WiFi interface on CSJBot device)
-const String defaultSpineUrl = 'ws://192.168.10.18:4000';
-const String defaultRobotIp = '192.168.10.18';
+// Robot IP: 192.168.10.23 (WiFi interface on CSJBot device)
+const String defaultSpineUrl = 'ws://localhost:4000';
+const String defaultRobotIp = '192.168.10.23';
 
 // Robot camera (MJPEG server in robot_app/CameraStreamPlugin, port 8080)
 const int robotCameraPort = 8080;

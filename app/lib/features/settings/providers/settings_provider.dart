@@ -30,8 +30,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     // HARDCODED: Always initialize with REAL ROBOT settings
     // NEVER use cached/old settings from SharedPreferences
     : super(SettingsState(
-        spineUrl: 'ws://192.168.10.18:4000',
-        robotIp: '192.168.10.18',
+        spineUrl: 'ws://localhost:4000',
+        robotIp: '192.168.10.23',
       )) {
     _clearOldCachedSettings();
   }
@@ -46,9 +46,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
       print('[SettingsNotifier] ════════════════════════════════════════');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.10.18');
-      print('[SettingsNotifier] Spine: ws://192.168.10.18:4000');
-      print('[SettingsNotifier] Camera: http://192.168.10.18:8080/stream');
+      print('[SettingsNotifier] Robot IP: 192.168.10.23');
+      print('[SettingsNotifier] Spine: ws://localhost:4000');
+      print('[SettingsNotifier] Camera: http://192.168.10.23:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
       print('[SettingsNotifier] ════════════════════════════════════════');
     } catch (e) {
@@ -60,7 +60,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Spine URL, ignoring to keep hardcoded value');
-      state = state.copyWith(spineUrl: 'ws://192.168.10.18:4000');
+      state = state.copyWith(spineUrl: 'ws://localhost:4000');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }
@@ -70,7 +70,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.10.18');
+      state = state.copyWith(robotIp: '192.168.10.23');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }

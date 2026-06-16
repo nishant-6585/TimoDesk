@@ -5,7 +5,6 @@ import 'dart:js' as js;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:web/web.dart' as web;
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../settings/providers/settings_provider.dart';
@@ -177,18 +176,53 @@ class _EnrollmentDetectionOverlay extends StatefulWidget {
   State<_EnrollmentDetectionOverlay> createState() => _EnrollmentDetectionOverlayState();
 }
 
+// One enrollment pose: the label stored with the frame + the on-screen instruction.
+class _Pose {
+  final String name; // Front / Left / Right / Up / Down (also the frame label)
+  final String instruction; // shown to the user during get-ready
+  const _Pose(this.name, this.instruction);
+}
+
 class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay> {
+  // ---- Tunable gates (adjust here, nowhere else) ----
+  // Face height as a fraction of frame height. Smaller min = farther allowed.
+  static const double _minFaceHeight = 0.15; // below this → "move closer"
+  static const double _maxFaceHeight = 0.70; // above this → "move back"
+  // Head orientation thresholds (from landmarks; see _describeOrientation).
+  static const double _yawFront = 0.12; // |yaw| under this = facing front
+  static const double _yawTurn = 0.20; // |yaw| over this = turned left/right
+  static const double _noseRelFront = 0.48; // front baseline of nose-between-eyes-and-mouth
+  static const double _pitchDelta = 0.10; // how far nose must move for up/down
+  // How long the face must hold the correct pose before capture (~0.7s at 100ms).
+  static const int _stabilityThreshold = 7;
+  // Get-ready countdown before each pose (seconds).
+  static const int _getReadySeconds = 3;
+
+  static const List<_Pose> _posePlan = [
+    _Pose('Front', 'Look straight at the camera'),
+    _Pose('Left', 'Slowly turn your head to your LEFT'),
+    _Pose('Right', 'Slowly turn your head to your RIGHT'),
+    _Pose('Up', 'Tilt your head UP (chin up)'),
+    _Pose('Down', 'Tilt your head DOWN (chin down)'),
+  ];
+
   bool _modelsLoaded = false;
   Timer? _detectionTimer;
+  Timer? _getReadyTimer;
   int _stableFrames = 0;
-  static const int _stabilityThreshold = 10; // ~0.5s at 20fps
 
-  // Multi-capture state
+  // Capture state machine: getReady → detecting → captured → (next) → done
+  String _phase = 'getReady';
+  int _getReadyLeft = _getReadySeconds;
   int _currentPoseIndex = 0;
-  final List<String> _poses = ['Front', 'Left', 'Right', 'Up', 'Down'];
   final List<Uint8List> _capturedFrames = [];
+
+  // Live detection readout (for UI feedback)
   bool _faceDetected = false;
   String _status = 'Center your face';
+  String _detectedOrientation = '';
+
+  _Pose get _currentPose => _posePlan[_currentPoseIndex];
 
   @override
   void initState() {
@@ -199,6 +233,7 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   @override
   void dispose() {
     _detectionTimer?.cancel();
+    _getReadyTimer?.cancel();
     super.dispose();
   }
 
@@ -206,10 +241,32 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     await _loadFaceApiModels();
     if (!mounted) return;
 
-    // Start continuous detection loop
-    _detectionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
-      if (mounted) {
-        _detectAndCapture();
+    // Continuous detection loop (live feedback always; capture only when detecting).
+    _detectionTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) _detectAndCapture();
+    });
+
+    _startPose(); // begin with the get-ready countdown for pose 0
+  }
+
+  // Begin a pose with a get-ready countdown so the user can reposition.
+  void _startPose() {
+    _getReadyTimer?.cancel();
+    setState(() {
+      _phase = 'getReady';
+      _getReadyLeft = _getReadySeconds;
+      _stableFrames = 0;
+      _faceDetected = false;
+    });
+    _getReadyTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      setState(() => _getReadyLeft--);
+      if (_getReadyLeft <= 0) {
+        t.cancel();
+        setState(() {
+          _phase = 'detecting';
+          _stableFrames = 0;
+        });
       }
     });
   }
@@ -247,103 +304,139 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     }
   }
 
+  // Decide if the measured head orientation satisfies the requested pose.
+  bool _poseOrientationMatches(String pose, double yaw, double noseRel) {
+    switch (pose) {
+      case 'Front':
+        return yaw.abs() < _yawFront && (noseRel - _noseRelFront).abs() < _pitchDelta;
+      case 'Left':
+        // NOTE: sign convention — if Left/Right feel swapped on the real camera,
+        // flip the comparisons here (the only place orientation sign is decided).
+        return yaw <= -_yawTurn;
+      case 'Right':
+        return yaw >= _yawTurn;
+      case 'Up':
+        return noseRel <= _noseRelFront - _pitchDelta;
+      case 'Down':
+        return noseRel >= _noseRelFront + _pitchDelta;
+    }
+    return false;
+  }
+
+  String _describeOrientation(double yaw, double noseRel) {
+    if (yaw <= -_yawTurn) return 'turned left';
+    if (yaw >= _yawTurn) return 'turned right';
+    if (noseRel <= _noseRelFront - _pitchDelta) return 'tilted up';
+    if (noseRel >= _noseRelFront + _pitchDelta) return 'tilted down';
+    return 'facing front';
+  }
+
   void _detectAndCapture() {
     if (!_modelsLoaded) return;
 
     try {
-      // Find MJPEG img element (use JS interop since NodeList doesn't support indexing)
-      final findImgCode = '''(function() {
-        const imgs = document.querySelectorAll('img');
-        for (let i = 0; i < imgs.length; i++) {
-          if (imgs[i].src && imgs[i].src.includes('${widget.mjpegUrl}')) {
-            return imgs[i];
-          }
-        }
-        return null;
-      })()''';
-
-      final mjpegImg = js.context.callMethod('eval', [findImgCode]);
-      if (mjpegImg == null) return;
-
-      // Run detection via JS interop
+      // Detect 1 face + landmarks; compute size, centering, yaw and a pitch proxy.
       final jsDetectionCode = '''(async function() {
         const img = document.querySelector('img[src*="${widget.mjpegUrl}"]');
-        if (!img || img.naturalWidth === 0) return {faces: 0, ready: false};
-
+        if (!img || img.naturalWidth === 0) return {faces: 0};
         try {
-          const detections = await faceapi
+          const dets = await faceapi
             .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
-            .withFaceDescriptors();
+            .withFaceLandmarks();
+          if (dets.length !== 1) return {faces: dets.length};
 
-          if (detections.length !== 1) return {faces: detections.length, ready: false};
+          const d = dets[0];
+          const box = d.detection.box;
+          const imgW = img.naturalWidth, imgH = img.naturalHeight;
 
-          const det = detections[0];
-          const box = det.box || (det.detection && det.detection.box);
-          if (!box) return {faces: 1, ready: false};
-
-          // Check if face is centered and large enough
-          const imgW = img.naturalWidth;
-          const imgH = img.naturalHeight;
-          const facePct = (box.width * box.height) / (imgW * imgH);
-          const centerX = (box.x + box.width/2) / imgW;
-          const centerY = (box.y + box.height/2) / imgH;
-
-          const isCentered = centerX > 0.3 && centerX < 0.7 && centerY > 0.3 && centerY < 0.7;
-          const isLargeEnough = facePct > 0.05;
+          const lm = d.landmarks;
+          const avg = (pts) => { let x=0,y=0; for (const p of pts){x+=p.x;y+=p.y;} return {x:x/pts.length, y:y/pts.length}; };
+          const leC = avg(lm.getLeftEye());
+          const reC = avg(lm.getRightEye());
+          const mC  = avg(lm.getMouth());
+          const nose = lm.getNose();          // points 27..35
+          const noseTip = nose[3] || nose[nose.length-1]; // ~point 30
+          const eyeMid = { x:(leC.x+reC.x)/2, y:(leC.y+reC.y)/2 };
+          const interEye = Math.hypot(reC.x-leC.x, reC.y-leC.y) || 1;
+          const faceVert = (mC.y - eyeMid.y) || 1;
 
           return {
             faces: 1,
-            ready: isCentered && isLargeEnough,
-            box: {x: box.x, y: box.y, width: box.width, height: box.height}
+            faceHeight: box.height / imgH,
+            centerX: (box.x + box.width/2) / imgW,
+            centerY: (box.y + box.height/2) / imgH,
+            yaw: (noseTip.x - eyeMid.x) / interEye,        // -left .. +right
+            noseRel: (noseTip.y - eyeMid.y) / faceVert     // ~0.48 front, smaller=up, larger=down
           };
-        } catch(e) {
-          return {faces: 0, ready: false};
-        }
+        } catch(e) { return {faces: 0}; }
       })()''';
 
       final jsFunc = js.context.callMethod('eval', [jsDetectionCode]);
       final completer = Completer<Map<String, dynamic>>();
 
       jsFunc.callMethod('then', [(result) {
+        double toD(dynamic v) => (v is num) ? v.toDouble() : 0.0;
         try {
-          final resultMap = <String, dynamic>{
-            'faces': result['faces'] ?? 0,
-            'ready': result['ready'] ?? false,
-          };
-          completer.complete(resultMap);
+          completer.complete({
+            'faces': (result['faces'] is num) ? (result['faces'] as num).toInt() : 0,
+            'faceHeight': toD(result['faceHeight']),
+            'centerX': toD(result['centerX']),
+            'centerY': toD(result['centerY']),
+            'yaw': toD(result['yaw']),
+            'noseRel': toD(result['noseRel']),
+          });
         } catch (e) {
-          completer.complete({'faces': 0, 'ready': false});
+          completer.complete({'faces': 0});
         }
       }]).callMethod('catch', [(err) {
-        completer.complete({'faces': 0, 'ready': false});
+        completer.complete({'faces': 0});
       }]);
 
-      completer.future.then((result) {
+      completer.future.then((r) {
         if (!mounted) return;
 
-        final faces = result['faces'] as int? ?? 0;
-        final ready = result['ready'] as bool? ?? false;
+        final faces = r['faces'] as int? ?? 0;
+        final faceH = r['faceHeight'] as double? ?? 0.0;
+        final cx = r['centerX'] as double? ?? 0.0;
+        final cy = r['centerY'] as double? ?? 0.0;
+        final yaw = r['yaw'] as double? ?? 0.0;
+        final noseRel = r['noseRel'] as double? ?? 0.0;
+
+        // Geometry gates shared by all poses.
+        final sized = faceH >= _minFaceHeight && faceH <= _maxFaceHeight;
+        final centered = cx > 0.25 && cx < 0.75 && cy > 0.2 && cy < 0.8;
+        final orientationOk = _poseOrientationMatches(_currentPose.name, yaw, noseRel);
+        final ready = faces == 1 && sized && centered && orientationOk;
+
+        // Build the live hint.
+        String hint;
+        if (faces == 0) {
+          hint = 'No face detected';
+        } else if (faces > 1) {
+          hint = 'Only one face allowed';
+        } else if (!sized) {
+          hint = faceH < _minFaceHeight ? 'Move closer' : 'Move back';
+        } else if (!centered) {
+          hint = 'Center your face';
+        } else if (!orientationOk) {
+          hint = _currentPose.instruction;
+        } else {
+          hint = 'Hold still…';
+        }
 
         setState(() {
           _faceDetected = ready;
-          if (ready) {
+          _detectedOrientation = faces == 1 ? _describeOrientation(yaw, noseRel) : '';
+          _status = hint;
+          // Only accumulate stability while actively detecting this pose.
+          if (_phase == 'detecting' && ready) {
             _stableFrames++;
-            _status = 'Hold still... ${_stableFrames ~/ 2}s';
           } else {
             _stableFrames = 0;
-            if (faces == 0) {
-              _status = 'No face detected';
-            } else if (faces > 1) {
-              _status = 'Only one face allowed';
-            } else {
-              _status = 'Move closer & center';
-            }
           }
         });
 
-        // Auto-capture when stable
-        if (ready && _stableFrames >= _stabilityThreshold) {
+        if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
           _captureFrame();
         }
       });
@@ -353,7 +446,11 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   }
 
   Future<void> _captureFrame() async {
-    _detectionTimer?.cancel();
+    // Enter captured phase immediately so the detection loop stops trying to capture.
+    setState(() {
+      _phase = 'captured';
+      _stableFrames = 0;
+    });
 
     try {
       final captureCode = '''(async function() {
@@ -384,101 +481,150 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
         final bytes = base64Decode(base64);
 
         if (mounted) {
-          setState(() => _capturedFrames.add(bytes));
+          setState(() {
+            _capturedFrames.add(bytes);
+            _status = '✓ Captured ${_currentPose.name}';
+            _faceDetected = true;
+          });
 
-          // Move to next pose or finish
-          if (_currentPoseIndex < _poses.length - 1) {
-            setState(() {
-              _currentPoseIndex++;
-              _stableFrames = 0;
-              _faceDetected = false;
-            });
-            // Restart detection timer for next pose
-            _detectionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
-              if (mounted) _detectAndCapture();
-            });
-          } else {
-            // All 5 poses captured
-            _detectionTimer?.cancel();
-            widget.onFramesCaptured(_capturedFrames);
-          }
+          // Brief confirmation pause, then get-ready for the next pose.
+          Future.delayed(const Duration(milliseconds: 1200), () {
+            if (!mounted) return;
+            if (_currentPoseIndex < _posePlan.length - 1) {
+              setState(() => _currentPoseIndex++);
+              _startPose();
+            } else {
+              setState(() => _phase = 'done');
+              _detectionTimer?.cancel();
+              _getReadyTimer?.cancel();
+              widget.onFramesCaptured(_capturedFrames);
+            }
+          });
         }
+      } else {
+        // Capture failed — fall back to detecting so we retry this pose.
+        if (mounted) setState(() => _phase = 'detecting');
       }
     } catch (err) {
       print('[EnrollmentDetection] Capture error: $err');
+      if (mounted) setState(() => _phase = 'detecting');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final borderColor = _phase == 'captured'
+        ? Colors.green
+        : (_faceDetected ? Colors.green : Colors.orange);
+
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(
-          color: _faceDetected ? Colors.green : Colors.orange,
-          width: 3,
-        ),
+        border: Border.all(color: borderColor, width: 3),
       ),
       child: Stack(
         children: [
-          // Semi-transparent overlay
+          Container(color: Colors.black.withOpacity(0.25)),
+          Center(child: _buildCenterContent()),
+          // Live orientation readout, bottom-left.
+          if (_modelsLoaded && _detectedOrientation.isNotEmpty)
+            Positioned(
+              left: 12,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Detected: $_detectedOrientation',
+                  style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCenterContent() {
+    if (!_modelsLoaded) {
+      return Text(
+        'Loading face detection…',
+        style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+      );
+    }
+
+    // Get-ready: big instruction + countdown, no capture yet.
+    if (_phase == 'getReady') {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Step ${_currentPoseIndex + 1} of ${_posePlan.length}',
+              style: GoogleFonts.inter(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 10),
+          Text(_currentPose.name.toUpperCase(),
+              style: GoogleFonts.inter(color: TimoColors.primary, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1)),
+          const SizedBox(height: 14),
+          Text(_currentPose.instruction,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 24),
           Container(
-            color: Colors.black.withOpacity(0.2),
+            width: 72, height: 72,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black45),
+            child: Center(
+              child: Text('$_getReadyLeft',
+                  style: GoogleFonts.inter(color: Colors.white, fontSize: 34, fontWeight: FontWeight.bold)),
+            ),
           ),
-          // Center hint with pose guidance
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Progress indicator (1/5, 2/5, etc)
-                Text(
-                  '${_currentPoseIndex + 1}/${_poses.length}',
-                  style: GoogleFonts.inter(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Pose instruction
-                Text(
-                  'Position: ${_poses[_currentPoseIndex]}',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Face detection icon
-                Icon(
-                  _faceDetected ? Icons.check_circle : Icons.face,
-                  size: 80,
-                  color: _faceDetected ? Colors.green : Colors.orange,
-                ),
-                const SizedBox(height: 20),
-                // Status text
-                Text(
-                  _modelsLoaded ? _status : 'Loading face detection...',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_faceDetected && _stableFrames < _stabilityThreshold) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Capturing in ${(_stabilityThreshold - _stableFrames) ~/ 2}s',
-                    style: GoogleFonts.inter(
-                      color: Colors.green,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ],
+          const SizedBox(height: 12),
+          Text('Get ready…', style: GoogleFonts.inter(color: Colors.white70, fontSize: 14)),
+        ],
+      );
+    }
+
+    // Captured confirmation.
+    if (_phase == 'captured') {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle, size: 90, color: Colors.green),
+          const SizedBox(height: 16),
+          Text('Captured ${_currentPose.name}',
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+        ],
+      );
+    }
+
+    // Detecting: instruction + live hint + stability progress.
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('Step ${_currentPoseIndex + 1} of ${_posePlan.length}',
+            style: GoogleFonts.inter(color: Colors.white70, fontSize: 14)),
+        const SizedBox(height: 8),
+        Text(_currentPose.instruction,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 18),
+        Icon(_faceDetected ? Icons.check_circle : Icons.face,
+            size: 80, color: _faceDetected ? Colors.green : Colors.orange),
+        const SizedBox(height: 16),
+        Text(_status,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+        if (_faceDetected) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: 160,
+            child: LinearProgressIndicator(
+              value: (_stableFrames / _stabilityThreshold).clamp(0.0, 1.0),
+              backgroundColor: Colors.white24,
+              valueColor: const AlwaysStoppedAnimation(Colors.green),
             ),
           ),
         ],
-      ),
+      ],
     );
   }
 }
