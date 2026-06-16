@@ -6,7 +6,7 @@
 export const FACE_CONFIG = {
   // Model + embedding
   model: 'face-api',
-  embedding_dim: 512, // Current schema (will be 128 after migration 006)
+  embedding_dim: 128, // matches migration 006 (vector(128)) + face-api descriptor
   metric: 'euclidean', // L2 distance
 
   // Matching

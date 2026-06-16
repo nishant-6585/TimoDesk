@@ -194,9 +194,11 @@ class _Pose {
 
 class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay> {
   // ---- Tunable gates (adjust here, nowhere else) ----
-  // Face height as a fraction of frame height. Smaller min = farther allowed.
-  static const double _minFaceHeight = 0.15; // below this → "move closer"
-  static const double _maxFaceHeight = 0.70; // above this → "move back"
+  // Face height as a fraction of frame height. Bigger = sharper, more
+  // discriminative embeddings. face-api recognition degrades on small faces,
+  // so require the face to fill a good chunk of the frame (≈145px+ at 480p).
+  static const double _minFaceHeight = 0.30; // below this → "move closer"
+  static const double _maxFaceHeight = 0.80; // above this → "move back"
   // Head orientation thresholds (from landmarks; see _describeOrientation).
   // Keep turns MILD — a strong profile becomes undetectable server-side and
   // makes a poor recognition embedding. Slight turns give enough variation.
@@ -204,8 +206,9 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   static const double _yawTurn = 0.15; // |yaw| over this = (slightly) turned left/right
   static const double _noseRelFront = 0.48; // front baseline of nose-between-eyes-and-mouth
   static const double _pitchDelta = 0.10; // how far nose must move for up/down
-  // How long the face must hold the correct pose before capture (~0.7s at 100ms).
-  static const int _stabilityThreshold = 7;
+  // How long the face must hold the correct pose before capture (~1.0s at
+  // 100ms). Longer hold = the head has settled = less motion blur.
+  static const int _stabilityThreshold = 10;
   // Get-ready countdown before each pose (seconds).
   static const int _getReadySeconds = 3;
 
