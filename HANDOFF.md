@@ -226,6 +226,26 @@ A menu to prioritize from. Many are already anticipated in the schema (grounding
 
 ---
 
+**🟦 Zone mapping & virtual boundaries (#84) — semantic layer on top of #83. Added 2026-06 per user request.**
+
+User idea: "auto-map the office (showroom vs inside office) with boundaries using CV/OpenCV." **Honest correction recorded so this isn't mis-built:** the geometric/boundary map comes from **CSJBot's built-in SLAM** (depth/LIDAR), NOT from OpenCV on the RGB camera — monocular camera mapping is drift-prone and the wrong tool when the platform already does sensor SLAM. CV adds the **semantic** layer on top:
+  - **Operator-tagged zones (reliable, recommended):** on the SLAM map, draw/label zones ("Showroom", "Office") + **virtual boundaries / no-go geofences** ("don't cross into office during business hours"). `patrol_route` table + Flutter `MapCanvas` are scaffolding for this.
+  - **CV-assisted labeling (hint only):** during a mapping run, use camera scene/object recognition to *suggest* zone labels. Don't treat auto vision-segmentation as source of truth — unreliable.
+  - **ArUco/AprilTag markers (robust CV trick):** printed markers around the office → OpenCV reads them cheaply for solid zone/landmark identification, far more reliable than scene classification.
+  - **Depends on #83** (the SLAM map must exist first) + physical robot.
+
+**🟩 Computer Vision capabilities (exploration — 2026-06).** The camera + spine face-api pipeline already exists; these layer on. Continuous/autonomous CV → run on **spine** (reuse frame pipeline); interactive → browser. **DPDP:** presence/object/anomaly detection (no identity) is clean; demographics/emotion/age-gender on visitors is biometric-adjacent — OUT unless Vishal signs off (consistent with no-customer-biometrics).
+  - **Face recognition** (in progress) — greet staff/known by name (face-api).
+  - **Person detection & counting** — footfall, "someone's here → greet", occupancy (YOLO/COCO-SSD).
+  - **Object detection** — unattended bags/packages at reception, products, obstacles (YOLO/COCO).
+  - **Approach / wave / gesture** — trigger greeting when someone walks up (MediaPipe pose/hands).
+  - **OCR / business-card / ID / QR scan** — visitor self check-in, badge scan (Tesseract / vision API).
+  - **ArUco/AprilTag markers** — cheap robust zone/landmark ID for navigation (OpenCV).
+  - **Anomaly / activity (after-hours)** — security patrol: motion, fallen person, intruder. Schema ready: `capture_intrusion` (365-day retention).
+  - **Product recognition** — showroom "what is this?" Q&A (custom classifier / vision API).
+  - **Liveness / anti-spoof** — block photo-of-photo enrollment (face-api + inter-frame motion).
+  - **Tools:** face-api.js (faces, have it), YOLO/COCO-SSD (objects/people), MediaPipe (pose/hands/face mesh), OpenCV (markers, motion, contours), Tesseract (OCR), or cloud vision (Google Vision / AWS Rekognition) as alternatives.
+
 **🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
 
 - **Live camera view in the admin app** — new cross-platform `MjpegView` (`app/lib/features/live_feed/widgets/`): native `<img>`/HtmlElementView on web, pure-Dart JPEG frame parser (`mjpeg_parser.dart`, unit-tested) on mobile/desktop. Wired into the Live Feed screen + Control screen feed cards with a start/stop toggle, reading the robot IP from `settingsProvider` → `http://<ip>:8080/stream`. Closes the gap where those panels were static `videocam` icons. Works against the mock camera today; "just works" when #62 swaps in the real feed.
