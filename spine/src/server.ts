@@ -13,6 +13,7 @@ import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
 import { handleEnroll } from './handlers/enroll';
+import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 
@@ -42,7 +43,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     const httpServer = http.createServer(async (req, res) => {
       // CORS headers on every response
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
 
       // Handle preflight OPTIONS
@@ -53,9 +54,36 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
 
       // Handle HTTP routes
-      if (req.url === '/enroll' && req.method === 'POST') {
+      const url = req.url || '';
+
+      // All HTTP routes need Supabase; fail clearly if it isn't configured.
+      if (!supabase) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, reason: 'Supabase not configured' }));
+        return;
+      }
+
+      if (url === '/enroll' && req.method === 'POST') {
         await handleEnroll(req, res, supabase);
         return;
+      }
+
+      if (url === '/staff' && req.method === 'GET') {
+        await handleListStaff(req, res, supabase);
+        return;
+      }
+
+      const staffMatch = url.match(/^\/staff\/([^/]+)$/);
+      if (staffMatch) {
+        const staffId = decodeURIComponent(staffMatch[1]);
+        if (req.method === 'PATCH') {
+          await handleUpdateStaff(req, res, supabase, staffId);
+          return;
+        }
+        if (req.method === 'DELETE') {
+          await handleDeleteStaff(req, res, supabase, staffId);
+          return;
+        }
       }
 
       // 404 for unknown routes

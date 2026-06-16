@@ -9,6 +9,7 @@ import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../../staff/providers/enrollment_provider.dart';
+import '../../staff/screens/staff_list_screen.dart';
 import '../widgets/mjpeg_view.dart';
 
 class LiveFeedScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,14 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
         title: const Text('Live Feed'),
         backgroundColor: TimoColors.surface,
         actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StaffListScreen()),
+            ),
+            icon: const Icon(Icons.group),
+            label: const Text('Manage Staff'),
+          ),
+          const SizedBox(width: 8),
           TextButton.icon(
             onPressed: _toggleEnrollmentMode,
             icon: const Icon(Icons.person_add),
