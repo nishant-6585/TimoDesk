@@ -119,38 +119,72 @@ async function main() {
   const crossS = stats(cross);
 
   console.log('════════════════════════════════════════════════════════════');
-  console.log('DISTRIBUTIONS');
+  console.log('DISTRIBUTIONS (all pairwise — context)');
   console.log('════════════════════════════════════════════════════════════\n');
   printStats('SELF-MATCH (same person, different poses):', selfS);
   printStats('CROSS-MATCH (different people):', crossS);
 
-  // Gap analysis.
-  const gap = crossS.min - selfS.max;
-  const separated = gap > 0;
-  const midpoint = (selfS.max + crossS.min) / 2;
-  const meanPlus3Std = selfS.mean + 3 * selfS.std;
+  // ── Decision metric: leave-one-out nearest-neighbour ──────────────────────
+  // This mirrors how the recognizer actually matches: a query face is compared
+  // to each person's CLOSEST enrolled pose, not to all pairs. We treat every
+  // enrolled embedding as a held-out query and find its nearest genuine
+  // (same-person) and nearest impostor (other-person) neighbour.
+  const flat = [];
+  for (const g of groups) for (const v of g.vecs) flat.push({ name: g.name, v });
+
+  const genuine = [];
+  const impostor = [];
+  let rank1Correct = 0;
+  for (let i = 0; i < flat.length; i++) {
+    let gMin = Infinity;
+    let iMin = Infinity;
+    for (let j = 0; j < flat.length; j++) {
+      if (i === j) continue;
+      const d = l2Distance(flat[i].v, flat[j].v);
+      if (flat[i].name === flat[j].name) gMin = Math.min(gMin, d);
+      else iMin = Math.min(iMin, d);
+    }
+    genuine.push(gMin);
+    impostor.push(iMin);
+    if (gMin < iMin) rank1Correct++;
+  }
+  const genS = stats(genuine);
+  const impS = stats(impostor);
+
+  console.log('════════════════════════════════════════════════════════════');
+  console.log('DECISION METRIC: nearest-neighbour (leave-one-out)');
+  console.log('════════════════════════════════════════════════════════════\n');
+  printStats('GENUINE  (nearest SAME-person pose):', genS);
+  printStats('IMPOSTOR (nearest OTHER-person pose):', impS);
+  console.log(
+    `rank-1 accuracy: ${rank1Correct}/${flat.length} = ${((100 * rank1Correct) / flat.length).toFixed(0)}%\n`
+  );
+
+  const nnGap = impS.min - genS.max;
+  const nnSeparated = nnGap > 0;
 
   console.log('════════════════════════════════════════════════════════════');
   console.log('THRESHOLD');
   console.log('════════════════════════════════════════════════════════════\n');
-  console.log(`self-match MAX:  ${selfS.max.toFixed(4)}`);
-  console.log(`cross-match MIN: ${crossS.min.toFixed(4)}`);
-  console.log(`gap (min-cross − max-self): ${gap.toFixed(4)}  → ${separated ? 'SEPARATED ✅' : 'OVERLAP ❌'}\n`);
+  console.log(`genuine  MAX: ${genS.max.toFixed(4)}`);
+  console.log(`impostor MIN: ${impS.min.toFixed(4)}`);
+  console.log(`gap (impostor.min − genuine.max): ${nnGap.toFixed(4)}  → ${nnSeparated ? 'SEPARATED ✅' : 'OVERLAP ❌'}\n`);
 
-  if (!separated) {
-    console.log('❌ Distributions OVERLAP — do NOT pick a threshold from this data.');
-    console.log('   Recapture cleaner / more varied poses (check the right face was detected) and re-run.\n');
+  if (!nnSeparated) {
+    console.log('❌ Even nearest-neighbour OVERLAPS — a query could match the wrong person.');
+    console.log('   Recapture the loosest enrollment (check per-person self-match) and re-run.\n');
     process.exit(2);
   }
 
-  // Prefer the midpoint of the gap; report the mean+3σ alternative for reference.
-  const recommended = midpoint;
-  console.log(`midpoint of gap:        ${midpoint.toFixed(4)}   ← recommended`);
-  console.log(`self_mean + 3·self_std: ${meanPlus3Std.toFixed(4)}   (reference)\n`);
-  console.log(`RECOMMENDED THRESHOLD: ${recommended.toFixed(4)}`);
+  // Threshold sits in the gap between the worst genuine and the closest impostor.
+  const recommended = (genS.max + impS.min) / 2;
+  console.log(`RECOMMENDED THRESHOLD (gap midpoint): ${recommended.toFixed(4)}`);
   console.log(`Round for config: ${recommended.toFixed(2)}\n`);
-  console.log('Apply in spine/src/config/face-recognition.ts → FACE_CONFIG.threshold');
-  console.log('Rule: L2 < threshold = same person; L2 ≥ threshold = different.\n');
+  console.log('Recognizer rule (nearest-neighbour):');
+  console.log('  • compute query embedding, find nearest enrolled embedding across all staff');
+  console.log('  • nearest distance <  threshold → match that person');
+  console.log('  • nearest distance ≥  threshold → unknown / visitor');
+  console.log('Apply in spine/src/config/face-recognition.ts → FACE_CONFIG.threshold\n');
 }
 
 main().catch(err => {

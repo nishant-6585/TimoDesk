@@ -10,7 +10,12 @@ export const FACE_CONFIG = {
   metric: 'euclidean', // L2 distance
 
   // Matching
-  threshold: 0.60, // L2 distance threshold (tunable, calibrated during enrollment)
+  // L2 threshold, CALIBRATED on real enrolled faces (3 people × 5 poses) via
+  // scripts/enroll/calibrate.js on 2026-06-16. Nearest-neighbour gap was
+  // [genuine.max 0.552, impostor.min 0.584]; 0.57 is the gap midpoint.
+  // Recognizer rule: nearest enrolled distance < threshold → match; ≥ → unknown.
+  // Re-run calibrate.js and update THIS value if enrollment data changes.
+  threshold: 0.57, // single source of truth — do not hardcode elsewhere
   min_confidence: 0.50, // Require 50%+ confidence to identify staff
   confidence_clip: true, // Clip confidence to [0, 1]
 
@@ -29,12 +34,11 @@ export const FACE_CONFIG = {
 };
 
 /**
- * Calibration notes:
- * - L2 distance < threshold = match (same person)
- * - L2 distance >= threshold = no match (different people)
- *
- * Typical ranges (from calibration on test data):
- * - Self-match: 0.10-0.40 (same person, different photos)
- * - Cross-match: 0.60-0.95 (different people)
- * - Recommended threshold: 0.55 (midpoint)
+ * Calibration notes (real data, 3 people × 5 poses, 2026-06-16):
+ * - Match by NEAREST enrolled embedding (not all-pairwise); L2 < threshold = match.
+ * - Genuine nearest-neighbour : 0.256–0.552 (mean 0.342)
+ * - Impostor nearest-neighbour: 0.584–0.714 (mean 0.640)
+ * - Clean gap [0.552, 0.584]; rank-1 accuracy 15/15 = 100%.
+ * - Threshold 0.57 = gap midpoint. Margin is ~0.015 each side with only 3
+ *   people; re-run scripts/enroll/calibrate.js as more staff enroll and retune.
  */
