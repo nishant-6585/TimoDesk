@@ -189,8 +189,10 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   static const double _minFaceHeight = 0.15; // below this → "move closer"
   static const double _maxFaceHeight = 0.70; // above this → "move back"
   // Head orientation thresholds (from landmarks; see _describeOrientation).
-  static const double _yawFront = 0.12; // |yaw| under this = facing front
-  static const double _yawTurn = 0.20; // |yaw| over this = turned left/right
+  // Keep turns MILD — a strong profile becomes undetectable server-side and
+  // makes a poor recognition embedding. Slight turns give enough variation.
+  static const double _yawFront = 0.10; // |yaw| under this = facing front
+  static const double _yawTurn = 0.15; // |yaw| over this = (slightly) turned left/right
   static const double _noseRelFront = 0.48; // front baseline of nose-between-eyes-and-mouth
   static const double _pitchDelta = 0.10; // how far nose must move for up/down
   // How long the face must hold the correct pose before capture (~0.7s at 100ms).

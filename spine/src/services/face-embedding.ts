@@ -51,14 +51,23 @@ export async function extractEmbedding(imageBuffer: Buffer): Promise<FaceEmbeddi
     // Load image with canvas
     const image = await canvas.loadImage(imageBuffer);
 
-    // Resize to 256×256 for consistent preprocessing
-    const resizeCanvas = new canvas.Canvas(256, 256);
-    const ctx = resizeCanvas.getContext('2d');
-    ctx.drawImage(image as any, 0, 0, 256, 256);
+    // Draw at NATIVE size — do NOT squish to a square. Forcing a 4:3 camera
+    // frame into 256×256 horizontally compresses the face and makes turned
+    // (left/right) poses undetectable. Preserve aspect ratio.
+    const nativeCanvas = new canvas.Canvas(image.width, image.height);
+    const ctx = nativeCanvas.getContext('2d');
+    ctx.drawImage(image as any, 0, 0);
+
+    // Tuned detector: larger inputSize (must be a multiple of 32) + lower score
+    // threshold so mildly turned / tilted faces are still detected.
+    const detectorOptions = new faceapi.TinyFaceDetectorOptions({
+      inputSize: 416,
+      scoreThreshold: 0.4,
+    });
 
     // Detect faces with tinyFaceDetector
     const detections = await faceapi
-      .detectAllFaces(resizeCanvas, new faceapi.TinyFaceDetectorOptions())
+      .detectAllFaces(nativeCanvas, detectorOptions)
       .withFaceLandmarks()
       .withFaceDescriptors();
 
