@@ -246,6 +246,26 @@ User idea: "auto-map the office (showroom vs inside office) with boundaries usin
   - **Liveness / anti-spoof** — block photo-of-photo enrollment (face-api + inter-frame motion).
   - **Tools:** face-api.js (faces, have it), YOLO/COCO-SSD (objects/people), MediaPipe (pose/hands/face mesh), OpenCV (markers, motion, contours), Tesseract (OCR), or cloud vision (Google Vision / AWS Rekognition) as alternatives.
 
+**🟨 Payment / checkout (#85) — visitors/customers pay via the Timo app. Added 2026-06 per user request.**
+
+Reception robot pivots slightly into commerce/kiosk. Doable and well-trodden in India — but it's a real compliance surface, so build it backend-driven and minimize PCI scope.
+  - **Recommended approach: UPI QR / hosted checkout via an Indian PSP (Razorpay or Cashfree).** Robot displays a **UPI QR or hosted checkout page** → customer pays on **their own phone** (PhonePe/GPay/Paytm). Card data NEVER touches the robot or our servers → stays **out of PCI-DSS scope**. UPI is the dominant rail in India and ideal for a kiosk (no card-reader hardware needed — just the chest screen).
+  - **Architecture (backend-driven — NEVER trust the client to confirm payment):**
+    1. Flutter → spine: create order (amount, item, visitor contact for receipt).
+    2. Spine → PSP order API (**secret keys on spine ONLY, in env**) → returns order id / QR / hosted URL.
+    3. Flutter shows the QR / checkout.
+    4. Customer pays on their phone.
+    5. PSP → spine **webhook** (`payment.captured`) → spine **verifies the HMAC signature** → marks order paid → pushes status to the app (WS) → success + receipt (email/SMS).
+    - **Mark paid ONLY on the verified webhook** — never because the client said so. Webhooks must be idempotent (PSPs retry).
+  - **Data model (NEW — none exists today):** `order` (amount, status, items, visitor ref), `payment` (psp_order_id, psp_payment_id, status, amount), optional `product`/`catalog`. Minimal PII; **store NO card data, ever**.
+  - **Security / compliance:**
+    * Hosted/QR flow keeps card data off our systems (PCI scope minimized).
+    * Secrets only on spine; Flutter gets the public key / order id only.
+    * Mandatory webhook **signature (HMAC) verification** — reuse the `xboom-flow` webhook-auth discipline (#14–#17: Exotel/MyOperator/Interakt + secret rotation).
+    * Idempotency + reconciliation + refund handling; receipts via email/SMS; DPDP-minimal storage.
+  - **Scope first:** define WHAT is being sold (showroom products? services? appointments?) — that drives the catalog/order model.
+  - **Effort:** medium–large (distinct commerce domain). Avoid card-terminal hardware unless truly required (adds PCI + hardware).
+
 **🟢 Done this session (cloud, branch `claude/clever-brown-8kLaJ`):**
 
 - **Live camera view in the admin app** — new cross-platform `MjpegView` (`app/lib/features/live_feed/widgets/`): native `<img>`/HtmlElementView on web, pure-Dart JPEG frame parser (`mjpeg_parser.dart`, unit-tested) on mobile/desktop. Wired into the Live Feed screen + Control screen feed cards with a start/stop toggle, reading the robot IP from `settingsProvider` → `http://<ip>:8080/stream`. Closes the gap where those panels were static `videocam` icons. Works against the mock camera today; "just works" when #62 swaps in the real feed.
