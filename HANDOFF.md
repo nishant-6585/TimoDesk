@@ -234,7 +234,7 @@ User idea: "auto-map the office (showroom vs inside office) with boundaries usin
   - **ArUco/AprilTag markers (robust CV trick):** printed markers around the office → OpenCV reads them cheaply for solid zone/landmark identification, far more reliable than scene classification.
   - **Depends on #83** (the SLAM map must exist first) + physical robot.
 
-**🟩 Computer Vision capabilities (exploration — 2026-06).** The camera + spine face-api pipeline already exists; these layer on. Continuous/autonomous CV → run on **spine** (reuse frame pipeline); interactive → browser. **DPDP:** presence/object/anomaly detection (no identity) is clean; demographics/emotion/age-gender on visitors is biometric-adjacent — OUT unless Vishal signs off (consistent with no-customer-biometrics).
+**🟩 Computer Vision suite (#86) — capability menu (formalized from the CV table, 2026-06).** The camera + spine face-api pipeline already exists; these layer on. Continuous/autonomous CV → run on **spine** (reuse frame pipeline); interactive → browser. **DPDP:** presence/object/anomaly detection (no identity) is clean; demographics/emotion/age-gender on visitors is biometric-adjacent — OUT unless Vishal signs off (consistent with no-customer-biometrics).
   - **Face recognition** (in progress) — greet staff/known by name (face-api).
   - **Person detection & counting** — footfall, "someone's here → greet", occupancy (YOLO/COCO-SSD).
   - **Object detection** — unattended bags/packages at reception, products, obstacles (YOLO/COCO).
