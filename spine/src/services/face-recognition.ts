@@ -56,7 +56,10 @@ export class FaceRecognitionService {
   private readonly robotIP: string;
   private readonly cameraPort = FACE_CONFIG.camera_port; // 8080
   private readonly threshold = FACE_CONFIG.threshold; // 0.57, calibrated
-  private readonly cadenceMs = FACE_CONFIG.detection_cadence_ms; // 1500
+  private readonly margin = FACE_CONFIG.match_margin; // 0.06 second-place gap
+  private readonly voteWindow = FACE_CONFIG.vote_window; // last N frames
+  private readonly voteMin = FACE_CONFIG.vote_min; // need this many agreeing
+  private readonly cadenceMs = FACE_CONFIG.detection_cadence_ms; // 1000
   private readonly reloadMs = 30_000; // refresh enrolled set so new staff are picked up
   private readonly reEmitMs = 5_000; // re-confirm the same identity at most this often
 
@@ -68,6 +71,8 @@ export class FaceRecognitionService {
   private lastReload = 0;
   private lastEmitKey = '';
   private lastEmitAt = 0;
+  private votes: MatchResult[] = []; // sliding window of recent per-frame results
+  private noFaceStreak = 0; // consecutive frames with no single face
 
   constructor(robotIP: string, supabase: SupabaseClient, emit: (event: RobotEvent) => void) {
     this.robotIP = robotIP;
@@ -111,21 +116,68 @@ export class FaceRecognitionService {
     this.lastReload = Date.now();
   }
 
-  /** Nearest-neighbour match — identical metric to calibrate.js. */
+  /**
+   * Per-person nearest-neighbour match with a margin guard.
+   * Nearest pose is still the metric (same as calibrate.js), but computed PER
+   * PERSON so we can compare the two closest people. A match is only accepted
+   * when the nearest person is below threshold AND beats the 2nd-nearest person
+   * by `margin` — otherwise the frame is ambiguous (two people embedding-close)
+   * and we return unknown rather than guess wrong.
+   */
   matchEmbedding(query: number[]): MatchResult {
-    let bestDist = Infinity;
-    let best: EnrolledEmbedding | null = null;
+    // nearest distance to each person
+    const nearestByStaff = new Map<string, { name: string; dist: number }>();
     for (const e of this.enrolled) {
       const d = l2Distance(query, e.embedding);
-      if (d < bestDist) {
-        bestDist = d;
-        best = e;
+      const cur = nearestByStaff.get(e.staff_id);
+      if (!cur || d < cur.dist) nearestByStaff.set(e.staff_id, { name: e.full_name, dist: d });
+    }
+    if (nearestByStaff.size === 0) return { matched: false, name: 'unknown', distance: Infinity };
+
+    const ranked = [...nearestByStaff.entries()]
+      .map(([staff_id, v]) => ({ staff_id, ...v }))
+      .sort((a, b) => a.dist - b.dist);
+
+    const best = ranked[0];
+    const second = ranked[1];
+
+    const belowThreshold = best.dist < this.threshold;
+    const clearWinner = !second || second.dist - best.dist >= this.margin;
+
+    if (belowThreshold && clearWinner) {
+      return { matched: true, staff_id: best.staff_id, name: best.name, distance: best.dist };
+    }
+    // Ambiguous or too far → unknown (report nearest distance for visibility).
+    return { matched: false, name: 'unknown', distance: best.dist };
+  }
+
+  /** Majority vote over the last `voteWindow` frames; needs `voteMin` agreeing. */
+  private voted(latest: MatchResult): MatchResult {
+    this.votes.push(latest);
+    if (this.votes.length > this.voteWindow) this.votes.shift();
+
+    const counts = new Map<string, number>();
+    for (const v of this.votes) {
+      const key = v.matched ? `staff:${v.staff_id}` : 'unknown';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let winnerKey = 'unknown';
+    let winnerCount = 0;
+    for (const [key, c] of counts) {
+      if (c > winnerCount) {
+        winnerKey = key;
+        winnerCount = c;
       }
     }
-    if (best && bestDist < this.threshold) {
-      return { matched: true, staff_id: best.staff_id, name: best.full_name, distance: bestDist };
+    // A staff identity must clear voteMin; otherwise stay unknown.
+    if (winnerKey !== 'unknown' && winnerCount >= this.voteMin) {
+      // emit the most recent frame that matched this identity (for its distance)
+      for (let i = this.votes.length - 1; i >= 0; i--) {
+        const v = this.votes[i];
+        if (v.matched && `staff:${v.staff_id}` === winnerKey) return v;
+      }
     }
-    return { matched: false, name: 'unknown', distance: bestDist };
+    return { matched: false, name: 'unknown', distance: latest.distance };
   }
 
   private async loop(): Promise<void> {
@@ -148,10 +200,20 @@ export class FaceRecognitionService {
     // SHARED pipeline — same face-api path as enrollment. Requires exactly 1 face;
     // returns ok:false for 0 or >1 faces (skip those frames).
     const result = await extractEmbedding(frame);
-    if (!result.ok || !result.embedding) return;
+    if (!result.ok || !result.embedding) {
+      // No (single) face this frame. Age out the vote window so the next person
+      // to appear doesn't inherit the previous person's votes.
+      this.noFaceStreak++;
+      if (this.noFaceStreak >= this.voteWindow) {
+        this.votes = [];
+        this.lastEmitKey = ''; // allow a fresh emit when someone returns
+      }
+      return;
+    }
+    this.noFaceStreak = 0;
 
-    const match = this.matchEmbedding(result.embedding);
-    this.maybeEmit(match);
+    const raw = this.matchEmbedding(result.embedding);
+    this.maybeEmit(this.voted(raw)); // temporal smoothing before emit
   }
 
   /** Grab one complete JPEG from the robot /snapshot endpoint (no MJPEG boundary parsing). */

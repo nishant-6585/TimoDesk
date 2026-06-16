@@ -19,8 +19,17 @@ export const FACE_CONFIG = {
   min_confidence: 0.50, // Require 50%+ confidence to identify staff
   confidence_clip: true, // Clip confidence to [0, 1]
 
+  // Precision guards (reduce false matches when two people are embedding-close):
+  // - match_margin: the nearest person must beat the 2nd-nearest person by at
+  //   least this L2 gap, else the frame is "ambiguous" → unknown (don't guess).
+  // - vote_window / vote_min: a candidate identity must win at least vote_min of
+  //   the last vote_window frames before it's emitted (kills single-frame flips).
+  match_margin: 0.06,
+  vote_window: 5,
+  vote_min: 3,
+
   // Detection
-  detection_cadence_ms: 1500, // Detect every 1.5s
+  detection_cadence_ms: 1000, // Detect every 1.0s (faster so voting isn't sluggish)
   frame_timeout_ms: 5000, // Timeout for frame capture
   camera_port: 8080, // MJPEG stream port
 
