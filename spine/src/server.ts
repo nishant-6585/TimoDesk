@@ -7,7 +7,7 @@
 import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
-import { SpineMessage, AdminMessage, RobotStatus } from './types';
+import { SpineMessage, AdminMessage, RobotStatus, RobotEvent } from './types';
 import { routeMessage } from './commands/router';
 import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
@@ -16,6 +16,7 @@ import { handleEnroll } from './handlers/enroll';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
+import { FaceRecognitionService } from './services/face-recognition';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -232,8 +233,8 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Log but don't exit — keep server alive for robot control
     });
 
-    // Register robot event handler to broadcast to all clients
-    sdk.onEvent((event) => {
+    // Single broadcast path for all RobotEvents → { type:'event', event, eventPayload }.
+    const broadcastRobotEvent = (event: RobotEvent) => {
       const { type: eventType, ...rest } = event;
       const msg: SpineMessage = {
         type: 'event',
@@ -245,7 +246,22 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           client.send(JSON.stringify(msg));
         }
       });
-    });
+    };
+
+    // Robot-originated events (battery, etc.) go through it…
+    sdk.onEvent(broadcastRobotEvent);
+
+    // …and so does the autonomous face recognizer (same path, one event shape).
+    if (supabase) {
+      const recognizerIP = process.env.ROBOT_IP || '192.168.99.101';
+      const recognizer = new FaceRecognitionService(recognizerIP, supabase, broadcastRobotEvent);
+      recognizer.start().catch((err) => {
+        console.error('[Spine] Face recognizer failed to start:', err);
+        // Non-fatal: robot control/camera/WS keep running.
+      });
+    } else {
+      console.log('[Spine] Face recognizer disabled — Supabase not configured.');
+    }
 
     // Sensor/obstacle awareness (Phase 1A): each SensorEvent updates the cached
     // RobotStatus, broadcasts it to all clients, and logs to Supabase.

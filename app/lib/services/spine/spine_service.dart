@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../../core/constants.dart';
 import '../../features/settings/providers/settings_provider.dart';
 import 'spine_state.dart';
+import 'face_detection_provider.dart';
 
 class SpineService extends StateNotifier<SpineState> {
   WebSocketChannel? _channel;
@@ -124,6 +125,21 @@ class SpineService extends StateNotifier<SpineState> {
       final eventType = msg['event'] as String?;
       final eventPayload = msg['eventPayload'] as Map<String, dynamic>?;
       print('[SpineService] Robot event: $eventType payload: $eventPayload');
+
+      if (eventType == 'face_detected' && eventPayload != null) {
+        final name = (eventPayload['name'] as String?) ?? 'unknown';
+        final matched = name != 'unknown';
+        final distance = (eventPayload['distance'] as num?)?.toDouble() ?? 0.0;
+        _ref.read(faceDetectionProvider.notifier).report(
+              FaceDetection(
+                name: name,
+                staffId: eventPayload['staff_id'] as String?,
+                matched: matched,
+                distance: distance,
+                at: DateTime.now(),
+              ),
+            );
+      }
     } else if (msgType == 'ack') {
       print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
     }

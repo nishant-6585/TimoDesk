@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/face_detection_provider.dart';
 
 const eventColorMap = {
   'command_drive': Color(0xFF3B82F6),
@@ -27,7 +28,6 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   final List<Map<String, String>> _events = [
     {'time': 'just now', 'type': 'command_head', 'details': 'lr:50 ud:50', 'session': 'admin'},
     {'time': '2 sec ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
-    {'time': '5 sec ago', 'type': 'face_detected', 'details': 'confidence: 87%', 'session': 'system'},
     {'time': '12 sec ago', 'type': 'safety_stop', 'details': 'triggered_by: admin', 'session': 'admin'},
     {'time': '15 sec ago', 'type': 'command_head', 'details': 'lr:37 ud:57', 'session': 'admin'},
     {'time': '18 sec ago', 'type': 'command_drive', 'details': 'dir: left', 'session': 'admin'},
@@ -41,13 +41,11 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
     {'time': '42 sec ago', 'type': 'visitor_checkin', 'details': 'guest #161', 'session': 'system'},
     {'time': '45 sec ago', 'type': 'command_head', 'details': 'lr:44 ud:40', 'session': 'admin'},
     {'time': '48 sec ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
-    {'time': '50 sec ago', 'type': 'face_detected', 'details': 'confidence: 92%', 'session': 'system'},
     {'time': '55 sec ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system'},
     {'time': '1 min ago', 'type': 'battery_low', 'details': 'level: 25%', 'session': 'system'},
     {'time': '1.5 min ago', 'type': 'snapshot_saved', 'details': 'visitor_001.jpg', 'session': 'system'},
     {'time': '2 min ago', 'type': 'command_head', 'details': 'lr:45 ud:55', 'session': 'admin'},
     {'time': '2.5 min ago', 'type': 'command_drive', 'details': 'dir: back', 'session': 'admin'},
-    {'time': '3 min ago', 'type': 'face_detected', 'details': 'confidence: 78%', 'session': 'system'},
     {'time': '3.5 min ago', 'type': 'visitor_checkin', 'details': 'guest #200', 'session': 'system'},
     {'time': '4 min ago', 'type': 'command_head', 'details': 'lr:50 ud:48', 'session': 'admin'},
     {'time': '4.5 min ago', 'type': 'command_drive', 'details': 'dir: right', 'session': 'admin'},
@@ -57,7 +55,6 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
     {'time': '6.5 min ago', 'type': 'snapshot_saved', 'details': 'detection_001.jpg', 'session': 'system'},
     {'time': '7 min ago', 'type': 'visitor_checkin', 'details': 'guest #205', 'session': 'system'},
     {'time': '7.5 min ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin'},
-    {'time': '8 min ago', 'type': 'face_detected', 'details': 'confidence: 85%', 'session': 'system'},
     {'time': '8.5 min ago', 'type': 'command_head', 'details': 'lr:40 ud:60', 'session': 'admin'},
     {'time': '9 min ago', 'type': 'battery_low', 'details': 'level: 30%', 'session': 'system'},
     {'time': '9.5 min ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system'},
@@ -70,6 +67,21 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.of(context).size.width < 900;
+
+    // Prepend REAL recognizer detections as they arrive (no mock face rows).
+    ref.listen<FaceDetection?>(faceDetectionProvider, (prev, next) {
+      if (next == null) return;
+      setState(() {
+        _events.insert(0, {
+          'time': 'just now',
+          'type': 'face_detected',
+          'details': next.matched
+              ? '${next.name} · L2 ${next.distance.toStringAsFixed(2)}'
+              : 'unknown · L2 ${next.distance.toStringAsFixed(2)}',
+          'session': 'system',
+        });
+      });
+    });
 
     return Scaffold(
       backgroundColor: TimoColors.background,

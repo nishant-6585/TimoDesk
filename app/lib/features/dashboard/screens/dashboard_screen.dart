@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
 import '../../../services/spine/spine_provider.dart';
+import '../../../services/spine/face_detection_provider.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
 import '../../settings/providers/settings_provider.dart';
 
@@ -45,7 +46,6 @@ class ToastModel {
 const List<Map<String, dynamic>> INITIAL_EVENTS = [
   {'id': 1, 'ago': '2 sec ago', 'type': 'command_drive', 'details': 'dir: forward', 'session': 'admin', 'fresh': false},
   {'id': 2, 'ago': '5 sec ago', 'type': 'command_head', 'details': 'lr:45 ud:50', 'session': 'admin', 'fresh': false},
-  {'id': 3, 'ago': '12 sec ago', 'type': 'face_detected', 'details': 'confidence: 87%', 'session': 'system', 'fresh': false},
   {'id': 4, 'ago': '1 min ago', 'type': 'safety_stop', 'details': 'triggered_by: admin', 'session': 'admin', 'fresh': false},
   {'id': 5, 'ago': '2 min ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system', 'fresh': false},
   {'id': 6, 'ago': '5 min ago', 'type': 'battery_low', 'details': 'level: 20%', 'session': 'system', 'fresh': false},
@@ -102,10 +102,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final spine = ref.read(spineProvider);
       if (spine.stopped) return;
 
+      // NOTE: face_detected is NOT generated here — real detections are pushed
+      // into the feed from the recognizer via ref.listen(faceDetectionProvider).
       final pool = [
         {'type': 'command_head', 'details': 'lr:${30 + (DateTime.now().millisecond % 40)} ud:${40 + (DateTime.now().millisecond % 20)}', 'session': 'admin'},
         {'type': 'command_drive', 'details': 'dir: ${['forward', 'left', 'right', 'back'][DateTime.now().millisecond % 4]}', 'session': 'admin'},
-        {'type': 'face_detected', 'details': 'confidence: ${80 + (DateTime.now().millisecond % 19)}%', 'session': 'system'},
         {'type': 'visitor_checkin', 'details': 'guest #${100 + (DateTime.now().millisecond % 99)}', 'session': 'system'},
       ];
       _addEvent(pool[DateTime.now().millisecond % pool.length]);
@@ -205,6 +206,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final battery = spineState.status?.battery ?? 78;
     final stopped = spineState.stopped;
 
+    // Push REAL recognizer detections into the activity feed (no mocks).
+    ref.listen<FaceDetection?>(faceDetectionProvider, (prev, next) {
+      if (next == null) return;
+      _addEvent({
+        'type': 'face_detected',
+        'details': next.matched
+            ? '${next.name} · L2 ${next.distance.toStringAsFixed(2)}'
+            : 'unknown · L2 ${next.distance.toStringAsFixed(2)}',
+        'session': 'system',
+      });
+    });
+
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= 900) {
@@ -262,6 +275,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 20),
+                                // Live face-detection card — driven by real recognizer
+                                // events, auto-dismisses via faceDetectionProvider.
+                                Consumer(
+                                  builder: (context, ref, _) {
+                                    final det = ref.watch(faceDetectionProvider);
+                                    if (det == null) return const SizedBox.shrink();
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 20),
+                                      child: _FaceDetectionCard(det: det),
+                                    );
+                                  },
+                                ),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -804,6 +829,67 @@ class _ProgressRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ProgressRingPainter old) => old.percent != percent;
+}
+
+/// Live recognition banner — appears when the spine recognizer emits
+/// face_detected; green for a matched staff member, amber for unknown.
+class _FaceDetectionCard extends StatelessWidget {
+  final FaceDetection det;
+  const _FaceDetectionCard({required this.det});
+
+  @override
+  Widget build(BuildContext context) {
+    final matched = det.matched;
+    final accent = matched ? const Color(0xFF4ADE80) : const Color(0xFFFB923C);
+    final timeStr =
+        '${det.at.hour.toString().padLeft(2, '0')}:${det.at.minute.toString().padLeft(2, '0')}:${det.at.second.toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.08),
+        border: Border.all(color: accent.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: accent.withOpacity(0.18)),
+            child: Icon(matched ? Icons.how_to_reg : Icons.help_outline, color: accent, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  matched ? det.name : 'Unknown visitor',
+                  style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  matched
+                      ? 'Staff recognized · L2 ${det.distance.toStringAsFixed(3)} · $timeStr'
+                      : 'No match (nearest L2 ${det.distance.toStringAsFixed(3)}) · $timeStr',
+                  style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: accent.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+            child: Text(
+              matched ? 'MATCH' : 'UNKNOWN',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: accent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _VisitorsCard extends StatelessWidget {

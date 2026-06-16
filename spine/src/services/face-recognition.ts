@@ -1,309 +1,190 @@
 /**
- * Face Recognition Service
+ * Face Recognition Service — autonomous spine-side recognizer.
  *
- * Real-time face detection + staff matching via L2 distance
- * Emits face_detected events over WebSocket
+ * Loop (no browser): every ~1.5s grab a clean JPEG from the robot's /snapshot
+ * endpoint → run the SHARED extractEmbedding (the exact face-api path enrollment
+ * uses) → find the NEAREST enrolled embedding by L2 → if nearest < threshold
+ * (FACE_CONFIG.threshold, calibrated 0.57) emit face_detected{staff} else
+ * face_detected{unknown}.
+ *
+ * Matching MUST mirror calibration: nearest-neighbour, NOT averaged / all-pairwise.
+ * One face-api pipeline only (services/face-embedding.ts) — no divergent path.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import axios from 'axios';
-import sharp from 'sharp';
+import { RobotEvent } from '../types';
+import { extractEmbedding } from './face-embedding';
+import { FACE_CONFIG } from '../config/face-recognition';
 
-export interface FaceDetectionResult {
+interface EnrolledEmbedding {
+  staff_id: string;
+  full_name: string;
+  embedding: number[];
+}
+
+export interface MatchResult {
+  matched: boolean;
   staff_id?: string;
-  name?: string;
-  confidence: number; // 0-1, higher = more likely a match
-  anonymous?: boolean;
+  name: string; // staff name, or 'unknown'
+  distance: number; // L2 to nearest enrolled embedding (Infinity if none)
+}
+
+function l2Distance(a: number[], b: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+// pgvector returns the embedding column as a string '[1,2,...]'; parse to number[].
+function parseEmbedding(raw: unknown): number[] | null {
+  if (Array.isArray(raw)) return raw as number[];
+  if (typeof raw === 'string') {
+    try {
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export class FaceRecognitionService {
   private readonly robotIP: string;
-  private readonly cameraPort: number = 8080;
-  private readonly threshold: number = 0.6; // L2 distance threshold (tunable)
-  private readonly cadenceMs: number = 1500; // Detect every 1.5s
-  private supabase: SupabaseClient;
-  private staffEmbeddings: Map<
-    string,
-    { staff_id: string; full_name: string; embedding: number[] }[]
-  > = new Map();
-  private lastDetectionTime: number = 0;
-  private isRunning: boolean = false;
+  private readonly cameraPort = FACE_CONFIG.camera_port; // 8080
+  private readonly threshold = FACE_CONFIG.threshold; // 0.57, calibrated
+  private readonly cadenceMs = FACE_CONFIG.detection_cadence_ms; // 1500
+  private readonly reloadMs = 30_000; // refresh enrolled set so new staff are picked up
+  private readonly reEmitMs = 5_000; // re-confirm the same identity at most this often
 
-  constructor(robotIP: string, supabase: SupabaseClient) {
+  private supabase: SupabaseClient;
+  private emit: (event: RobotEvent) => void;
+
+  private enrolled: EnrolledEmbedding[] = [];
+  private isRunning = false;
+  private lastReload = 0;
+  private lastEmitKey = '';
+  private lastEmitAt = 0;
+
+  constructor(robotIP: string, supabase: SupabaseClient, emit: (event: RobotEvent) => void) {
     this.robotIP = robotIP;
     this.supabase = supabase;
+    this.emit = emit;
   }
 
-  /**
-   * Start the face recognition pipeline
-   */
-  async start() {
-    console.log('[FaceRecognition] Starting...');
-
-    // Load staff embeddings from Supabase
-    await this.loadStaffEmbeddings();
-
-    if (this.staffEmbeddings.size === 0) {
-      console.log('[FaceRecognition] No staff embeddings found. Waiting for enrollment.');
-      return;
-    }
-
+  async start(): Promise<void> {
+    console.log('[FaceRecognition] Starting autonomous recognizer…');
+    await this.loadEnrolled();
     this.isRunning = true;
-    console.log(`[FaceRecognition] ✅ Running (${this.staffEmbeddings.size} staff enrolled)`);
-
-    // Start detection loop
-    this.detectionLoop();
+    console.log(
+      `[FaceRecognition] ✅ Running — ${this.enrolled.length} enrolled embeddings, ` +
+        `threshold ${this.threshold}, cadence ${this.cadenceMs}ms, source http://${this.robotIP}:${this.cameraPort}/snapshot`
+    );
+    this.loop(); // fire and forget; guarded internally
   }
 
-  /**
-   * Load staff face embeddings from Supabase
-   */
-  private async loadStaffEmbeddings() {
-    const { data, error } = await this.supabase
-      .from('staff_face_embedding')
-      .select('staff_id, embedding');
-
-    if (error) {
-      console.error(`[FaceRecognition] Failed to load embeddings: ${error.message}`);
-      return;
-    }
-
-    // Group by staff_id
-    const embeddings = new Map<
-      string,
-      { staff_id: string; full_name: string; embedding: number[] }[]
-    >();
-
-    for (const row of data || []) {
-      const { staff_id, embedding } = row as any;
-
-      if (!embeddings.has(staff_id)) {
-        embeddings.set(staff_id, []);
-      }
-
-      embeddings.get(staff_id)!.push({
-        staff_id,
-        full_name: '', // Will be populated from staff table
-        embedding,
-      });
-    }
-
-    // Get staff names
-    const staffIds = Array.from(embeddings.keys());
-    const { data: staffData } = await this.supabase
-      .from('staff')
-      .select('id, full_name')
-      .in('id', staffIds);
-
-    for (const staff of staffData || []) {
-      const embs = embeddings.get(staff.id) || [];
-      embs.forEach(e => {
-        e.full_name = staff.full_name;
-      });
-    }
-
-    this.staffEmbeddings = embeddings;
-    console.log(`[FaceRecognition] Loaded embeddings: ${staffIds.length} staff`);
-  }
-
-  /**
-   * Main detection loop
-   */
-  private async detectionLoop() {
-    while (this.isRunning) {
-      const now = Date.now();
-
-      // Enforce cadence
-      if (now - this.lastDetectionTime >= this.cadenceMs) {
-        try {
-          await this.detectFrame();
-          this.lastDetectionTime = now;
-        } catch (err) {
-          console.error(`[FaceRecognition] Detection error: ${(err as Error).message}`);
-        }
-      }
-
-      // Sleep briefly to avoid busy-loop
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-
-  /**
-   * Detect faces in current MJPEG frame
-   */
-  private async detectFrame() {
-    try {
-      // Fetch MJPEG frame from robot camera
-      const frameBuffer = await this.captureFrame();
-      if (!frameBuffer) return;
-
-      // TODO: Run face detection (awaits real face-api integration)
-      // For now, generate mock detection results
-      const mockResult = this.generateMockDetection();
-
-      if (mockResult) {
-        // Emit event
-        console.log(
-          `[FaceRecognition] Detected: ${mockResult.name || 'visitor'} (${(mockResult.confidence * 100).toFixed(0)}%)`
-        );
-      }
-    } catch (err) {
-      // Silent fail - camera may not be available
-    }
-  }
-
-  /**
-   * Capture frame from MJPEG stream (robust boundary + Content-Length parsing)
-   */
-  private async captureFrame(): Promise<Buffer | null> {
-    try {
-      const url = `http://${this.robotIP}:${this.cameraPort}/stream`;
-      const response = await axios.get(url, {
-        responseType: 'stream',
-        timeout: 5000,
-      });
-
-      // Parse MJPEG: read until we find Content-Length, then read exact bytes
-      const buffer = await new Promise<Buffer>((resolve, reject) => {
-        let accumulated = Buffer.alloc(0);
-        let contentLength = 0;
-        let readingJpeg = false;
-        let jpegData = Buffer.alloc(0);
-
-        response.data.on('data', (chunk: Buffer) => {
-          accumulated = Buffer.concat([accumulated, chunk]);
-
-          while (accumulated.length > 0) {
-            // If we're already reading a JPEG
-            if (readingJpeg) {
-              const remaining = contentLength - jpegData.length;
-              if (accumulated.length >= remaining) {
-                jpegData = Buffer.concat([jpegData, accumulated.slice(0, remaining)]);
-                resolve(jpegData);
-                response.data.destroy();
-                return;
-              } else {
-                jpegData = Buffer.concat([jpegData, accumulated]);
-                accumulated = Buffer.alloc(0);
-                break;
-              }
-            }
-
-            // Look for Content-Length header
-            const headerEnd = accumulated.indexOf('\r\n\r\n');
-            if (headerEnd >= 0) {
-              const header = accumulated.slice(0, headerEnd).toString('utf-8');
-              const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-
-              if (lengthMatch) {
-                contentLength = parseInt(lengthMatch[1], 10);
-                accumulated = accumulated.slice(headerEnd + 4);
-                readingJpeg = true;
-
-                // Check if we already have enough data
-                if (accumulated.length >= contentLength) {
-                  resolve(accumulated.slice(0, contentLength));
-                  response.data.destroy();
-                  return;
-                } else {
-                  jpegData = accumulated;
-                  accumulated = Buffer.alloc(0);
-                }
-              } else {
-                // No Content-Length found, skip this chunk
-                accumulated = accumulated.slice(headerEnd + 4);
-              }
-            } else {
-              // Not enough data for full header yet
-              break;
-            }
-          }
-        });
-
-        response.data.on('error', reject);
-        setTimeout(() => reject(new Error('Frame capture timeout')), 3000);
-      });
-
-      return buffer;
-    } catch (err) {
-      console.error(`[FaceRecognition] Frame capture failed: ${(err as Error).message}`);
-      return null;
-    }
-  }
-
-  /**
-   * Generate mock detection result (until real face-api integration)
-   */
-  private generateMockDetection(): FaceDetectionResult | null {
-    // Randomly simulate staff detections for testing
-    if (Math.random() < 0.1) {
-      const staffArray = Array.from(this.staffEmbeddings.values()).flat();
-      if (staffArray.length > 0) {
-        const staff = staffArray[Math.floor(Math.random() * staffArray.length)];
-        return {
-          staff_id: staff.staff_id,
-          name: staff.full_name,
-          confidence: 0.7 + Math.random() * 0.3,
-        };
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Real face detection (stub - awaits face-api integration)
-   */
-  private async detectFacesInFrame(frameBuffer: Buffer): Promise<any[]> {
-    // TODO: Use face-api.js to detect faces in frameBuffer
-    // Return array of {embedding: number[], box: {x, y, width, height}}
-    return [];
-  }
-
-  /**
-   * Match embedding against staff database
-   */
-  private matchEmbedding(embedding: number[]): FaceDetectionResult | null {
-    let bestMatch: FaceDetectionResult | null = null;
-    let bestDistance = Infinity;
-
-    for (const staffEmbeddings of this.staffEmbeddings.values()) {
-      for (const staffEmb of staffEmbeddings) {
-        const distance = this.l2Distance(embedding, staffEmb.embedding);
-
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestMatch = {
-            staff_id: staffEmb.staff_id,
-            name: staffEmb.full_name,
-            confidence: 1 - Math.min(1, bestDistance), // Normalize distance to confidence
-          };
-        }
-      }
-    }
-
-    // Only return if below threshold
-    if (bestMatch && bestDistance <= this.threshold) {
-      return bestMatch;
-    }
-
-    return null;
-  }
-
-  /**
-   * L2 (Euclidean) distance between vectors
-   */
-  private l2Distance(a: number[], b: number[]): number {
-    let sum = 0;
-    for (let i = 0; i < a.length; i++) {
-      const diff = a[i] - b[i];
-      sum += diff * diff;
-    }
-    return Math.sqrt(sum);
-  }
-
-  stop() {
+  stop(): void {
     this.isRunning = false;
     console.log('[FaceRecognition] Stopped');
+  }
+
+  /** Load + flatten enrolled embeddings (parsed) with staff names. */
+  private async loadEnrolled(): Promise<void> {
+    const { data: rows, error } = await this.supabase
+      .from('staff_face_embedding')
+      .select('staff_id, embedding, staff:staff_id(full_name)');
+    if (error) {
+      console.error(`[FaceRecognition] load embeddings failed: ${error.message}`);
+      return;
+    }
+    const flat: EnrolledEmbedding[] = [];
+    for (const r of rows ?? []) {
+      const emb = parseEmbedding((r as any).embedding);
+      if (!emb || emb.length !== 128) continue;
+      const name = (r as any).staff?.full_name ?? '(unknown staff)';
+      flat.push({ staff_id: (r as any).staff_id, full_name: name, embedding: emb });
+    }
+    this.enrolled = flat;
+    this.lastReload = Date.now();
+  }
+
+  /** Nearest-neighbour match — identical metric to calibrate.js. */
+  matchEmbedding(query: number[]): MatchResult {
+    let bestDist = Infinity;
+    let best: EnrolledEmbedding | null = null;
+    for (const e of this.enrolled) {
+      const d = l2Distance(query, e.embedding);
+      if (d < bestDist) {
+        bestDist = d;
+        best = e;
+      }
+    }
+    if (best && bestDist < this.threshold) {
+      return { matched: true, staff_id: best.staff_id, name: best.full_name, distance: bestDist };
+    }
+    return { matched: false, name: 'unknown', distance: bestDist };
+  }
+
+  private async loop(): Promise<void> {
+    while (this.isRunning) {
+      try {
+        if (Date.now() - this.lastReload > this.reloadMs) await this.loadEnrolled();
+        if (this.enrolled.length > 0) await this.detectOnce();
+      } catch (err) {
+        // A bad frame / network blip must never crash spine.
+        console.error(`[FaceRecognition] cycle error: ${(err as Error).message}`);
+      }
+      await new Promise(r => setTimeout(r, this.cadenceMs));
+    }
+  }
+
+  private async detectOnce(): Promise<void> {
+    const frame = await this.captureFrame();
+    if (!frame) return;
+
+    // SHARED pipeline — same face-api path as enrollment. Requires exactly 1 face;
+    // returns ok:false for 0 or >1 faces (skip those frames).
+    const result = await extractEmbedding(frame);
+    if (!result.ok || !result.embedding) return;
+
+    const match = this.matchEmbedding(result.embedding);
+    this.maybeEmit(match);
+  }
+
+  /** Grab one complete JPEG from the robot /snapshot endpoint (no MJPEG boundary parsing). */
+  private async captureFrame(): Promise<Buffer | null> {
+    try {
+      const res = await fetch(`http://${this.robotIP}:${this.cameraPort}/snapshot`, {
+        signal: AbortSignal.timeout(FACE_CONFIG.frame_timeout_ms),
+      });
+      if (!res.ok) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      // Validate JPEG markers before handing to face-api.
+      if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+      return buf;
+    } catch {
+      return null; // camera unreachable / timeout — skip this cycle
+    }
+  }
+
+  /** Debounced emit: on identity change, or re-confirm same identity every reEmitMs. */
+  private maybeEmit(match: MatchResult): void {
+    const key = match.matched ? `staff:${match.staff_id}` : 'unknown';
+    const now = Date.now();
+    if (key === this.lastEmitKey && now - this.lastEmitAt < this.reEmitMs) return;
+    this.lastEmitKey = key;
+    this.lastEmitAt = now;
+
+    const payload = match.matched
+      ? { staff_id: match.staff_id, name: match.name, distance: Number(match.distance.toFixed(3)) }
+      : { name: 'unknown', distance: Number(match.distance.toFixed(3)) };
+
+    console.log(
+      `[FaceRecognition] ${match.matched ? '✅ ' + match.name : '❓ unknown'} (L2 ${match.distance.toFixed(3)})`
+    );
+    this.emit({ type: 'face_detected', payload, timestamp: now });
   }
 }
