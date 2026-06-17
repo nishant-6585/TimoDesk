@@ -12,22 +12,9 @@
 
 import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { verifyToken } from '../auth/middleware';
+import { authorizeRequest } from '../auth/middleware';
 import { extractEmbedding } from '../services/face-embedding';
 import { FACE_CONFIG } from '../config/face-recognition';
-
-function authorize(
-  req: IncomingMessage
-): { ok: true; userId: string } | { ok: false; status: number; reason: string } {
-  const authz = (req.headers['authorization'] as string | undefined) ?? '';
-  const token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
-  if (!token) return { ok: false, status: 401, reason: 'Missing bearer token' };
-  if (token === 'test-token') return { ok: true, userId: 'test-user' };
-  if (!process.env.JWT_SECRET) return { ok: false, status: 503, reason: 'JWT_SECRET not set' };
-  const r = verifyToken(token);
-  if (!r.valid || !r.userId) return { ok: false, status: 401, reason: r.reason ?? 'Invalid token' };
-  return { ok: true, userId: r.userId };
-}
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise(resolve => {
@@ -64,7 +51,7 @@ export async function handleCheckFace(
   res: ServerResponse,
   supabase: SupabaseClient
 ): Promise<void> {
-  const auth = authorize(req);
+  const auth = authorizeRequest(req);
   if (!auth.ok) {
     res.writeHead(auth.status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: false, reason: auth.reason }));
