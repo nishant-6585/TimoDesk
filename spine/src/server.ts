@@ -13,6 +13,7 @@ import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
 import { handleEnroll } from './handlers/enroll';
+import { handleCheckFace } from './handlers/check-face';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
@@ -66,6 +67,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/enroll' && req.method === 'POST') {
         await handleEnroll(req, res, supabase);
+        return;
+      }
+
+      if (url === '/check-face' && req.method === 'POST') {
+        await handleCheckFace(req, res, supabase);
         return;
       }
 

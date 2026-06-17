@@ -773,6 +773,37 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
     setState(() => _enrolling = true);
 
     final notifier = ref.read(enrollmentProvider.notifier);
+
+    // Duplicate guard: does this face already belong to an enrolled person?
+    if (widget.capturedFrames.isNotEmpty) {
+      final check = await notifier.checkFace(widget.capturedFrames.first);
+      if (check.match && mounted) {
+        setState(() => _enrolling = false);
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: TimoColors.surface,
+            title: const Text('Already enrolled?'),
+            content: Text(
+              'This face looks like ${check.name} is already enrolled'
+              '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
+              'Enroll anyway as "${_nameCtr.text}"?',
+              style: GoogleFonts.inter(color: TimoColors.textSecondary),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Enroll anyway'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return; // user cancelled
+        if (mounted) setState(() => _enrolling = true);
+      }
+    }
+
     final consentRef = 'consent-${DateTime.now().toIso8601String()}';
     int successCount = 0;
     int failureCount = 0;
