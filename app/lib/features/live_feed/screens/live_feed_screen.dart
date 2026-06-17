@@ -72,6 +72,35 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     _showEnrollmentForm(frames);
   }
 
+  /// Called after the first pose. Returns true to keep capturing, false to abort.
+  /// If the face matches an enrolled person, asks the user whether to continue.
+  Future<bool> _checkDuplicateDuringCapture(Uint8List firstFrame) async {
+    final check = await ref.read(enrollmentProvider.notifier).checkFace(firstFrame);
+    if (!check.match || !mounted) return true; // new face → keep going
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TimoColors.surface,
+        title: const Text('Already enrolled'),
+        content: Text(
+          'This face looks like ${check.name} is already enrolled'
+          '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
+          'Stop, or continue enrolling anyway?',
+          style: GoogleFonts.inter(color: TimoColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Stop')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue anyway'),
+          ),
+        ],
+      ),
+    );
+    return proceed == true;
+  }
+
   void _showEnrollmentForm(List<Uint8List> capturedFrames) {
     showDialog(
       context: context,
@@ -187,6 +216,8 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                   ? '#$kEnrollWebcamId'
                                   : 'img[src*="$url"]',
                               onFramesCaptured: _onFramesCaptured,
+                              onCheckDuplicate: _checkDuplicateDuringCapture,
+                              onAbort: () => setState(() => _enrollmentMode = false),
                             ),
                         ],
                       ),
@@ -265,10 +296,17 @@ class _SourceToggle extends StatelessWidget {
 class _EnrollmentDetectionOverlay extends StatefulWidget {
   final String elementSelector;
   final Function(List<Uint8List>) onFramesCaptured;
+  // Called after the FIRST pose is captured with that frontal frame. Returns
+  // true to continue the pose flow, false to abort (already-enrolled, cancelled).
+  final Future<bool> Function(Uint8List firstFrame)? onCheckDuplicate;
+  // Called when the flow is aborted (e.g. duplicate, user cancelled).
+  final VoidCallback? onAbort;
 
   const _EnrollmentDetectionOverlay({
     required this.elementSelector,
     required this.onFramesCaptured,
+    this.onCheckDuplicate,
+    this.onAbort,
   });
 
   @override
@@ -598,18 +636,28 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
             _faceDetected = true;
           });
 
-          // Brief confirmation pause, then get-ready for the next pose.
-          Future.delayed(const Duration(milliseconds: 1200), () {
+          // Duplicate guard right after the FIRST (frontal) pose — catch an
+          // already-enrolled person before they do all 5 poses.
+          if (_currentPoseIndex == 0 && widget.onCheckDuplicate != null) {
+            setState(() {
+              _phase = 'checking';
+              _status = 'Checking if already enrolled…';
+            });
+            final proceed = await widget.onCheckDuplicate!(bytes);
             if (!mounted) return;
-            if (_currentPoseIndex < _posePlan.length - 1) {
-              setState(() => _currentPoseIndex++);
-              _startPose();
-            } else {
-              setState(() => _phase = 'done');
+            if (!proceed) {
               _detectionTimer?.cancel();
               _getReadyTimer?.cancel();
-              widget.onFramesCaptured(_capturedFrames);
+              widget.onAbort?.call();
+              return;
             }
+            _advanceOrFinish(); // check passed — continue immediately
+            return;
+          }
+
+          // Brief confirmation pause, then get-ready for the next pose.
+          Future.delayed(const Duration(milliseconds: 1200), () {
+            if (mounted) _advanceOrFinish();
           });
         }
       } else {
@@ -619,6 +667,20 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     } catch (err) {
       print('[EnrollmentDetection] Capture error: $err');
       if (mounted) setState(() => _phase = 'detecting');
+    }
+  }
+
+  // Move to the next pose, or finish and hand frames back.
+  void _advanceOrFinish() {
+    if (!mounted) return;
+    if (_currentPoseIndex < _posePlan.length - 1) {
+      setState(() => _currentPoseIndex++);
+      _startPose();
+    } else {
+      setState(() => _phase = 'done');
+      _detectionTimer?.cancel();
+      _getReadyTimer?.cancel();
+      widget.onFramesCaptured(_capturedFrames);
     }
   }
 
@@ -708,6 +770,19 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
       );
     }
 
+    // Checking duplicate after the first pose.
+    if (_phase == 'checking') {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(width: 56, height: 56, child: CircularProgressIndicator()),
+          const SizedBox(height: 18),
+          Text('Checking if already enrolled…',
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        ],
+      );
+    }
+
     // Detecting: instruction + live hint + stability progress.
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -773,37 +848,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
     setState(() => _enrolling = true);
 
     final notifier = ref.read(enrollmentProvider.notifier);
-
-    // Duplicate guard: does this face already belong to an enrolled person?
-    if (widget.capturedFrames.isNotEmpty) {
-      final check = await notifier.checkFace(widget.capturedFrames.first);
-      if (check.match && mounted) {
-        setState(() => _enrolling = false);
-        final proceed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: TimoColors.surface,
-            title: const Text('Already enrolled?'),
-            content: Text(
-              'This face looks like ${check.name} is already enrolled'
-              '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
-              'Enroll anyway as "${_nameCtr.text}"?',
-              style: GoogleFonts.inter(color: TimoColors.textSecondary),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Enroll anyway'),
-              ),
-            ],
-          ),
-        );
-        if (proceed != true) return; // user cancelled
-        if (mounted) setState(() => _enrolling = true);
-      }
-    }
-
+    // (Duplicate detection runs live during pose capture, not here.)
     final consentRef = 'consent-${DateTime.now().toIso8601String()}';
     int successCount = 0;
     int failureCount = 0;
