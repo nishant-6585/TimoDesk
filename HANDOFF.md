@@ -120,6 +120,16 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 - **#63** Wire the native sensor bridge (`robot_app/docs/SENSOR_BRIDGE.md`) into `RealRobotSDK.onSensorEvent` (currently a no-op) so Phase 1A obstacle/health/localization events flow from real hardware.
 - **#64** Real-hardware safety pass: STOP interlock + obstacle-blocked behaviour validated with the robot physically moving. Highest-risk item — do last, supervised.
 
+**🟫 Dual-source face enrollment — laptop webcam + robot chest-screen (#88). NEAR-TERM UX rework. Added 2026-06 per user request.**
+
+Problem: current enrollment uses the ROBOT camera (MJPEG) feed but shows the move-closer/turn-left instructions on the LAPTOP browser — the person stands at the robot but the guidance is on a screen they can't see. Disconnect.
+
+Solution — **ONE backend, TWO capture sources** (preserve the single embedding pipeline — both POST the IMAGE to `/enroll`, spine extracts the 128-d):
+  - **Web app (laptop): use the laptop's OWN webcam** (`getUserMedia` → `<video>` → face-api), guidance on the laptop screen. Person + screen + camera co-located. Convenient for REMOTE enrollment (employee far from robot). Bonus: webcam avoids the MJPEG/CORS-canvas fragility the robot-feed path fought through. Add a camera-source picker (this device / robot); default to device webcam on laptop.
+  - **robot_app (chest screen): build a NEW native enrollment screen** on the robot — robot camera preview + instructions shown ON the chest screen + capture → POST `/enroll`. For enrolling when the employee is physically at the robot. Needs camera preview + on-device face detection (`google_mlkit_face_detection`) in robot_app (Flutter/Android).
+  - **Honest nuance (cross-camera domain gap):** recognition runs on the ROBOT camera, but laptop-enrolled embeddings come from a different camera/lighting. face-api embeddings are mostly camera-invariant so it generally works, but robot-camera enrollment gives best accuracy; the thin ~0.014 gap makes cross-camera matches more wobble-prone — multi-pose + margin guard + temporal voting mitigate. Optionally add a `capture_source` ('robot'|'webcam') column to `staff_face_embedding` for later analysis.
+  - Effort: medium. Web = small rework (MJPEG→webcam + picker). robot_app = new screen (camera + ML Kit + form + POST).
+
 **🔋 Battery telemetry — fix wrong value + add robot_app display (#87) — NEAR-TERM, real bug (robot exists). Added 2026-06 per user request.**
 
 - **#87a — Admin app shows INCORRECT battery (bug).** Likely root cause traced:
