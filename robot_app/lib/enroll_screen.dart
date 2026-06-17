@@ -19,7 +19,7 @@ const String kCameraBaseUrl = 'http://localhost:8080';
 // reach this host. Set to the machine running spine.
 //   On-robot:  http://<spine-host-ip>:4000
 //   Emulator:  http://10.0.2.2:4000  (emulator alias for the host loopback)
-const String kSpineBaseUrl = 'http://192.168.1.11:4000';
+const String kSpineBaseUrl = 'http://192.168.1.18:4000';
 
 // Dev auth: works behind spine's DEV_AUTH_BYPASS. PRODUCTION kiosk needs its own
 // credential (service token / operator login) — see HANDOFF go-live checklist.
