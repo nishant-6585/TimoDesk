@@ -11,6 +11,7 @@ import 'enroll_screen.dart';
 
 const _methodCh = MethodChannel('com.timoDesk/camera_stream');
 const _eventCh  = EventChannel('com.timoDesk/camera_events');
+const _batteryEventCh = EventChannel('com.timoDesk/battery_events');
 const _headMethodCh = MethodChannel('com.timoDesk/head_control');
 const _headEventCh  = EventChannel('com.timoDesk/head_events');
 const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
@@ -398,16 +399,49 @@ class ArmNotifier extends StateNotifier<ArmState> {
 final armProvider =
     StateNotifierProvider<ArmNotifier, ArmState>((ref) => ArmNotifier());
 
+// ── Battery state (real telemetry from the native BatteryPlugin) ────────────────
+
+class BatteryState {
+  final int? level; // null = unknown (no real reading yet)
+  final int? charge;
+  final String source; // 'sdk' | 'android' | 'unknown'
+  const BatteryState({this.level, this.charge, this.source = 'unknown'});
+}
+
+class BatteryNotifier extends StateNotifier<BatteryState> {
+  BatteryNotifier() : super(const BatteryState()) {
+    _sub = _batteryEventCh.receiveBroadcastStream().listen(_onEvent, onError: (e) {
+      debugPrint('battery event error: $e');
+    });
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    final level = (m['battery'] as num?)?.toInt();
+    state = BatteryState(
+      level: (level != null && level >= 0) ? level : null,
+      charge: (m['charge'] as num?)?.toInt(),
+      source: (m['source'] as String?) ?? 'unknown',
+    );
+    // Feed the :8090 HTTP server that spine polls — now a REAL value.
+    if (level != null && level >= 0) BatteryService.setBattery(level);
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final batteryProvider =
+    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier());
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 void main() async {
-  // Start battery HTTP server
-  final batteryService = BatteryService();
-  batteryService.start();
-
-  // Set initial battery to a reasonable default
-  // Phase 2: Will query CSJBot SDK directly for actual value
-  BatteryService.setBattery(85);
+  // Start the battery HTTP server (:8090). Starts at "unknown" (-1); the native
+  // BatteryPlugin overwrites it with the real level within seconds.
+  BatteryService().start();
 
   runApp(const ProviderScope(child: _App()));
 }
@@ -447,6 +481,7 @@ class _StreamScreen extends ConsumerWidget {
     final cNotifier = ref.read(chassisProvider.notifier);
     final arm = ref.watch(armProvider);
     final aNotifier = ref.read(armProvider.notifier);
+    final battery = ref.watch(batteryProvider);
 
     // Auto-start head, chassis & arm control when camera starts
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
@@ -478,6 +513,7 @@ class _StreamScreen extends ConsumerWidget {
         ]),
         backgroundColor: const Color(0xFF1A1A1A),
         centerTitle: true,
+        actions: [_BatteryIndicator(state: battery), const SizedBox(width: 12)],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -529,6 +565,42 @@ class _StreamScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Battery indicator ───────────────────────────────────────────────────────────
+
+class _BatteryIndicator extends StatelessWidget {
+  final BatteryState state;
+  const _BatteryIndicator({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final level = state.level;
+    final unknown = level == null;
+    final charging = state.charge != null && state.charge! > 0;
+    final color = unknown
+        ? Colors.white38
+        : level >= 50
+            ? Colors.greenAccent
+            : level >= 20
+                ? Colors.amberAccent
+                : Colors.redAccent;
+    final icon = unknown
+        ? Icons.battery_unknown
+        : charging
+            ? Icons.battery_charging_full
+            : level >= 80
+                ? Icons.battery_full
+                : level >= 30
+                    ? Icons.battery_5_bar
+                    : Icons.battery_2_bar;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 20, color: color),
+      const SizedBox(width: 4),
+      Text(unknown ? '—' : '$level%',
+          style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+    ]);
   }
 }
 

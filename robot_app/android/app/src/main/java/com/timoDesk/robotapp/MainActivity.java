@@ -15,6 +15,8 @@ public class MainActivity extends FlutterActivity {
     private static final String CHASSIS_EVENT_CH  = "com.timoDesk/chassis_events";
     private static final String ARM_METHOD_CH = "com.timoDesk/arm_control";
     private static final String ARM_EVENT_CH  = "com.timoDesk/arm_events";
+    private static final String BATTERY_METHOD_CH = "com.timoDesk/battery";
+    private static final String BATTERY_EVENT_CH  = "com.timoDesk/battery_events";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -58,5 +60,17 @@ public class MainActivity extends FlutterActivity {
 
         ArmControlPlugin armPlugin = new ArmControlPlugin();
         armPlugin.setup(flutterEngine);
+
+        // Real battery telemetry (CSJBot SDK, Android BatteryManager fallback).
+        BatteryPlugin batteryPlugin = new BatteryPlugin(this);
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                BATTERY_METHOD_CH
+        ).setMethodCallHandler(batteryPlugin);
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                BATTERY_EVENT_CH
+        ).setStreamHandler(batteryPlugin);
+        batteryPlugin.register();
     }
 }

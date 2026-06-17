@@ -3,7 +3,9 @@ import 'dart:convert';
 
 class BatteryService {
   static const int PORT = 8090;
-  static int _currentBattery = 85;
+  // -1 = no real reading yet (the native BatteryPlugin overwrites this within
+  // a few seconds via the SDK or the Android BatteryManager fallback).
+  static int _currentBattery = -1;
   HttpServer? _server;
 
   Future<void> start() async {

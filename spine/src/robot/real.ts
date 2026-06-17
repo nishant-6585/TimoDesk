@@ -28,7 +28,7 @@ export class RealRobotSDK implements RobotSDK {
   private eventHandlers: Array<(event: RobotEvent) => void> = [];
   private status: RobotStatus = {
     online: false,
-    battery: 85,
+    battery: -1, // -1 = unknown until the first real /battery fetch (admin shows "—")
     isMoving: false,
     headLR: 50,
     headUD: 50,
@@ -52,22 +52,25 @@ export class RealRobotSDK implements RobotSDK {
     this.startBatteryFetch();
   }
 
-  private startBatteryFetch() {
-    setInterval(async () => {
-      try {
-        const response = await fetch(`http://${this.robotIP}:8090/battery`);
-        if (response.ok) {
-          const data = await response.json();
-          const battery = data.battery as number;
-          if (battery >= 0 && battery <= 100) {
-            this.status.battery = battery;
-            console.log(`[Real SDK] Battery updated: ${battery}%`);
-          }
+  private async fetchBatteryOnce() {
+    try {
+      const response = await fetch(`http://${this.robotIP}:8090/battery`);
+      if (response.ok) {
+        const data = (await response.json()) as { battery?: number };
+        const battery = data.battery as number;
+        if (battery >= 0 && battery <= 100) {
+          this.status.battery = battery;
+          console.log(`[Real SDK] Battery updated: ${battery}%`);
         }
-      } catch (err) {
-        // Silently fail - battery endpoint might not be available yet
       }
-    }, 60000); // Every 60 seconds
+    } catch (err) {
+      // Silently fail — battery endpoint might not be reachable yet.
+    }
+  }
+
+  private startBatteryFetch() {
+    void this.fetchBatteryOnce(); // immediately, so we don't serve the seed 85 for a minute
+    setInterval(() => void this.fetchBatteryOnce(), 30000); // then every 30s
   }
 
   /**

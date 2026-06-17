@@ -48,7 +48,6 @@ const List<Map<String, dynamic>> INITIAL_EVENTS = [
   {'id': 2, 'ago': '5 sec ago', 'type': 'command_head', 'details': 'lr:45 ud:50', 'session': 'admin', 'fresh': false},
   {'id': 4, 'ago': '1 min ago', 'type': 'safety_stop', 'details': 'triggered_by: admin', 'session': 'admin', 'fresh': false},
   {'id': 5, 'ago': '2 min ago', 'type': 'admin_session', 'details': 'connected', 'session': 'system', 'fresh': false},
-  {'id': 6, 'ago': '5 min ago', 'type': 'battery_low', 'details': 'level: 20%', 'session': 'system', 'fresh': false},
 ];
 
 final eventColorMap = {
@@ -203,7 +202,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final spineState = ref.watch(spineProvider);
     final online = spineState.connected;
-    final battery = spineState.status?.battery ?? 78;
+    // Real battery from spine, or null (shown as "—") when unknown — no fake 78.
+    final rawBattery = spineState.status?.battery;
+    final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
     final stopped = spineState.stopped;
 
     // Push REAL recognizer detections into the activity feed (no mocks).
@@ -229,7 +230,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildDesktop(BuildContext context, bool online, int battery, bool stopped) {
+  Widget _buildDesktop(BuildContext context, bool online, int? battery, bool stopped) {
     return Scaffold(
       backgroundColor: TimoColors.background,
       body: Stack(
@@ -341,7 +342,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildMobile(BuildContext context, bool online, int battery, bool stopped) {
+  Widget _buildMobile(BuildContext context, bool online, int? battery, bool stopped) {
     return Scaffold(
       backgroundColor: TimoColors.background,
       body: Stack(
@@ -421,7 +422,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 class _McHeader extends StatelessWidget {
   final bool compact;
   final bool online;
-  final int battery;
+  final int? battery; // null = unknown → shown as "—"
 
   const _McHeader({required this.compact, required this.online, required this.battery});
 
@@ -475,9 +476,10 @@ class _McHeader extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
                 child: Row(children: [
-                  const Icon(Icons.battery_charging_full, size: 16, color: TimoColors.success),
+                  Icon(battery == null ? Icons.battery_unknown : Icons.battery_charging_full, size: 16,
+                      color: battery == null ? TimoColors.textMuted : TimoColors.success),
                   const SizedBox(width: 8),
-                  Text('$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(battery == null ? '—' : '$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(width: 8),
                   Container(
                     width: 40,
@@ -487,7 +489,7 @@ class _McHeader extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
-                          width: (40 * battery / 100).clamp(0, 40),
+                          width: (40 * (battery ?? 0) / 100).clamp(0, 40),
                           height: 6,
                           decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
                         ),
@@ -659,7 +661,7 @@ class _RobotStatusCard extends StatelessWidget {
 }
 
 class _BatteryCard extends StatefulWidget {
-  final int percent;
+  final int? percent; // null = unknown → shown as "—"
   final bool charging;
 
   const _BatteryCard({required this.percent, required this.charging});
@@ -679,7 +681,7 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
       duration: const Duration(milliseconds: 1100),
       vsync: this,
     );
-    _animation = Tween<double>(begin: 0, end: widget.percent.toDouble()).animate(
+    _animation = Tween<double>(begin: 0, end: (widget.percent ?? 0).toDouble()).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
     Future.delayed(const Duration(milliseconds: 120), () {
@@ -692,7 +694,7 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
     super.didUpdateWidget(oldWidget);
     if (oldWidget.percent != widget.percent) {
       _animationController.reset();
-      _animation = Tween<double>(begin: _animation.value, end: widget.percent.toDouble()).animate(
+      _animation = Tween<double>(begin: _animation.value, end: (widget.percent ?? 0).toDouble()).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
       );
       _animationController.forward();
@@ -731,9 +733,9 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
                   ),
                   child: Center(
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Text('${widget.percent}%', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, height: 1.0)),
+                      Text(widget.percent == null ? '—' : '${widget.percent}%', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.bold, height: 1.0)),
                       const SizedBox(height: 4),
-                      Text(widget.charging ? 'Charging' : 'On Battery', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.05, color: TimoColors.textSecondary, height: 1.0)),
+                      Text(widget.percent == null ? 'Unknown' : (widget.charging ? 'Charging' : 'On Battery'), style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.05, color: TimoColors.textSecondary, height: 1.0)),
                     ]),
                   ),
                 );
