@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'battery_service.dart';
+import 'enroll_screen.dart';
 
 // ── Channels ──────────────────────────────────────────────────────────────────
 
@@ -483,6 +484,9 @@ class _StreamScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ── Enrollment (chest-screen) ──────────────────────────────────
+            _EnrollButton(),
+            const SizedBox(height: 24),
             // ── MJPEG section ──────────────────────────────────────────────
             _SectionLabel('MJPEG STREAM'),
             const SizedBox(height: 8),
@@ -526,6 +530,25 @@ class _StreamScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ── Enroll button ─────────────────────────────────────────────────────────────
+
+class _EnrollButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+    onPressed: () => Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const EnrollScreen()),
+    ),
+    icon: const Icon(Icons.person_add_alt_1_rounded),
+    label: const Text('ENROLL STAFF (at robot)',
+        style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+    style: FilledButton.styleFrom(
+      backgroundColor: _orange,
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      textStyle: const TextStyle(fontSize: 16),
+    ),
+  );
 }
 
 // ── Section label ─────────────────────────────────────────────────────────────

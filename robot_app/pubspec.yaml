@@ -11,6 +11,10 @@ dependencies:
     sdk: flutter
   qr_flutter: ^4.1.0
   flutter_riverpod: ^2.5.1
+  # Chest-screen enrollment: detect faces on /snapshot frames (does NOT open the
+  # camera — runs on frame bytes) and POST images to spine /enroll.
+  google_mlkit_face_detection: ^0.11.0
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:
