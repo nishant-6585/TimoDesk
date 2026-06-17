@@ -11,6 +11,10 @@ import '../../settings/providers/settings_provider.dart';
 import '../../staff/providers/enrollment_provider.dart';
 import '../../staff/screens/staff_list_screen.dart';
 import '../widgets/mjpeg_view.dart';
+import '../widgets/enroll_webcam_view.dart';
+
+/// Where enrollment reads frames from.
+enum _EnrollSource { device, robot }
 
 class LiveFeedScreen extends ConsumerStatefulWidget {
   const LiveFeedScreen({Key? key}) : super(key: key);
@@ -22,11 +26,45 @@ class LiveFeedScreen extends ConsumerStatefulWidget {
 class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   bool _enrollmentMode = false;
   bool _streaming = false;
+  // Default to this device's webcam in the browser so the person, the camera,
+  // and the on-screen guidance are all in one place.
+  _EnrollSource _enrollSource = _EnrollSource.device;
 
   void _toggleEnrollmentMode() {
     setState(() {
       _enrollmentMode = !_enrollmentMode;
+      // Robot-source enrollment needs the MJPEG running; device-source uses the
+      // webcam which starts itself.
+      if (_enrollmentMode && _enrollSource == _EnrollSource.robot) _streaming = true;
     });
+  }
+
+  // The detection overlay should run once the chosen source is showing frames.
+  bool get _overlayActive {
+    if (!_enrollmentMode) return false;
+    return _enrollSource == _EnrollSource.device || _streaming;
+  }
+
+  // Which media element fills the camera box right now.
+  Widget _buildCameraLayer(String url) {
+    if (_enrollmentMode && _enrollSource == _EnrollSource.device) {
+      return const DeviceWebcamView();
+    }
+    if (_streaming) return MjpegView(url: url);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.videocam_off, size: 64, color: Color(0xFF3A3A3A)),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => setState(() => _streaming = true),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Start Stream'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onFramesCaptured(List<Uint8List> frames) {
@@ -113,6 +151,15 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                               ),
                             ],
                           ),
+                          // Camera-source toggle (enrollment only).
+                          if (_enrollmentMode)
+                            _SourceToggle(
+                              source: _enrollSource,
+                              onChanged: (s) => setState(() {
+                                _enrollSource = s;
+                                if (s == _EnrollSource.robot) _streaming = true;
+                              }),
+                            ),
                           InkWell(
                             onTap: () => setState(() => _streaming = !_streaming),
                             child: Padding(
@@ -131,30 +178,14 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                     Expanded(
                       child: Stack(
                         children: [
-                          _streaming
-                              ? MjpegView(url: url)
-                              : Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.videocam_off,
-                                        size: 64,
-                                        color: const Color(0xFF3A3A3A),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      ElevatedButton.icon(
-                                        onPressed: () => setState(() => _streaming = true),
-                                        icon: const Icon(Icons.play_arrow),
-                                        label: const Text('Start Stream'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                          // Enrollment detection overlay
-                          if (_enrollmentMode && _streaming)
+                          _buildCameraLayer(url),
+                          // Enrollment detection overlay — target the webcam <video>
+                          // (device) or the MJPEG <img> (robot).
+                          if (_overlayActive)
                             _EnrollmentDetectionOverlay(
-                              mjpegUrl: url,
+                              elementSelector: _enrollSource == _EnrollSource.device
+                                  ? '#$kEnrollWebcamId'
+                                  : 'img[src*="$url"]',
                               onFramesCaptured: _onFramesCaptured,
                             ),
                         ],
@@ -171,13 +202,72 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 }
 
-/// Face detection overlay for multi-capture enrollment (5 poses)
+/// Compact segmented toggle: "This device" vs "Robot" camera for enrollment.
+class _SourceToggle extends StatelessWidget {
+  final _EnrollSource source;
+  final ValueChanged<_EnrollSource> onChanged;
+  const _SourceToggle({required this.source, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(_EnrollSource s, IconData icon, String label) {
+      final active = source == s;
+      return InkWell(
+        onTap: () => onChanged(s),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? TimoColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 14, color: active ? Colors.white : TimoColors.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : TimoColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        border: Border.all(color: TimoColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          seg(_EnrollSource.device, Icons.laptop, 'This device'),
+          const SizedBox(width: 2),
+          seg(_EnrollSource.robot, Icons.smart_toy, 'Robot'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Face detection overlay for multi-capture enrollment (5 poses).
+/// [elementSelector] is the CSS selector of the media element to read frames
+/// from — the MJPEG <img> (robot) or the webcam <video> (this device). face-api
+/// and canvas capture work identically on either.
 class _EnrollmentDetectionOverlay extends StatefulWidget {
-  final String mjpegUrl;
+  final String elementSelector;
   final Function(List<Uint8List>) onFramesCaptured;
 
   const _EnrollmentDetectionOverlay({
-    required this.mjpegUrl,
+    required this.elementSelector,
     required this.onFramesCaptured,
   });
 
@@ -350,18 +440,22 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
 
     try {
       // Detect 1 face + landmarks; compute size, centering, yaw and a pitch proxy.
+      // Works for both <img> (MJPEG) and <video> (webcam) — dimensions come from
+      // naturalWidth/Height (img) or videoWidth/Height (video).
       final jsDetectionCode = '''(async function() {
-        const img = document.querySelector('img[src*="${widget.mjpegUrl}"]');
-        if (!img || img.naturalWidth === 0) return {faces: 0};
+        const el = document.querySelector('${widget.elementSelector}');
+        const elW = el ? (el.naturalWidth || el.videoWidth || 0) : 0;
+        const elH = el ? (el.naturalHeight || el.videoHeight || 0) : 0;
+        if (!el || elW === 0) return {faces: 0};
         try {
           const dets = await faceapi
-            .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
+            .detectAllFaces(el, new faceapi.TinyFaceDetectorOptions())
             .withFaceLandmarks();
           if (dets.length !== 1) return {faces: dets.length};
 
           const d = dets[0];
           const box = d.detection.box;
-          const imgW = img.naturalWidth, imgH = img.naturalHeight;
+          const imgW = elW, imgH = elH;
 
           const lm = d.landmarks;
           const avg = (pts) => { let x=0,y=0; for (const p of pts){x+=p.x;y+=p.y;} return {x:x/pts.length, y:y/pts.length}; };
@@ -468,14 +562,17 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
 
     try {
       final captureCode = '''(async function() {
-        const img = document.querySelector('img[src*="${widget.mjpegUrl}"]');
-        if (!img) return null;
+        const el = document.querySelector('${widget.elementSelector}');
+        if (!el) return null;
+        const w = el.naturalWidth || el.videoWidth || 0;
+        const h = el.naturalHeight || el.videoHeight || 0;
+        if (w === 0) return null;
 
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(el, 0, 0);
 
         return canvas.toDataURL('image/jpeg', 0.9);
       })()''';
