@@ -7,6 +7,7 @@ import '../../../core/theme.dart';
 import '../../../core/constants.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../../services/spine/face_detection_provider.dart';
+import '../../../services/spine/visitor_arrived_provider.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
 import '../../settings/providers/settings_provider.dart';
 
@@ -215,6 +216,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         'details': next.matched
             ? '${next.name} · L2 ${next.distance.toStringAsFixed(2)}'
             : 'unknown · L2 ${next.distance.toStringAsFixed(2)}',
+        'session': 'system',
+      });
+    });
+
+    // Real visitor arrivals (#70) into the activity feed.
+    ref.listen<VisitorArrival?>(visitorArrivedProvider, (prev, next) {
+      if (next == null) return;
+      _addEvent({
+        'type': 'visitor_checkin',
+        'details': '${next.visitorName} → ${next.hostName} (${next.channel})',
         'session': 'system',
       });
     });
