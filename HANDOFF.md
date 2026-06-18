@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-17 (iMac session — Phase 2 Milestones C+D shipped) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-18 (iMac session — #70 host notification shipped; #87 battery + enrollment UX done) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -153,11 +153,16 @@ Solution — **ONE backend, TWO capture sources** (preserve the single embedding
 - **#87b — Display battery in the robot_app (chest-screen) UI (feature).** The `robot_app` Flutter app runs the battery HTTP server but doesn't show the level on its own screen. Add a battery indicator to the robot_app UI (`robot_app/lib/main.dart`), reading the same real source (`BatteryService` / CSJBot SDK) — so the chest screen shows charge too.
 - Effort: small–medium. The real unlock is wiring the actual CSJBot battery level (#43) — until then everything downstream shows the placeholder 85.
 
-**🟦 Reception workflow epic (#70–#71) — "customer arrived → tell the right staff member." Added to pipeline 2026-06 per user request. NOT built.**
+**🟦 Reception workflow epic (#70–#71) — "customer arrived → tell the right staff member." #70 DONE; #71 NOT built.**
 
 The reception robot's core job: when a visitor/customer arrives, inform the staff member they're here to see. Two features, do them in this order — notification is the reliable baseline, navigate-and-announce is the premium layer on top.
 
-- **#70 — Host notification on visitor arrival (Phase 2, moderate effort).** Customer arrives → notify the host staff member via their channel.
+> **✅ #70 — Host notification on visitor arrival DONE (2026-06-18, `6a65d71`+`cc1071d`).** Spine `POST /visit` (auth fail-closed) → loads host → inserts a `visitor` row FIRST (DPDP: **name + timestamps only, no biometrics**, `purge_after` = 30 days) → `notifyStaff` once → audit `logEvent` + broadcast a `visitor_arrived` event. `services/notify.ts` sends via the host's `notify_channel`. Admin Live Feed has a collapsible **Visitor check-in card** (staff dropdown from `GET /staff` + name field → `POST /visit`) and a dismissible **arrival banner**; arrivals also land in the dashboard activity feed. 4 vitest pass, tsc clean. Proven live (POST /visit → 200, email logged, visitor row + 30d purge, `visitor_arrived` reached the admin app).
+> - **`notify_channel` format convention: `prefix:value`** — `slack:U0ABC123`, `whatsapp:+9198…`, `email:john@xboom.in`. Unknown/missing channel → warn + return (visit still logged).
+> - **Env (now in `.env.example`):** `SLACK_WEBHOOK_URL` (Slack Incoming Webhook), `INTERAKT_API_KEY` (WhatsApp via Interakt, Basic auth).
+> - **Known gaps:** email channel is **log-only** (`TODO: wire SMTP in Phase 3`); WhatsApp/Interakt path is **untested against a live key** (text-message shape may need an approved template); **hosts must have a real `notify_channel` set** before #70 fires for them (today most are NULL — set them in Manage Staff / DB).
+
+- **#70 — Host notification on visitor arrival — ✅ DONE (see callout above).** Original plan retained below for context.
   - **Data model already exists — NO schema change:** `visitor.host_staff_id` (FK→staff) links a visitor to their host; `staff.notify_channel` holds `slack_id` / `whatsapp_phone` / `email` (the comment literally says "for host handoff").
   - **What's missing:** (a) a visitor-intake step that sets `host_staff_id` — either face recognition (Phase 2 recognizer, in progress) identifies a pre-booked visitor, OR a simple "who are you here to see?" check-in UI; (b) a **notification SENDER in spine** — none exists today; `notify_channel` is only *stored* (it appears in `handlers/enroll.ts` as a field, never sent). Build a sender keyed off the channel type (Slack webhook / WhatsApp / email).
   - **Reuse:** `xboom-flow` (separate repo) already sends WhatsApp via Interakt/MyOperator — reuse that for the WhatsApp channel rather than rebuilding.
@@ -367,25 +372,23 @@ Per-machine. Don't commit it. Permission grants will rebuild as you approve comm
 
 ## Recommended next step
 
-### Next up → **#42 Phase 1B Flutter sensor UI** (#53 is now done)
+### Next up (2026-06-18) — pick one; Phase 2 recognition + enrollment + #70/#87 are all done
+
+The strongest candidates, roughly in priority order:
+
+1. **🔴 Production auth go-live (security).** Highest-value hardening — see the "Production auth go-live checklist" near the top. Re-enable `router.dart:118` login, set `JWT_SECRET`, leave `DEV_AUTH_BYPASS` unset, mint a kiosk credential for `robot_app`. Until then all biometric/PII endpoints + the WS only work via the dev bypass.
+2. **🟡 Recognition robustness.** The nearest-neighbour gap is OVERLAPPING at 6 people (threshold dropped to 0.53 for precision). Re-enroll the loose/short captures (rohit + Amit = 4 poses each) sharper/more-frontal, then re-run `scripts/enroll/calibrate.js` and raise the threshold back toward the gap midpoint.
+3. **🟦 #71 navigate-to-desk** — the Phase-3 premium layer on #70. BLOCKED on **#83 mapping & navigation foundation** (no `navigate`/`goto` intent exists; needs a CSJBot-built floor map). Big multi-track effort.
+4. **#70 polish:** wire a real SMTP email sender (currently log-only), test the WhatsApp/Interakt path against a live key, and set real `notify_channel` values on hosts (most are NULL).
+5. **🟪 Voice (#80) / 🟩 avatar (#82)** — larger conversational tracks; KB/`conversation` schema is half-ready.
+
+**Per-session env reminders (DHCP — re-set each session):** `spine/.env ROBOT_IP` and `robot_app kSpineBaseUrl` point at this session's IPs; the robot's adb/IP changes between sessions.
 
 ```bash
-# 1. Sync
-git pull origin <branch>
-
-# 2. Confirm baselines
-flutter --version       # if missing: install Flutter SDK — this is the gate for #42
-cd spine && npm install && npm test     # expect 49/49
-cd ../app && flutter pub get && flutter analyze    # establishes Flutter baseline
-
-# 3. Work on #42:
-#    a. Extend freezed RobotStatus in app/lib/services/spine/spine_state.dart with the
-#       5 sensor fields + fromJson parsing (run build_runner after).
-#    b. Build SensorStatusCard + BlockedOverlay (mirror _TelemetryCard / StopOverlay styling).
-#    c. Wire into app/lib/features/control/screens/control_screen.dart (card in content,
-#       overlay in the top-level Stack; optional one-shot toast on transition into 'blocked').
-#    d. Widget tests + a fromJson unit test (cover the unknown-value fallback).
-#    Narrow surface; independent of #53 (event path) and #54 (Windows-only orphan).
+# Sync + baselines
+git pull origin main
+cd spine && npm install && npm test     # 51 pass; 2 MockRobotSDK *timing* tests are pre-existing flaky (mock-sdk/sensors)
+npx tsc --noEmit                         # clean
 ```
 
 ### If you're on **Windows** → Path A (recommended)
