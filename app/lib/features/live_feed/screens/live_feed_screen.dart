@@ -1,14 +1,18 @@
 import 'dart:typed_data';
 import 'dart:async';
-import 'dart:convert' show base64Decode;
+import 'dart:convert' show base64Decode, jsonEncode, jsonDecode;
 import 'dart:js' as js;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/visitor_arrived_provider.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../../staff/providers/enrollment_provider.dart';
+import '../../staff/providers/staff_list_provider.dart';
 import '../../staff/screens/staff_list_screen.dart';
 import '../widgets/mjpeg_view.dart';
 import '../widgets/enroll_webcam_view.dart';
@@ -137,7 +141,12 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: Center(
+      body: Column(
+        children: [
+          // Live visitor-arrival banner (driven by visitorArrivedProvider).
+          const _VisitorArrivalBanner(),
+          Expanded(
+            child: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
           decoration: BoxDecoration(
@@ -228,6 +237,11 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
             ],
           ),
         ),
+            ),
+          ),
+          // Visitor self-check-in → notify host (#70).
+          const _VisitorCheckInCard(),
+        ],
       ),
     );
   }
@@ -1060,6 +1074,162 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Visitor self-check-in card — "who are you here to see?" → POST /visit.
+class _VisitorCheckInCard extends ConsumerStatefulWidget {
+  const _VisitorCheckInCard();
+  @override
+  ConsumerState<_VisitorCheckInCard> createState() => _VisitorCheckInCardState();
+}
+
+class _VisitorCheckInCardState extends ConsumerState<_VisitorCheckInCard> {
+  final _nameCtr = TextEditingController();
+  String? _hostId;
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _nameCtr.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameCtr.text.trim();
+    if (name.isEmpty || _hostId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your name and pick who you are visiting')),
+      );
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      final token = Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
+      final res = await http
+          .post(
+            Uri.parse('http://localhost:4000/visit'),
+            headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+            body: jsonEncode({'visitor_name': name, 'host_staff_id': _hostId}),
+          )
+          .timeout(const Duration(seconds: 15));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      if (data['ok'] == true) {
+        final hostName = (data['host']?['full_name'] as String?) ?? 'the host';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Notification sent to $hostName'), backgroundColor: Colors.green),
+        );
+        setState(() {
+          _nameCtr.clear();
+          _hostId = null;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Check-in failed: ${data['reason'] ?? 'unknown error'}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Check-in error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final staffAsync = ref.watch(staffListProvider);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: TimoColors.surface,
+        border: Border.all(color: TimoColors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: const Icon(Icons.how_to_reg, color: TimoColors.primary),
+          title: Text('Visitor check-in',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          subtitle: Text('Who are you here to see?',
+              style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary)),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            TextField(
+              controller: _nameCtr,
+              decoration: InputDecoration(
+                labelText: 'Your name',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            staffAsync.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => Text('Could not load staff: $e',
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+              data: (staff) => DropdownButtonFormField<String>(
+                value: _hostId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Host (who you are visiting)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                items: staff
+                    .map((s) => DropdownMenuItem(value: s.id, child: Text(s.fullName)))
+                    .toList(),
+                onChanged: (v) => setState(() => _hostId = v),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _sending ? null : _submit,
+                icon: _sending
+                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.notifications_active),
+                label: Text(_sending ? 'Sending…' : 'Notify host'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dismissible banner shown when a visitor_arrived event arrives over the WS.
+class _VisitorArrivalBanner extends ConsumerWidget {
+  const _VisitorArrivalBanner();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final v = ref.watch(visitorArrivedProvider);
+    if (v == null) return const SizedBox.shrink();
+    return Material(
+      color: TimoColors.primary.withOpacity(0.12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.how_to_reg, color: TimoColors.primary, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '👋 ${v.visitorName} is here to see ${v.hostName} · notified via ${v.channel}',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: TimoColors.textPrimary),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: () => ref.read(visitorArrivedProvider.notifier).clear(),
+            ),
+          ],
         ),
       ),
     );

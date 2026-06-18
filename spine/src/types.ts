@@ -55,7 +55,7 @@ export type SensorEvent =
 
 // Events emitted by the robot (or mock)
 export interface RobotEvent {
-  type: 'face_detected' | 'battery_update' | 'robot_online' | 'robot_offline';
+  type: 'face_detected' | 'battery_update' | 'robot_online' | 'robot_offline' | 'visitor_arrived';
   payload?: Record<string, any>;
   timestamp?: number;
 }

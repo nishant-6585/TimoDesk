@@ -7,6 +7,7 @@ import '../../../core/constants.dart';
 import '../../features/settings/providers/settings_provider.dart';
 import 'spine_state.dart';
 import 'face_detection_provider.dart';
+import 'visitor_arrived_provider.dart';
 
 class SpineService extends StateNotifier<SpineState> {
   WebSocketChannel? _channel;
@@ -140,6 +141,20 @@ class SpineService extends StateNotifier<SpineState> {
                 staffId: inner['staff_id'] as String?,
                 matched: matched,
                 distance: distance,
+                at: DateTime.now(),
+              ),
+            );
+      }
+
+      if (eventType == 'visitor_arrived' && eventPayload != null) {
+        // Same nesting as face_detected: fields live under eventPayload['payload'].
+        final inner = (eventPayload['payload'] as Map<String, dynamic>?) ?? eventPayload;
+        final host = inner['host'] as Map<String, dynamic>?;
+        _ref.read(visitorArrivedProvider.notifier).report(
+              VisitorArrival(
+                visitorName: (inner['visitor_name'] as String?) ?? 'A visitor',
+                hostName: (host?['full_name'] as String?) ?? 'staff',
+                channel: (inner['channel'] as String?) ?? 'none',
                 at: DateTime.now(),
               ),
             );

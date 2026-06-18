@@ -14,6 +14,7 @@ import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
 import { handleEnroll } from './handlers/enroll';
 import { handleCheckFace } from './handlers/check-face';
+import { handleVisit } from './handlers/visit';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
@@ -29,6 +30,11 @@ interface AuthenticatedSocket extends WebSocket {
 export function startServer(sdk: RobotSDK): Promise<void> {
   return new Promise(async (resolve, reject) => {
     const supabase = getSupabaseClient();
+
+    // Single broadcast path for RobotEvents → admin clients. Assigned once the
+    // WebSocket server exists (below); declared here so HTTP route handlers
+    // (e.g. /visit) can reference it. No-op until assigned (requests arrive after).
+    let broadcastRobotEvent: (event: RobotEvent) => void = () => {};
 
     // Initialize face-api models BEFORE server starts (required for enrollment)
     try {
@@ -72,6 +78,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/check-face' && req.method === 'POST') {
         await handleCheckFace(req, res, supabase);
+        return;
+      }
+
+      if (url === '/visit' && req.method === 'POST') {
+        await handleVisit(req, res, supabase, broadcastRobotEvent);
         return;
       }
 
@@ -240,7 +251,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     });
 
     // Single broadcast path for all RobotEvents → { type:'event', event, eventPayload }.
-    const broadcastRobotEvent = (event: RobotEvent) => {
+    broadcastRobotEvent = (event: RobotEvent) => {
       const { type: eventType, ...rest } = event;
       const msg: SpineMessage = {
         type: 'event',
