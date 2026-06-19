@@ -146,6 +146,7 @@ The MJPEG server, Flutter UI, and viewers stay unchanged. (Sensor/motor bridges 
 | `MISSION_CONTROL_BUILD.md` | Mission Control dashboard build. |
 | `robot_app/docs/CHEST_UX_REDESIGN.md` | Chest-screen ambient-face + dashboard design (#89). |
 | `robot_app/docs/SENSOR_BRIDGE.md` | Native sensor-bridge reference (not yet deployed). |
+| `docs/FIREBASE_SETUP.md` | Push-notification (FCM) setup — project `timodesk`, remaining console steps. |
 | `ISSUE_EMAIL_RATE_LIMIT.md` | Known dev blocker (Supabase email rate limit). |
 | `supabase/migrations/` | Schema (8 migrations) — RLS, pgvector, retention. |
 
