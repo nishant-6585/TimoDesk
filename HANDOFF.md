@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-19 (**auth go-live DONE — JWKS/ES256 verification + real login gate, prod-proven**; only kiosk operator credential remains; #70 host notification, #87 battery, enrollment UX done; #83 mapping note; **#89 chest-screen redesign** — ✅ **P1 DONE** (ambient face shell + dashboard tiles, mock state, APK builds; `.riv` asset still owed), P2 (real perception) next; **#90 mobile admin / remote-control app** — ✅ **Part A DONE** (adaptive phone remote), ✅ **Part B code-complete** (FCM push, awaiting Firebase config); ✅ the admin `app/` native-build break (web-only `live_feed/` imports) is RESOLVED via conditional seams — `flutter build apk` proven, phone remote now builds + runs on a device) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-19 (**auth go-live DONE**; **Firebase/FCM config activated** — `firebase_options.dart` + Android plugin committed, APK proven, only spine service-account key + on-device test remain — see `docs/FIREBASE_SETUP.md`; #70/#87/#88 done; **#89** P1 DONE (P2 next); **#90** Part A done + Part B code-complete, native-build break resolved (phone remote builds on device); **#91 deployment & config** (kill localhost/hardcoded-IPs — hybrid: cloud web app + on-prem spine, robot self-register) + **#92 CI/CD GitHub Actions** added to pipeline) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -258,6 +258,31 @@ A mobile experience for the admin: a **remote-control + monitoring** client for 
   - **Dependencies / reuse:** `spine_service.dart` (WS + intents — done), mobile `MjpegView` (done), `visitorArrivedProvider`/`faceDetectionProvider` (#70/Milestone D — done), auth (gated on #auth go-live). Push notifications are the one genuinely-new infra piece.
   - **Effort:** medium (responsive layouts + push). Push-notification infra is the long pole.
   - **Build order (user, 2026-06-19):** auth go-live was FIRST — ✅ **DONE** (`9ea892b`→`24245fd`, JWKS/ES256, prod-proven). #90's feature 1 (real login) is now delivered by it. Next build = #89-P1 OR #90 (user's pick). NOTE for #90 prod: the mobile app sends `currentSession.accessToken` (real ES256) — works against the hardened spine with no extra wiring.
+
+**🌐 Deployment & config — kill localhost + hardcoded IPs (#91). Added 2026-06-19 per user request. NOT built.**
+
+Goal: stop developing on `localhost`, deploy properly, and get rid of hardcoded robot/spine IPs + ports (`constants.dart defaultRobotIp='192.168.10.23'`/`defaultSpineUrl='ws://localhost:4000'`, `robot_app kSpineBaseUrl`, spine `ROBOT_IP`). These are DHCP-fragile and break every session.
+  - **⚠️ The reality that shapes everything (don't hand-wave "just put it on a server"):** the robot serves its camera (:8080), battery (:8090), and control WS (:8081-3) on its **private LAN IP** behind office NAT. **Spine must reach the robot over the LAN** — and you do NOT want to relay MJPEG video through a distant cloud. So this is NOT "move everything to the cloud." It's a **hybrid**: some pieces cloud-host cleanly, spine stays near the robot.
+    - **Supabase** — already cloud/managed. ✅ nothing to do.
+    - **Admin web app (Flutter web)** — static; cloud-host cleanly (Vercel / Netlify / Firebase Hosting / Cloudflare Pages). Easy win. Gives a stable URL, no localhost.
+    - **Spine** — best kept **on-prem** (a small always-on box / NUC on the office network) because it talks to the robot continuously over LAN + relays video locally. Expose it to remote admins via a **stable hostname + TLS** (Cloudflare Tunnel / Tailscale / reverse proxy) — the JWKS/ES256 auth we shipped already protects it. Alternative (cloud spine) forces a tunnel back to the robot AND cloud video relay — more cost/latency; only if there's a reason. **DECISION NEEDED: spine on-prem+tunnel (recommended) vs cloud+robot-tunnel.**
+  - **Killing the hardcoded IPs — two sub-problems:**
+    1. **Spine endpoint** — replace `ws://localhost:4000` with a **configurable** spine URL: a build-time/env default (prod = a fixed domain like `wss://spine.<domain>`) + the existing `settingsProvider` runtime override. Centralize ports as named constants. Straightforward.
+    2. **Robot IP (the DHCP pain)** — pick ONE: (a) **static DHCP reservation** on the office router (simplest, reliable, zero code); (b) **robot self-registers** its current IP with spine on boot/heartbeat (best UX — zero human config; small robot_app + spine change); (c) **mDNS/Bonjour** (`timo.local`). Recommend (a) now + (b) later for true plug-and-play.
+  - **Per-environment config** — introduce a clean config story (dev/staging/prod): Flutter `--dart-define` / env files, spine `.env` per environment, no IPs in source. Document in a `DEPLOYMENT.md`.
+  - **Effort:** medium. Web hosting + spine-URL config = quick. Robot self-registration + tunnel = the bigger pieces. **Depends on the spine-hosting decision above.**
+
+**⚙️ CI/CD on GitHub Actions (#92). Added 2026-06-19 per user request. NOT built. INDEPENDENT — can start now.**
+
+Automated test + build (+ deploy) on push/PR. Independent of the #91 hosting decision — the test/build half can start immediately.
+  - **Workflows:**
+    - **spine** — `npm ci` → `tsc --noEmit` → `npm test` (vitest) on PR + push to main. ⚠️ FIRST fix/quarantine the **2 pre-existing flaky MockRobotSDK timing tests** (mock-sdk/sensors) or CI is permanently red — they fail nondeterministically; either make them deterministic (inject/fake timers) or mark them `test.skip` with a TODO.
+    - **app (Flutter)** — `flutter pub get` → `flutter analyze` → `flutter test` → `flutter build web`. (Note `flutter analyze` had an environmental crash once — pin the Flutter version in CI to avoid it.)
+    - **robot_app (Flutter)** — `flutter analyze` → `flutter build apk --debug` (artifact upload). Requires the committed `google-services.json` (✅ now committed).
+  - **Deploy (after #91 decision):** on merge to main → deploy web app to the chosen host; deploy/restart spine (if cloud, e.g. Railway/Render/Fly; if on-prem, a self-hosted runner or a pull-based agent). Supabase migrations: keep MANUAL for now (auto-applying schema from CI is risky) — revisit later.
+  - **Secrets:** GitHub Actions secrets for Supabase keys, FCM, hosting tokens. NEVER inline. The service-account key + `.env` stay out of the repo.
+  - **Effort:** small–medium for the test/build CI (a few `.github/workflows/*.yml`); deploy automation depends on #91.
+  - **Recommended first slice:** a `spine` test workflow + an `app`/`robot_app` analyze+build workflow — pure green-check value, no deploy, no hosting decision needed. Do the flaky-test fix as part of it.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
