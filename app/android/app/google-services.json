@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "362219956591",
+    "project_id": "timodesk",
+    "storage_bucket": "timodesk.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:362219956591:android:cebb21a5ab1d5e6916609a",
+        "android_client_info": {
+          "package_name": "com.example.timo_admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDBOS3OIPpxFCO1GN_xNfC9RPxpzNkCtpM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

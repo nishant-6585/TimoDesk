@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'core/supabase.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
+import 'firebase_options.dart';
 import 'services/push/push_service.dart';
 
 /// Global messenger so push (#90) can show in-app banners over any screen.
@@ -21,7 +22,7 @@ void main() async {
   // app still runs and Part A is unaffected. To activate: add the Firebase
   // config, apply the google-services Gradle plugin, then this wires itself up.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     PushService.messengerKey = rootMessengerKey;
     await PushService.init();
   } catch (e) {

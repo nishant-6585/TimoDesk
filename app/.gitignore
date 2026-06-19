@@ -74,12 +74,12 @@ app.*.map.json
 **/android/app/release
 
 # Web
-lib/generated_plugin_registrant.dart
 
-# Firebase secrets (#90 push) — NEVER commit these.
-**/android/app/google-services.json
-**/ios/Runner/GoogleService-Info.plist
-lib/firebase_options.dart
+# Firebase CLIENT config (project id / API key / sender id) is COMMITTED — not a
+# secret; it ships in every distributed app and lets the build work on any
+# machine: lib/firebase_options.dart, android/app/google-services.json,
+# ios/Runner/GoogleService-Info.plist. The spine FCM SERVICE-ACCOUNT JSON
+# (private key) is the real secret and stays out of git (spine/.env, gitignored).
 
 # Exceptions to above rules.
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
