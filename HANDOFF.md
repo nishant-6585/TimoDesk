@@ -232,10 +232,7 @@ Turn `robot_app` from a utility (MJPEG streamer + battery server + control recei
 **📱 Mobile admin / remote-control app (#90) — phone-first "drive + monitor + get-alerted on the go." Added 2026-06-19 per user request. NOT built.**
 
 A mobile experience for the admin: a **remote-control + monitoring** client for a phone — drive Timo, watch the camera, see status, get pushed when a visitor arrives. NOT the full admin authoring suite (enrollment management, gallery, patrol-map editing, analytics stay on the larger web/tablet screen). Think **"Timo Remote"**, not "admin console on a small screen."
-  - **⚠️ Architecture decision (OPEN — user leans "separate app"; my recommendation differs — DECIDE before building):**
-    - **Option A (RECOMMENDED — adaptive layouts in the EXISTING `app/`):** `app/` already targets iOS+Android+web (pubspec: "Flutter web + iOS + Android"). Add responsive breakpoints (`LayoutBuilder`) → phones get a mobile-first remote layout, web/tablet keeps the current dashboard. **Shares everything** — `spine_service.dart`, Supabase auth, all Riverpod providers, models, the mobile `MjpegView` path. One codebase, one build, no duplication. Best fit for a solo engineer + minimal-surface-area (CLAUDE.md). Add push notifications + haptics as the mobile-native layer.
-    - **Option B (separate "Timo Remote" app):** a distinct Flutter app + a shared core package (`packages/timo_core` = spine_service + models + auth extracted) so logic isn't duplicated. Gives a focused product + independent app-store listing/release cadence. Cost: package extraction + two app shells to maintain. Justified ONLY if "field-operator remote" is a genuinely separate product from "admin console." `viewer_mobile/` (existing Flutter mobile camera viewer) is a precedent/foundation but is camera-only today.
-    - **Honest take:** for a solo MVP, **A** delivers the same phone UX at a fraction of the maintenance. Don't fork a second codebase unless the products truly diverge. *Recorded for decision.*
+  - **✅ Architecture decision LOCKED (2026-06-19): Option A — adaptive layouts in the EXISTING `app/`.** NOT a separate app. `app/` already targets iOS+Android+web (pubspec: "Flutter web + iOS + Android"); add responsive breakpoints (`LayoutBuilder`) → phones get a mobile-first remote layout (joystick-first), web/tablet keep the current dashboard. **Shares everything** — `spine_service.dart`, Supabase auth, all Riverpod providers, models, the mobile `MjpegView` path. One codebase, no duplication; push notifications + haptics are the mobile-native layer on top. (Considered + rejected: a separate "Timo Remote" app + extracted `packages/timo_core` — unnecessary maintenance overhead for a solo MVP unless the products genuinely diverge. `viewer_mobile/` stays a camera-only viewer.)
   - **Core features (v1 — the "remote"):**
     1. **Login** (Supabase — reuse; gated by the #auth go-live work).
     2. **Live camera** — full-screen MJPEG (mobile `MjpegView` already exists), portrait + landscape.
@@ -250,7 +247,8 @@ A mobile experience for the admin: a **remote-control + monitoring** client for 
     - **Haptic feedback** on controls; connection indicator + auto-reconnect (spine WS).
   - **Explicitly DEFERRED off mobile v1 (keep on web/tablet):** staff enrollment/CRUD, gallery, patrol-route map editor, Mission Control analytics. Mobile = control + monitor + alerts, not authoring.
   - **Dependencies / reuse:** `spine_service.dart` (WS + intents — done), mobile `MjpegView` (done), `visitorArrivedProvider`/`faceDetectionProvider` (#70/Milestone D — done), auth (gated on #auth go-live). Push notifications are the one genuinely-new infra piece.
-  - **Effort:** Option A = medium (responsive layouts + push). Option B = medium-large (+ package extraction + 2nd shell). Push-notification infra is the long pole either way.
+  - **Effort:** medium (responsive layouts + push). Push-notification infra is the long pole.
+  - **Build order (user, 2026-06-19):** **AUTH GO-LIVE FIRST** (JWKS/ES256 hardening, mid-flight in VS Code) before #90 or #89-P1 — don't stack more UI on the open auth bypass. #90 also depends on real login (feature 1) which the auth work delivers.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
