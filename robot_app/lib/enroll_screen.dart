@@ -7,19 +7,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:http/http.dart' as http;
+import 'config.dart';
 
 // ── Config ──────────────────────────────────────────────────────────────────
-// The robot serves its OWN camera here (CameraStreamPlugin / camera2). We REUSE
-// it — never open the camera with a Flutter plugin.
-//   On-robot:  http://localhost:8080
-//   Emulator:  point at the real robot, e.g. http://192.168.10.23:8080
-const String kCameraBaseUrl = 'http://localhost:8080';
-
-// Where spine (the /enroll + /check-face broker) runs. The robot must be able to
-// reach this host. Set to the machine running spine.
-//   On-robot:  http://<spine-host-ip>:4000
-//   Emulator:  http://10.0.2.2:4000  (emulator alias for the host loopback)
-const String kSpineBaseUrl = 'http://192.168.1.18:4000';
+// Spine + camera base URLs now live in RobotConfig (persisted, editable in the
+// Settings dashboard tile). The robot serves its OWN camera (CameraStreamPlugin /
+// camera2) — we REUSE /snapshot, never open a second camera.
 
 // Bearer token the kiosk sends to spine. In dev this is the bypass token (works
 // only behind spine's DEV_AUTH_BYPASS).
@@ -167,7 +160,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
   Future<Uint8List?> _fetchSnapshot() async {
     try {
       final res = await http
-          .get(Uri.parse('$kCameraBaseUrl/snapshot'))
+          .get(Uri.parse('${RobotConfig.cameraBaseUrl}/snapshot'))
           .timeout(const Duration(seconds: 4));
       if (res.statusCode != 200) return null;
       final b = res.bodyBytes;
@@ -299,7 +292,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
     try {
       final res = await http
           .post(
-            Uri.parse('$kSpineBaseUrl/check-face'),
+            Uri.parse('${RobotConfig.spineBaseUrl}/check-face'),
             headers: {'Authorization': 'Bearer $kAuthToken', 'Content-Type': 'application/json'},
             body: jsonEncode({'image_base64': base64Encode(frame)}),
           )
@@ -342,7 +335,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
       try {
         final res = await http
             .post(
-              Uri.parse('$kSpineBaseUrl/enroll'),
+              Uri.parse('${RobotConfig.spineBaseUrl}/enroll'),
               headers: {'Authorization': 'Bearer $kAuthToken', 'Content-Type': 'application/json'},
               body: jsonEncode({
                 'full_name': _nameCtr.text,

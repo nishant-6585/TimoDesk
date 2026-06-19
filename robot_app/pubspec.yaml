@@ -15,6 +15,10 @@ dependencies:
   # camera — runs on frame bytes) and POST images to spine /enroll.
   google_mlkit_face_detection: ^0.11.0
   http: ^1.2.0
+  # Settings persistence (spine URL / robot IP). Tiny official plugin — the only
+  # P1 dep; the "no new deps" rule targets rive/ML Kit, and the #89 design doc
+  # explicitly specifies SharedPreferences for the Settings tile.
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:
