@@ -227,7 +227,7 @@ Turn `robot_app` from a utility (MJPEG streamer + battery server + control recei
     - **P4 — Lip-sync** (depends #80 TTS): amplitude-driven mouth, per #82.
   - **Dependencies:** #82 (the face asset/animation), #80 (voice, for P3/P4), recognition pipeline (DONE — emits `face_detected`), `personDetected` sensor (Phase 1A), battery (already on the chest screen via #87). P1 depends on none of these being *finished* — it's the shell + a placeholder face with mock state.
   - **Effort:** large (it's a full app redesign + the parent of #82/#80). But P1 (shell + mock face) is a self-contained, hardware-free, demo-able chunk — start there.
-  - **"Designed properly":** before building, produce a short design doc (`robot_app/docs/CHEST_UX_REDESIGN.md`) — state machine diagram, screen wireframes, the two-pipeline split, the feature list for the dashboard (real + placeholders), and the Rive input contract. THEN P1.
+  - **"Designed properly":** ✅ **design doc DONE** → `robot_app/docs/CHEST_UX_REDESIGN.md` (state machine, two screens, the two-pipeline split, Rive input contract, P1–P4 phasing, P1 acceptance criteria). **Decisions locked (2026-06-19):** face = **full stylized character** (eyes+mouth+brows from the start); Dashboard v1 real tiles = **Enroll Staff + Robot Status + Manual Control + Settings** (all wire to EXISTING `main.dart` providers/`EnrollScreen`), rest are disabled placeholders. **Next: build P1** (app shell + mock-state face + 4 tiles, hardware-free) against that doc.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
