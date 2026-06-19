@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-19 (#70 host notification shipped; #87 battery + enrollment UX done; #83 mapping note: "uses LIDAR ≠ raw LIDAR access", glass = virtual walls, fusion at event layer) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-19 (#70 host notification shipped; #87 battery + enrollment UX done; #83 mapping note added; **#89 robot chest-screen experience redesign added to pipeline** — front-of-house app shell, two-pipeline gaze/identity split) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -205,6 +205,29 @@ A full-screen animated face on the **robot's chest screen** (`robot_app/`, Flutt
   - **Tech suggestion:** **Rive** is well-suited — a state-machine-driven interactive character with named inputs (gaze x/y, blink, mouth-open level, state), lightweight enough for the modest chest-screen hardware. Lottie or Flutter `CustomPainter` are alternatives. Keep it GPU-light (Android 7.1.2, modest device).
   - **Dependencies:** the avatar *states* come from #80's pipeline events (listening/thinking/speaking) and from #42/face recognition (who/where the person is). Build the avatar with **mock state inputs first** (a debug toggle to cycle idle→listening→thinking→speaking), then wire it to the real voice/recognition events once #80 lands.
   - **Effort:** medium (animation + state wiring); the heavy lifting is the #80 voice pipeline it visualizes.
+
+**🟪 Robot chest-screen experience redesign — front-of-house app shell (#89). The "proper robot" UX. Added 2026-06-19 per user request. NOT built.**
+
+Turn `robot_app` from a utility (MJPEG streamer + battery server + control receivers + enrollment) into the robot's **front-of-house personality + interaction shell**. Goal: a chest screen that *behaves like a being* — an ambient face when idle, reacts to people walking by, greets identified staff by name, and on tap opens a feature dashboard driven by tap + (later) voice. **#89 is the CONTAINER**; #82 (the animated face) and #80 (voice) are the engines that plug into it.
+  - **Where:** `robot_app/` (chest screen, Flutter on Android 7.1.2). The existing background servers (MJPEG :8080, battery :8090, control WS receivers) **keep running** — this redesigns only the FOREGROUND `main.dart` UI into a stateful shell.
+  - **Two screens, one shell (the app-shell redesign — this is the NEW part beyond #82/#80):**
+    - **Ambient Face screen (default)** — full-screen animated face (#82). Idle = blink + subtle look-around. Reacts to presence/motion (eyes track a passerby) and to identity (greet a recognized staff member). This is the resting state the robot sits in 99% of the time.
+    - **Dashboard screen (on tap/voice)** — tapping the face opens a feature dashboard: the actual features (live status, enrollment, settings, control) as large tap targets + placeholders for future features (voice Q&A, payment, navigate, directory). Idle-timeout returns to the Ambient Face.
+  - **State machine (extends #82's, adds the presence/identity/dashboard states):** `ambient-idle` → `attentive` (someone present, eyes track) → `greeting` (staff identified → personalized) → `listening`/`thinking`/`speaking` (voice, #80) → `dashboard` (tapped). Auto-return to `ambient-idle` on timeout.
+  - **⚠️ CRITICAL architecture — TWO perception pipelines, do NOT cross them:**
+    1. **Gaze / presence = ON-DEVICE, local, fast.** Eyes tracking a passerby needs a *position* (bounding-box), in real time, with no network latency. The spine recognizer does NOT provide this — it emits identity (`face_detected{staff_id,name,distance}`), polls ~1s, and has no box. So the chest screen runs a **lightweight local ML Kit face-detect on the robot `/snapshot`** (same source enroll_screen already uses — REUSE it, do NOT open a 2nd camera; CameraStreamPlugin owns camera2) to drive gaze x/y + "someone is here". CSJBot `personDetected` (boolean, Phase 1A) is a coarser presence fallback.
+    2. **Identity / greeting = SPINE, authoritative.** Who the person is comes from the existing Milestone-D recognizer over the WS (`face_detected` event). The chest screen listens for it → triggers the `greeting` state with the name. Keep ONE embedding pipeline (spine) — the on-device ML Kit is for *gaze/presence only*, never identity (would be a divergent recognition path — forbidden, same rule as enrollment).
+    - Net: **local detection animates the face (responsive); spine recognition supplies the name (authoritative).** Don't try to recognize on-device, don't try to gaze-track from spine.
+  - **DPDP:** strangers/passersby are **anonymous presence only** — drive the eyes, store NOTHING (no frames, no embeddings). Greeting-by-name uses staff identity from the consented enrollment pipeline only. Consistent with no-customer-biometrics.
+  - **Tech:** Rive for the face (#82 — state-machine inputs: gaze x/y, blink, mouth-open, state). App shell = a simple state-driven `Stack`/`Navigator` (AmbientFace ↔ Dashboard), NOT heavy routing. GPU-light (Android 7.1.2).
+  - **Phasing (build mock-first, exactly like #82):**
+    - **P1 — App shell + ambient face (mock inputs).** AmbientFace ↔ Dashboard navigation, tap-to-open, idle-timeout-return, the Rive face with a debug toggle cycling idle→attentive→greeting→listening→thinking→speaking. No real perception yet. *Hardware-free, buildable NOW.*
+    - **P2 — Wire real perception.** Local ML Kit `/snapshot` detect → gaze + `attentive`; spine `face_detected` WS → `greeting`-by-name. Needs robot.
+    - **P3 — Voice commands** (depends #80): wake/STT → `listening`/`thinking`/`speaking`; voice nav of the dashboard.
+    - **P4 — Lip-sync** (depends #80 TTS): amplitude-driven mouth, per #82.
+  - **Dependencies:** #82 (the face asset/animation), #80 (voice, for P3/P4), recognition pipeline (DONE — emits `face_detected`), `personDetected` sensor (Phase 1A), battery (already on the chest screen via #87). P1 depends on none of these being *finished* — it's the shell + a placeholder face with mock state.
+  - **Effort:** large (it's a full app redesign + the parent of #82/#80). But P1 (shell + mock face) is a self-contained, hardware-free, demo-able chunk — start there.
+  - **"Designed properly":** before building, produce a short design doc (`robot_app/docs/CHEST_UX_REDESIGN.md`) — state machine diagram, screen wireframes, the two-pipeline split, the feature list for the dashboard (real + placeholders), and the Rive input contract. THEN P1.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
