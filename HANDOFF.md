@@ -440,6 +440,8 @@ Per-machine. Don't commit it. Permission grants will rebuild as you approve comm
 
 ### Next up (2026-06-18) — pick one; Phase 2 recognition + enrollment + #70/#87 are all done
 
+> **Nishant's planned order (2026-06-19):** **(0) Firebase setup first** — provision the Firebase project + `google-services.json`/`GoogleService-Info.plist` + FCM service-account key (`FCM_SERVICE_ACCOUNT`/`FCM_PROJECT_ID` for spine) to light up #90 Part B push (Android + iOS). **THEN tackle #82 (avatar) and #80 (voice).** Both remain in the pipeline (sections above) and are explicitly kept active per user request. The step-by-step Firebase guide was delivered in chat (not yet a repo doc — add `docs/FIREBASE_SETUP.md` if it needs to persist).
+
 The strongest candidates, roughly in priority order:
 
 1. **🔴 Production auth go-live (security).** Highest-value hardening — see the "Production auth go-live checklist" near the top. Re-enable `router.dart:118` login, set `JWT_SECRET`, leave `DEV_AUTH_BYPASS` unset, mint a kiosk credential for `robot_app`. Until then all biometric/PII endpoints + the WS only work via the dev bypass.
@@ -526,5 +528,6 @@ This file is a living doc. At end of every cross-machine session, refresh:
 3. "Pipeline status" — move completed tasks, add new ones, update blockers
 4. "Recommended next step" — what should the next session start with
 5. Any new critical gotchas
+6. **`README.md`** — keep it current whenever architecture, components, status, ports, env vars, or build commands change (standing instruction from Nishant, 2026-06-19). It's the public top-level orientation doc; don't let it drift.
 
 Commit as `chore: update session handoff` and `git push` before switching machines.
