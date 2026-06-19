@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-18 (iMac session — #70 host notification shipped; #87 battery + enrollment UX done) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-19 (#70 host notification shipped; #87 battery + enrollment UX done; #83 mapping note: "uses LIDAR ≠ raw LIDAR access", glass = virtual walls, fusion at event layer) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -220,6 +220,19 @@ Phase 1A built the **entire** obstacle/sensor pipeline (types, `createSensorPipe
 **🟦 Mapping & Navigation foundation (#83) — prerequisite for ALL physical autonomy. Added 2026-06 per user request.**
 
 **Honest framing (important):** on CSJBot you do **NOT** implement SLAM yourself. The robot's firmware runs SLAM/localization internally (it reports `OnPositioningQualityListener` quality; waypoints are `{x, y, heading}` in the robot's own map frame). So this feature = **use the CSJBot mapping mode to build the map, then integrate its navigate-to-point API** — not writing a SLAM/particle-filter algorithm. Don't reinvent what the platform already does.
+
+  - **⚠️ "Uses LIDAR" ≠ "gives raw LIDAR access" — settle this so it isn't re-litigated.** Recurring question: *"if we don't have raw LIDAR, how do we map at all?"* Answer: **we ARE mapping with LIDAR — the firmware's LIDAR does it; we just don't get the raw scans/point cloud.** Two different things. The mapping IS LIDAR-based; it's just LIDAR-consumed *inside the firmware*, where you take the finished map as output. (Mental model: like building on Supabase/Postgres without touching the storage engine — the DB does the hard part, you consume the result.) The layering:
+    | Layer | Who runs it | Uses LIDAR? | Exposed to us? |
+    |---|---|---|---|
+    | Raw LIDAR scans / point cloud | firmware only | ✅ consumes | ❌ **NOT exposed** |
+    | SLAM + map building | CSJBot firmware | ✅ | ✅ we *trigger* it, get the saved map |
+    | Map + waypoints `{x,y,heading}` + localization quality | SDK | — | ✅ |
+    | Navigate-to-point (live obstacle avoidance) | firmware | ✅ live | ✅ we issue `goto` |
+    - **What "no raw access" actually costs us — and why we need neither:** (1) writing our OWN SLAM (we don't — firmware does it better); (2) custom raw-LIDAR+CV obstacle fusion (we don't — **event-level fusion** covers it: CSJBot's own fused `BLOCKED`/`WAITSHORT`/`LQ_LOW` events + CV semantics on spine + virtual walls on the map). Everything a reception robot needs — knows the floor, localizes, navigates point-to-point avoiding obstacles — comes from the **map + nav API**, which IS exposed. Raw access only matters if you're rebuilding the robot's brain from scratch, which we are not.
+    - **Caveats (unchanged):** mapping *initiation* is **operator-guided** — drive the floor ONCE to build the map (CSJBot almost certainly does NOT expose autonomous "explore unknown building"); after that, localization + navigation are fully autonomous. **Glass walls are invisible to LIDAR** (laser passes through) even to the firmware → they don't get mapped → **mark them as virtual no-go walls** (#84). Glass is the one obstacle where BOTH LIDAR and plain RGB/CV are weak; the sensors that catch glass are ultrasonic (CSJBot fuses some internally) + depth-reflection tricks + manual virtual walls. Do NOT plan to "fall back to LIDAR when CV is unsure about glass" — for glass specifically LIDAR is the WORST sensor, not the fallback.
+    - **Sensor fusion happens at the EVENT layer, not the raw-data layer.** CV (spine) = *what/who/why* (semantic); CSJBot high-level obstacle events (Phase 1A pipeline) = *am I physically blocked* (safety, already firmware-fused); virtual walls = known invisible hazards. Combine those three at the app layer. Raw-LIDAR-on-demand fusion is NOT buildable on this SDK — don't start down that path.
+    - **If glass collisions ever become a real operational problem** after virtual walls: the only way to get raw range data the SDK won't give is to ADD your own sensor (external ultrasonic array or depth/ToF cam on the Android device) and fuse THAT with CV at the app layer. That's a **hardware modification** (Vishal's domain, real cost) — do NOT build speculatively; only if virtual walls prove insufficient in practice.
+
   - **What it unlocks (everything physical):** #71 navigate-to-desk, autonomous patrol, auto-return-to-charge, escort/guide. Nothing moves intelligently without it.
   - **Pieces to build:**
     1. **Build maps** with the CSJBot vendor mapping tool (drive the floor once); save named maps.
