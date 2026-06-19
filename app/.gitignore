@@ -76,5 +76,10 @@ app.*.map.json
 # Web
 lib/generated_plugin_registrant.dart
 
+# Firebase secrets (#90 push) — NEVER commit these.
+**/android/app/google-services.json
+**/ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart
+
 # Exceptions to above rules.
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages

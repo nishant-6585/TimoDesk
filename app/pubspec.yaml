@@ -48,6 +48,12 @@ dependencies:
   # Immutable state models
   freezed_annotation: ^2.4.0
 
+  # Push notifications (#90 Part B). Dormant until Firebase config is added
+  # (android/app/google-services.json); main() guards init so the app runs
+  # without it. firebase_core + firebase_messaging are the minimal FCM client.
+  firebase_core: ^2.31.0
+  firebase_messaging: ^14.9.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
