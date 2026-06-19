@@ -1,0 +1,438 @@
+// Robot app data layer: native channels + Riverpod providers (camera/head/chassis/
+// arm/battery). Extracted verbatim from main.dart — unchanged behavior.
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'battery_service.dart';
+
+const kOrange = Color(0xFFFF6B35);
+
+const _methodCh = MethodChannel('com.timoDesk/camera_stream');
+const _eventCh  = EventChannel('com.timoDesk/camera_events');
+const _batteryEventCh = EventChannel('com.timoDesk/battery_events');
+const _headMethodCh = MethodChannel('com.timoDesk/head_control');
+const _headEventCh  = EventChannel('com.timoDesk/head_events');
+const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
+const _chassisEventCh  = EventChannel('com.timoDesk/chassis_events');
+const _armMethodCh = MethodChannel('com.timoDesk/arm_control');
+const _armEventCh  = EventChannel('com.timoDesk/arm_events');
+
+// ── MJPEG state ───────────────────────────────────────────────────────────────
+
+class StreamState {
+  final bool   isStreaming;
+  final double fps;
+  final int    clients;
+  final String ip;
+  final int    port;
+  final String sdkStatus;
+  final String flavor;
+
+  const StreamState({
+    this.isStreaming = false,
+    this.fps         = 0,
+    this.clients     = 0,
+    this.ip          = '—',
+    this.port        = 8080,
+    this.sdkStatus   = 'connecting',
+    this.flavor      = 'unknown',
+  });
+
+  StreamState copyWith({
+    bool? isStreaming, double? fps, int? clients,
+    String? ip, int? port, String? sdkStatus, String? flavor,
+  }) => StreamState(
+    isStreaming: isStreaming ?? this.isStreaming,
+    fps:         fps         ?? this.fps,
+    clients:     clients     ?? this.clients,
+    ip:          ip          ?? this.ip,
+    port:        port        ?? this.port,
+    sdkStatus:   sdkStatus   ?? this.sdkStatus,
+    flavor:      flavor      ?? this.flavor,
+  );
+
+  String get streamUrl => 'http://$ip:$port/stream';
+}
+
+// ── Head control state ─────────────────────────────────────────────────────────
+
+class HeadState {
+  final bool   isRunning;
+  final int    clientCount;
+  final int    headLR;
+  final int    headUD;
+
+  const HeadState({
+    this.isRunning = false,
+    this.clientCount = 0,
+    this.headLR = 50,
+    this.headUD = 50,
+  });
+
+  HeadState copyWith({
+    bool? isRunning,
+    int? clientCount,
+    int? headLR,
+    int? headUD,
+  }) => HeadState(
+    isRunning: isRunning ?? this.isRunning,
+    clientCount: clientCount ?? this.clientCount,
+    headLR: headLR ?? this.headLR,
+    headUD: headUD ?? this.headUD,
+  );
+}
+
+// ── Chassis control state ──────────────────────────────────────────────────────
+
+class ChassisState {
+  final bool   isRunning;
+  final int    clientCount;
+  final bool   isMoving;
+  final double speed;
+  final String direction;
+
+  const ChassisState({
+    this.isRunning = false,
+    this.clientCount = 0,
+    this.isMoving = false,
+    this.speed = 0.5,
+    this.direction = 'none',
+  });
+
+  ChassisState copyWith({
+    bool? isRunning,
+    int? clientCount,
+    bool? isMoving,
+    double? speed,
+    String? direction,
+  }) => ChassisState(
+    isRunning: isRunning ?? this.isRunning,
+    clientCount: clientCount ?? this.clientCount,
+    isMoving: isMoving ?? this.isMoving,
+    speed: speed ?? this.speed,
+    direction: direction ?? this.direction,
+  );
+}
+
+// ── Arm control state ──────────────────────────────────────────────────────
+
+class ArmState {
+  final bool isRunning;
+  final int  clientCount;
+  final int  leftArm;
+  final int  rightArm;
+  final bool isWaving;
+
+  const ArmState({
+    this.isRunning = false,
+    this.clientCount = 0,
+    this.leftArm = 50,
+    this.rightArm = 50,
+    this.isWaving = false,
+  });
+
+  ArmState copyWith({
+    bool? isRunning,
+    int? clientCount,
+    int? leftArm,
+    int? rightArm,
+    bool? isWaving,
+  }) => ArmState(
+    isRunning: isRunning ?? this.isRunning,
+    clientCount: clientCount ?? this.clientCount,
+    leftArm: leftArm ?? this.leftArm,
+    rightArm: rightArm ?? this.rightArm,
+    isWaving: isWaving ?? this.isWaving,
+  );
+}
+
+class StreamNotifier extends StateNotifier<StreamState> {
+  StreamNotifier() : super(const StreamState()) {
+    _sub = _eventCh.receiveBroadcastStream().listen(_onEvent);
+    _loadConfig();
+  }
+
+  StreamSubscription? _sub;
+
+  Future<void> _loadConfig() async {
+    try {
+      final res = await _methodCh.invokeMethod<Map>('getConfig');
+      if (res != null) state = state.copyWith(flavor: res['flavor'] as String?);
+    } on PlatformException catch (_) {}
+  }
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isStreaming: m['isStreaming']      as bool?,
+      fps:         (m['fps']             as num?)?.toDouble(),
+      clients:     m['connectedClients'] as int?,
+      ip:          m['ipAddress']        as String?,
+      sdkStatus:   m['sdkStatus']        as String?,
+    );
+  }
+
+  Future<void> startStream() async {
+    try {
+      final res = await _methodCh.invokeMethod<Map>('startStream');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startStream: $e'); }
+  }
+
+  Future<void> stopStream() async {
+    try {
+      final res = await _methodCh.invokeMethod<Map>('stopStream');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopStream: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isStreaming: m['isStreaming']      as bool?,
+      fps:         (m['fps']             as num?)?.toDouble(),
+      clients:     m['connectedClients'] as int?,
+      ip:          m['ipAddress']        as String?,
+      port:        m['port']             as int?,
+      sdkStatus:   m['sdkStatus']        as String?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final streamProvider =
+    StateNotifierProvider<StreamNotifier, StreamState>((ref) => StreamNotifier());
+
+// ── Head control notifier ──────────────────────────────────────────────────────
+
+class HeadNotifier extends StateNotifier<HeadState> {
+  HeadNotifier() : super(const HeadState()) {
+    _sub = _headEventCh.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      headLR: m['headLR'] as int?,
+      headUD: m['headUD'] as int?,
+    );
+  }
+
+  Future<void> startHeadControl() async {
+    try {
+      final res = await _headMethodCh.invokeMethod<Map>('startHeadControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startHeadControl: $e'); }
+  }
+
+  Future<void> stopHeadControl() async {
+    try {
+      final res = await _headMethodCh.invokeMethod<Map>('stopHeadControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopHeadControl: $e'); }
+  }
+
+  Future<void> resetHead() async {
+    try {
+      final res = await _headMethodCh.invokeMethod<Map>('resetHead');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('resetHead: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      headLR: m['headLR'] as int?,
+      headUD: m['headUD'] as int?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final headProvider =
+    StateNotifierProvider<HeadNotifier, HeadState>((ref) => HeadNotifier());
+
+// ── Chassis control notifier ───────────────────────────────────────────────────
+
+class ChassisNotifier extends StateNotifier<ChassisState> {
+  ChassisNotifier() : super(const ChassisState()) {
+    _sub = _chassisEventCh.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      isMoving: m['isMoving'] as bool?,
+      speed: (m['speed'] as num?)?.toDouble(),
+      direction: m['direction'] as String?,
+    );
+  }
+
+  Future<void> startChassisControl() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('startChassisControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startChassisControl: $e'); }
+  }
+
+  Future<void> stopChassisControl() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('stopChassisControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopChassisControl: $e'); }
+  }
+
+  Future<void> emergencyStop() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('emergencyStop');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('emergencyStop: $e'); }
+  }
+
+  Future<void> setSpeed(double speed) async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('setSpeed', {'speed': speed});
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('setSpeed: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      isMoving: m['isMoving'] as bool?,
+      speed: (m['speed'] as num?)?.toDouble(),
+      direction: m['direction'] as String?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final chassisProvider =
+    StateNotifierProvider<ChassisNotifier, ChassisState>((ref) => ChassisNotifier());
+
+// ── Arm control notifier ───────────────────────────────────────────────────────
+
+class ArmNotifier extends StateNotifier<ArmState> {
+  ArmNotifier() : super(const ArmState()) {
+    _sub = _armEventCh.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      leftArm: m['leftArm'] as int?,
+      rightArm: m['rightArm'] as int?,
+      isWaving: m['isWaving'] as bool?,
+    );
+  }
+
+  Future<void> startArmControl() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('startArmControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('startArmControl: $e'); }
+  }
+
+  Future<void> stopArmControl() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('stopArmControl');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopArmControl: $e'); }
+  }
+
+  Future<void> resetArms() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('resetArms');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('resetArms: $e'); }
+  }
+
+  Future<void> wave() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('wave');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('wave: $e'); }
+  }
+
+  Future<void> stopWave() async {
+    try {
+      final res = await _armMethodCh.invokeMethod<Map>('stopWave');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopWave: $e'); }
+  }
+
+  void _applyStatus(Map<dynamic, dynamic> m) {
+    state = state.copyWith(
+      isRunning: m['isRunning'] as bool?,
+      clientCount: m['clientCount'] as int?,
+      leftArm: m['leftArm'] as int?,
+      rightArm: m['rightArm'] as int?,
+      isWaving: m['isWaving'] as bool?,
+    );
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final armProvider =
+    StateNotifierProvider<ArmNotifier, ArmState>((ref) => ArmNotifier());
+
+// ── Battery state (real telemetry from the native BatteryPlugin) ────────────────
+
+class BatteryState {
+  final int? level; // null = unknown (no real reading yet)
+  final int? charge;
+  final String source; // 'sdk' | 'android' | 'unknown'
+  const BatteryState({this.level, this.charge, this.source = 'unknown'});
+}
+
+class BatteryNotifier extends StateNotifier<BatteryState> {
+  BatteryNotifier() : super(const BatteryState()) {
+    _sub = _batteryEventCh.receiveBroadcastStream().listen(_onEvent, onError: (e) {
+      debugPrint('battery event error: $e');
+    });
+  }
+
+  StreamSubscription? _sub;
+
+  void _onEvent(dynamic raw) {
+    final m = Map<String, dynamic>.from(raw as Map);
+    final level = (m['battery'] as num?)?.toInt();
+    state = BatteryState(
+      level: (level != null && level >= 0) ? level : null,
+      charge: (m['charge'] as num?)?.toInt(),
+      source: (m['source'] as String?) ?? 'unknown',
+    );
+    // Feed the :8090 HTTP server that spine polls — now a REAL value.
+    if (level != null && level >= 0) BatteryService.setBattery(level);
+  }
+
+  @override
+  void dispose() { _sub?.cancel(); super.dispose(); }
+}
+
+final batteryProvider =
+    StateNotifierProvider<BatteryNotifier, BatteryState>((ref) => BatteryNotifier());
+
+// ── App ───────────────────────────────────────────────────────────────────────
