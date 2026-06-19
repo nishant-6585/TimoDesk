@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-19 (**auth go-live: JWKS/ES256 verification + real login gate**; #70 host notification, #87 battery, enrollment UX done; #83 mapping note; **#89 chest-screen redesign** — design doc + decisions locked, P1 next; **#90 mobile admin / remote-control app added to pipeline** — arch decision open: adaptive-single-app (recommended) vs separate app) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-19 (**auth go-live DONE — JWKS/ES256 verification + real login gate, prod-proven**; only kiosk operator credential remains; #70 host notification, #87 battery, enrollment UX done; #83 mapping note; **#89 chest-screen redesign** — design doc + decisions locked, P1 next; **#90 mobile admin / remote-control app** — arch LOCKED = adaptive layouts in existing `app/` (NOT a separate app), build order = after auth) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -247,7 +247,7 @@ A mobile experience for the admin: a **remote-control + monitoring** client for 
   - **Explicitly DEFERRED off mobile v1 (keep on web/tablet):** staff enrollment/CRUD, gallery, patrol-route map editor, Mission Control analytics. Mobile = control + monitor + alerts, not authoring.
   - **Dependencies / reuse:** `spine_service.dart` (WS + intents — done), mobile `MjpegView` (done), `visitorArrivedProvider`/`faceDetectionProvider` (#70/Milestone D — done), auth (gated on #auth go-live). Push notifications are the one genuinely-new infra piece.
   - **Effort:** medium (responsive layouts + push). Push-notification infra is the long pole.
-  - **Build order (user, 2026-06-19):** **AUTH GO-LIVE FIRST** (JWKS/ES256 hardening, mid-flight in VS Code) before #90 or #89-P1 — don't stack more UI on the open auth bypass. #90 also depends on real login (feature 1) which the auth work delivers.
+  - **Build order (user, 2026-06-19):** auth go-live was FIRST — ✅ **DONE** (`9ea892b`→`24245fd`, JWKS/ES256, prod-proven). #90's feature 1 (real login) is now delivered by it. Next build = #89-P1 OR #90 (user's pick). NOTE for #90 prod: the mobile app sends `currentSession.accessToken` (real ES256) — works against the hardened spine with no extra wiring.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
