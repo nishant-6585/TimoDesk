@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/screens/login_screen.dart';
-import '../features/dashboard/screens/dashboard_screen.dart';
+import 'adaptive_home.dart';
 import '../features/control/screens/control_screen.dart';
 import '../features/live_feed/screens/live_feed_screen.dart';
 import '../features/gallery/screens/gallery_screen.dart';
@@ -64,7 +64,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         name: 'dashboard',
-        builder: (context, state) => const DashboardScreen(),
+        // Adaptive: phones get the mobile remote, tablet/web keep the dashboard.
+        builder: (context, state) => const AdaptiveHome(),
       ),
       GoRoute(
         path: '/control',
