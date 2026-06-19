@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert' show base64Decode, jsonEncode, jsonDecode;
-import 'dart:js' as js;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,6 +16,7 @@ import '../../staff/providers/staff_list_provider.dart';
 import '../../staff/screens/staff_list_screen.dart';
 import '../widgets/mjpeg_view.dart';
 import '../widgets/enroll_webcam_view.dart';
+import '../widgets/web_face_api.dart';
 
 /// Where enrollment reads frames from.
 enum _EnrollSource { device, robot }
@@ -35,6 +36,18 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   _EnrollSource _enrollSource = _EnrollSource.device;
 
   void _toggleEnrollmentMode() {
+    // Face-api + webcam enrollment is web-only (runs in the browser). On native
+    // the compile seam stays safe; this guard keeps the UI graceful at runtime.
+    if (!kIsWeb && !_enrollmentMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Face enrollment runs in the web app. On a device, enroll from the robot chest screen.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() {
       _enrollmentMode = !_enrollmentMode;
       // Robot-source enrollment needs the MJPEG running; device-source uses the
@@ -44,8 +57,9 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 
   // The detection overlay should run once the chosen source is showing frames.
+  // Web-only (face-api) — never active on native.
   bool get _overlayActive {
-    if (!_enrollmentMode) return false;
+    if (!kIsWeb || !_enrollmentMode) return false;
     return _enrollSource == _EnrollSource.device || _streaming;
   }
 
@@ -429,30 +443,9 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
 
   Future<void> _loadFaceApiModels() async {
     try {
-      final modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model/';
-      final jsCode = '''(async function() {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/dist/face-api.min.js';
-        document.head.appendChild(script);
-
-        return new Promise(resolve => {
-          script.onload = async () => {
-            await faceapi.nets.tinyFaceDetector.loadFromUri('$modelUrl');
-            await faceapi.nets.faceLandmark68Net.loadFromUri('$modelUrl');
-            await faceapi.nets.faceRecognitionNet.loadFromUri('$modelUrl');
-            resolve(true);
-          };
-        });
-      })()''';
-
-      final result = await js.context.callMethod('eval', [jsCode]);
-      final completer = Completer<bool>();
-      result.callMethod('then', [(val) => completer.complete(true)]).callMethod('catch', [(err) {
-        completer.complete(false);
-      }]);
-
-      await completer.future;
-      if (mounted) {
+      const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@latest/model/';
+      final ok = await faceApiLoadModels(modelUrl);
+      if (ok && mounted) {
         setState(() => _modelsLoaded = true);
       }
     } catch (err) {
@@ -490,69 +483,10 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
   void _detectAndCapture() {
     if (!_modelsLoaded) return;
 
-    try {
-      // Detect 1 face + landmarks; compute size, centering, yaw and a pitch proxy.
-      // Works for both <img> (MJPEG) and <video> (webcam) — dimensions come from
-      // naturalWidth/Height (img) or videoWidth/Height (video).
-      final jsDetectionCode = '''(async function() {
-        const el = document.querySelector('${widget.elementSelector}');
-        const elW = el ? (el.naturalWidth || el.videoWidth || 0) : 0;
-        const elH = el ? (el.naturalHeight || el.videoHeight || 0) : 0;
-        if (!el || elW === 0) return {faces: 0};
-        try {
-          const dets = await faceapi
-            .detectAllFaces(el, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks();
-          if (dets.length !== 1) return {faces: dets.length};
-
-          const d = dets[0];
-          const box = d.detection.box;
-          const imgW = elW, imgH = elH;
-
-          const lm = d.landmarks;
-          const avg = (pts) => { let x=0,y=0; for (const p of pts){x+=p.x;y+=p.y;} return {x:x/pts.length, y:y/pts.length}; };
-          const leC = avg(lm.getLeftEye());
-          const reC = avg(lm.getRightEye());
-          const mC  = avg(lm.getMouth());
-          const nose = lm.getNose();          // points 27..35
-          const noseTip = nose[3] || nose[nose.length-1]; // ~point 30
-          const eyeMid = { x:(leC.x+reC.x)/2, y:(leC.y+reC.y)/2 };
-          const interEye = Math.hypot(reC.x-leC.x, reC.y-leC.y) || 1;
-          const faceVert = (mC.y - eyeMid.y) || 1;
-
-          return {
-            faces: 1,
-            faceHeight: box.height / imgH,
-            centerX: (box.x + box.width/2) / imgW,
-            centerY: (box.y + box.height/2) / imgH,
-            yaw: (noseTip.x - eyeMid.x) / interEye,        // -left .. +right
-            noseRel: (noseTip.y - eyeMid.y) / faceVert     // ~0.48 front, smaller=up, larger=down
-          };
-        } catch(e) { return {faces: 0}; }
-      })()''';
-
-      final jsFunc = js.context.callMethod('eval', [jsDetectionCode]);
-      final completer = Completer<Map<String, dynamic>>();
-
-      jsFunc.callMethod('then', [(result) {
-        double toD(dynamic v) => (v is num) ? v.toDouble() : 0.0;
-        try {
-          completer.complete({
-            'faces': (result['faces'] is num) ? (result['faces'] as num).toInt() : 0,
-            'faceHeight': toD(result['faceHeight']),
-            'centerX': toD(result['centerX']),
-            'centerY': toD(result['centerY']),
-            'yaw': toD(result['yaw']),
-            'noseRel': toD(result['noseRel']),
-          });
-        } catch (e) {
-          completer.complete({'faces': 0});
-        }
-      }]).callMethod('catch', [(err) {
-        completer.complete({'faces': 0});
-      }]);
-
-      completer.future.then((r) {
+    // Detect 1 face + landmarks; compute size, centering, yaw and a pitch proxy.
+    // Works for both <img> (MJPEG) and <video> (webcam). The dart:js detail lives
+    // behind the web_face_api seam — this screen stays native-compilable.
+    faceApiDetect(widget.elementSelector).then((r) {
         if (!mounted) return;
 
         final faces = r['faces'] as int? ?? 0;
@@ -599,10 +533,9 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
         if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
           _captureFrame();
         }
-      });
-    } catch (err) {
+    }).catchError((err) {
       print('[EnrollmentDetection] Detection error: $err');
-    }
+    });
   }
 
   Future<void> _captureFrame() async {
@@ -613,32 +546,7 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     });
 
     try {
-      final captureCode = '''(async function() {
-        const el = document.querySelector('${widget.elementSelector}');
-        if (!el) return null;
-        const w = el.naturalWidth || el.videoWidth || 0;
-        const h = el.naturalHeight || el.videoHeight || 0;
-        if (w === 0) return null;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(el, 0, 0);
-
-        return canvas.toDataURL('image/jpeg', 0.9);
-      })()''';
-
-      final jsFunc = js.context.callMethod('eval', [captureCode]);
-      final completer = Completer<String?>();
-
-      jsFunc.callMethod('then', [(dataUrl) {
-        completer.complete(dataUrl as String?);
-      }]).callMethod('catch', [(err) {
-        completer.complete(null);
-      }]);
-
-      final dataUrl = await completer.future;
+      final dataUrl = await faceApiCapture(widget.elementSelector);
       if (dataUrl != null && dataUrl.isNotEmpty) {
         final base64 = dataUrl.split(',').last;
         final bytes = base64Decode(base64);
