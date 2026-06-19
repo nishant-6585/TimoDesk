@@ -21,9 +21,16 @@ const String kCameraBaseUrl = 'http://localhost:8080';
 //   Emulator:  http://10.0.2.2:4000  (emulator alias for the host loopback)
 const String kSpineBaseUrl = 'http://192.168.1.18:4000';
 
-// Dev auth: works behind spine's DEV_AUTH_BYPASS. PRODUCTION kiosk needs its own
-// credential (service token / operator login) — see HANDOFF go-live checklist.
-const String kAuthToken = 'test-token';
+// Bearer token the kiosk sends to spine. In dev this is the bypass token (works
+// only behind spine's DEV_AUTH_BYPASS).
+//
+// TODO(auth go-live): the kiosk must obtain + refresh a REAL Supabase operator
+// access token — sign in a dedicated kiosk account via
+// supabase.auth.signInWithPassword and send its ES256 access_token here (same
+// JWKS verify path as the admin app). Once spine's bypass is off, this literal
+// stops working. Source from config/secure storage, not a hardcoded constant.
+const String kKioskDevToken = 'test-token';
+const String kAuthToken = kKioskDevToken;
 
 const _orange = Color(0xFFFF6B35);
 
