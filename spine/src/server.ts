@@ -19,6 +19,7 @@ import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handler
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
+import { maybeNotifyBatteryLow, maybeNotifyObstacleBlocked } from './services/push';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -263,6 +264,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           client.send(JSON.stringify(msg));
         }
       });
+      // Push trigger (#90): battery low → notify admins (best-effort, never throws).
+      if (eventType === 'battery_update' && supabase) {
+        const level = Number(event.payload?.level);
+        if (Number.isFinite(level)) void maybeNotifyBatteryLow(supabase, level);
+      }
     };
 
     // Robot-originated events (battery, etc.) go through it…
@@ -289,6 +295,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           client.send(JSON.stringify(msg));
         }
       });
+      // Push trigger (#90): obstacle blocked → notify admins (best-effort).
+      // On real hardware this fires once the CSJBot nav events feed the pipeline
+      // (#81); with MockRobotSDK it fires on simulated obstacle events.
+      if (supabase && status.obstacleState) {
+        void maybeNotifyObstacleBlocked(supabase, status.obstacleState);
+      }
     };
 
     void sdk.getStatus().then((initialStatus) => {

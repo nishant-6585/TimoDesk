@@ -13,6 +13,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 import { notifyStaff } from '../services/notify';
+import { notifyVisitorArrived } from '../services/push';
 import { RobotEvent } from '../types';
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -107,6 +108,10 @@ export async function handleVisit(
       channel: channelType,
     },
   });
+
+  // 5. Best-effort push to the mobile admin app (#90). Never throws — a push
+  // failure must not affect the check-in response.
+  void notifyVisitorArrived(supabase, visitorName, host.full_name);
 
   return json(res, 200, {
     ok: true,
