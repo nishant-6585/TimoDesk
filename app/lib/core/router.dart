@@ -114,8 +114,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 bool _isLoggedIn() {
-  // TODO: Re-enable authentication after testing
-  return true; // Skip auth for now - go straight to dashboard
-  // final session = Supabase.instance.client.auth.currentSession;
-  // return session != null && session.accessToken.isNotEmpty;
+  final session = Supabase.instance.client.auth.currentSession;
+  return session != null && session.accessToken.isNotEmpty;
 }
