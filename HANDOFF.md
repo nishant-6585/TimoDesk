@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Last updated:** 2026-06-19 (#70 host notification shipped; #87 battery + enrollment UX done; #83 mapping note added; **#89 robot chest-screen experience redesign added to pipeline** — front-of-house app shell, two-pipeline gaze/identity split) · **For:** Claude Code on any future session picking up TimoDesk work
+> **Last updated:** 2026-06-19 (#70 host notification shipped; #87 battery + enrollment UX done; #83 mapping note added; **#89 chest-screen redesign** — design doc + decisions locked, P1 next; **#90 mobile admin / remote-control app added to pipeline** — arch decision open: adaptive-single-app (recommended) vs separate app) · **For:** Claude Code on any future session picking up TimoDesk work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
 
@@ -228,6 +228,29 @@ Turn `robot_app` from a utility (MJPEG streamer + battery server + control recei
   - **Dependencies:** #82 (the face asset/animation), #80 (voice, for P3/P4), recognition pipeline (DONE — emits `face_detected`), `personDetected` sensor (Phase 1A), battery (already on the chest screen via #87). P1 depends on none of these being *finished* — it's the shell + a placeholder face with mock state.
   - **Effort:** large (it's a full app redesign + the parent of #82/#80). But P1 (shell + mock face) is a self-contained, hardware-free, demo-able chunk — start there.
   - **"Designed properly":** ✅ **design doc DONE** → `robot_app/docs/CHEST_UX_REDESIGN.md` (state machine, two screens, the two-pipeline split, Rive input contract, P1–P4 phasing, P1 acceptance criteria). **Decisions locked (2026-06-19):** face = **full stylized character** (eyes+mouth+brows from the start); Dashboard v1 real tiles = **Enroll Staff + Robot Status + Manual Control + Settings** (all wire to EXISTING `main.dart` providers/`EnrollScreen`), rest are disabled placeholders. **Next: build P1** (app shell + mock-state face + 4 tiles, hardware-free) against that doc.
+
+**📱 Mobile admin / remote-control app (#90) — phone-first "drive + monitor + get-alerted on the go." Added 2026-06-19 per user request. NOT built.**
+
+A mobile experience for the admin: a **remote-control + monitoring** client for a phone — drive Timo, watch the camera, see status, get pushed when a visitor arrives. NOT the full admin authoring suite (enrollment management, gallery, patrol-map editing, analytics stay on the larger web/tablet screen). Think **"Timo Remote"**, not "admin console on a small screen."
+  - **⚠️ Architecture decision (OPEN — user leans "separate app"; my recommendation differs — DECIDE before building):**
+    - **Option A (RECOMMENDED — adaptive layouts in the EXISTING `app/`):** `app/` already targets iOS+Android+web (pubspec: "Flutter web + iOS + Android"). Add responsive breakpoints (`LayoutBuilder`) → phones get a mobile-first remote layout, web/tablet keeps the current dashboard. **Shares everything** — `spine_service.dart`, Supabase auth, all Riverpod providers, models, the mobile `MjpegView` path. One codebase, one build, no duplication. Best fit for a solo engineer + minimal-surface-area (CLAUDE.md). Add push notifications + haptics as the mobile-native layer.
+    - **Option B (separate "Timo Remote" app):** a distinct Flutter app + a shared core package (`packages/timo_core` = spine_service + models + auth extracted) so logic isn't duplicated. Gives a focused product + independent app-store listing/release cadence. Cost: package extraction + two app shells to maintain. Justified ONLY if "field-operator remote" is a genuinely separate product from "admin console." `viewer_mobile/` (existing Flutter mobile camera viewer) is a precedent/foundation but is camera-only today.
+    - **Honest take:** for a solo MVP, **A** delivers the same phone UX at a fraction of the maintenance. Don't fork a second codebase unless the products truly diverge. *Recorded for decision.*
+  - **Core features (v1 — the "remote"):**
+    1. **Login** (Supabase — reuse; gated by the #auth go-live work).
+    2. **Live camera** — full-screen MJPEG (mobile `MjpegView` already exists), portrait + landscape.
+    3. **Drive joystick** (chassis fwd/back/left/right) — the headline; on-screen touch joystick (mirror the admin Control joystick → spine `drive` intent).
+    4. **Head pan/tilt** — touch pad / mini-joystick → `head` intent.
+    5. **Arm + wave** — buttons → `arm`/`wave` intents.
+    6. **STOP / RESUME** — big, ALWAYS-visible emergency stop (safety-critical) → `stop`/`resume`.
+    7. **Robot status** — battery, connection, SDK status, obstacle/sensor state (reuse `SensorStatusCard` from the sensor-UI branch once merged).
+    8. **Quick actions** — wave, reset body, snapshot.
+  - **Mobile-native value-adds (the reason it's worth a phone app at all):**
+    - **Push notifications** — visitor arrived (#70 already emits `visitor_arrived`), battery low, obstacle blocked, intrusion. This is the killer mobile feature: the host gets the arrival alert on their phone. (Needs FCM/APNs wiring + a spine→push bridge or Supabase Edge Function.)
+    - **Haptic feedback** on controls; connection indicator + auto-reconnect (spine WS).
+  - **Explicitly DEFERRED off mobile v1 (keep on web/tablet):** staff enrollment/CRUD, gallery, patrol-route map editor, Mission Control analytics. Mobile = control + monitor + alerts, not authoring.
+  - **Dependencies / reuse:** `spine_service.dart` (WS + intents — done), mobile `MjpegView` (done), `visitorArrivedProvider`/`faceDetectionProvider` (#70/Milestone D — done), auth (gated on #auth go-live). Push notifications are the one genuinely-new infra piece.
+  - **Effort:** Option A = medium (responsive layouts + push). Option B = medium-large (+ package extraction + 2nd shell). Push-notification infra is the long pole either way.
 
 **🟧 LIDAR / obstacle feature activation (#81) — turn on the obstacle awareness that's already built but unfed. Added 2026-06 per user request.**
 
