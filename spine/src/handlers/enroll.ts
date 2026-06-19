@@ -55,7 +55,7 @@ export async function handleEnroll(
 
   try {
     // 1. AUTHORIZE (fail-closed)
-    const authz = authorizeRequest(req);
+    const authz = await authorizeRequest(req);
     if (!authz.ok) {
       res.writeHead(authz.status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, reason: authz.reason }));

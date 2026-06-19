@@ -36,7 +36,7 @@ export async function handleVisit(
   supabase: SupabaseClient,
   broadcast: (event: RobotEvent) => void
 ): Promise<void> {
-  const auth = authorizeRequest(req);
+  const auth = await authorizeRequest(req);
   if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
 
   let body: any;

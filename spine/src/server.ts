@@ -147,7 +147,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             clearTimeout(authTimeout);
 
             const token = msg.token || '';
-            const auth = verifyToken(token);
+            const auth = await verifyToken(token);
 
             if (!auth.valid) {
               console.log(`[Spine WebSocket] Auth failed: ${auth.reason}`);

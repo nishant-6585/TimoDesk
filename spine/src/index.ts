@@ -38,12 +38,11 @@ async function main() {
     console.log('⚠️  Supabase not configured — events will be logged to console only');
   }
 
-  // 3. Check JWT
-  const jwtSecret = process.env.JWT_SECRET;
-  if (jwtSecret) {
-    console.log('🔒 JWT auth enabled');
+  // 3. Check auth: Supabase JWKS (ES256) verification needs SUPABASE_URL.
+  if (process.env.SUPABASE_URL) {
+    console.log('🔒 JWT auth enabled (Supabase JWKS / ES256)');
   } else {
-    console.log('⚠️  JWT auth disabled — DEV MODE ONLY');
+    console.log('⚠️  SUPABASE_URL not set — JWKS auth unavailable (dev bypass only)');
   }
 
   console.log('');

@@ -33,7 +33,7 @@ export async function handleListStaff(
   res: ServerResponse,
   supabase: SupabaseClient
 ): Promise<void> {
-  const auth = authorizeRequest(req);
+  const auth = await authorizeRequest(req);
   if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
 
   const { data: staff, error } = await supabase
@@ -57,7 +57,7 @@ export async function handleUpdateStaff(
   supabase: SupabaseClient,
   id: string
 ): Promise<void> {
-  const auth = authorizeRequest(req);
+  const auth = await authorizeRequest(req);
   if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
 
   let body: any;
@@ -90,7 +90,7 @@ export async function handleDeleteStaff(
   supabase: SupabaseClient,
   id: string
 ): Promise<void> {
-  const auth = authorizeRequest(req);
+  const auth = await authorizeRequest(req);
   if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
 
   // Capture identity + count for the audit trail before deleting.

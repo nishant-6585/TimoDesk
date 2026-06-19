@@ -51,7 +51,7 @@ export async function handleCheckFace(
   res: ServerResponse,
   supabase: SupabaseClient
 ): Promise<void> {
-  const auth = authorizeRequest(req);
+  const auth = await authorizeRequest(req);
   if (!auth.ok) {
     res.writeHead(auth.status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: false, reason: auth.reason }));
