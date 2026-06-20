@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timo · Robot Face Studio</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #0F0F0F; color: #fff; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: fixed; inset: 0; display: block; }
+
+  /* status pill */
+  #status {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(20,20,20,0.7); border: 1px solid #2A2A2A;
+    backdrop-filter: blur(8px); font-size: 13px; letter-spacing: 0.04em;
+    pointer-events: none; z-index: 5; transition: opacity .3s;
+  }
+  #status .dot { width: 9px; height: 9px; border-radius: 50%; background: #FF6B35; box-shadow: 0 0 10px #FF6B35; }
+  #status b { font-weight: 700; text-transform: uppercase; }
+  #status span { color: #9CA3AF; }
+
+  /* panel */
+  #panel {
+    position: fixed; top: 0; right: 0; height: 100%; width: 320px; z-index: 10;
+    background: rgba(16,16,16,0.86); backdrop-filter: blur(14px);
+    border-left: 1px solid #242424; padding: 18px 18px 28px;
+    overflow-y: auto; transition: transform .35s cubic-bezier(.22,1,.36,1);
+  }
+  #panel.hidden { transform: translateX(100%); }
+  #panel::-webkit-scrollbar { width: 8px; }
+  #panel::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 99px; }
+
+  .ttl { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    font-weight: 900; background: linear-gradient(135deg,#FF6B35,#E14B1E); box-shadow: 0 0 14px rgba(255,107,53,.4); }
+  .ttl h1 { font-size: 15px; margin: 0; font-weight: 700; }
+  .ttl p { font-size: 10px; margin: 2px 0 0; letter-spacing: .22em; text-transform: uppercase; color: #6B7280; }
+
+  .sec { margin-top: 20px; }
+  .sec > .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: #9CA3AF; font-weight: 600; margin-bottom: 9px; display: block; }
+
+  .states { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .states button {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 11px;
+    background: #161616; border: 1px solid #2A2A2A; color: #cfcfcf; font-size: 12.5px;
+    cursor: pointer; transition: all .15s; text-align: left; font-weight: 500;
+  }
+  .states button .em { font-size: 14px; line-height: 1; }
+  .states button:hover { border-color: #3a3a3a; color: #fff; }
+  .states button.on { background: rgba(255,107,53,.14); border-color: rgba(255,107,53,.55); color: #FF6B35; }
+
+  .row { margin-bottom: 13px; }
+  .row .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .row .head label { font-size: 12px; color: #d4d4d4; }
+  .row .head .val { font-family: ui-monospace, monospace; font-size: 11px; color: #FF6B35; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 99px; background: #2A2A2A; outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #FF6B35; border: 2px solid #0F0F0F; box-shadow: 0 0 7px rgba(255,107,53,.6); cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #FF6B35; border: 2px solid #0F0F0F; cursor: pointer; }
+
+  .seg { display: flex; gap: 4px; padding: 4px; background: #141414; border: 1px solid #2A2A2A; border-radius: 11px; }
+  .seg button { flex: 1; padding: 7px 4px; border-radius: 8px; background: transparent; border: 0; color: #9CA3AF; font-size: 11.5px; cursor: pointer; transition: all .15s; font-weight: 500; text-transform: capitalize; }
+  .seg button.on { background: #FF6B35; color: #fff; }
+
+  .toggle { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #141414; border: 1px solid #2A2A2A; border-radius: 11px; margin-bottom: 8px; cursor: pointer; }
+  .toggle span { font-size: 12.5px; color: #d4d4d4; }
+  .sw { width: 42px; height: 24px; border-radius: 99px; background: #2A2A2A; position: relative; transition: background .2s; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .toggle.on .sw { background: #FF6B35; }
+  .toggle.on .sw::after { transform: translateX(18px); }
+
+  #readout { margin-top: 16px; padding: 11px; background: #0c0c0c; border: 1px solid #222; border-radius: 10px; font-family: ui-monospace, monospace; font-size: 10.5px; line-height: 1.7; color: #8a8a8a; white-space: pre; }
+  #readout b { color: #FF6B35; font-weight: 600; }
+
+  #togglePanel {
+    position: fixed; top: 18px; right: 18px; z-index: 11; width: 40px; height: 40px;
+    border-radius: 11px; background: rgba(20,20,20,0.7); border: 1px solid #2A2A2A;
+    color: #cfcfcf; cursor: pointer; backdrop-filter: blur(8px); display: grid; place-items: center; font-size: 18px;
+  }
+  .hint { font-size: 10.5px; color: #5a5a5a; margin-top: 7px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="status"><span class="dot"></span><b id="stName">idle</b><span id="stHint"></span></div>
+<button id="togglePanel" title="Toggle panel">☰</button>
+
+<div id="panel">
+  <div class="ttl">
+    <div class="mark">T</div>
+    <div><h1>Timo Face Studio</h1><p>chest-screen expression rig</p></div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">State</span>
+    <div class="states" id="states"></div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Live Parameters</span>
+    <div class="row"><div class="head"><label>gazeX</label><span class="val" id="vGazeX">0.00</span></div><input type="range" id="gazeX" min="-1" max="1" step="0.01" value="0"></div>
+    <div class="row"><div class="head"><label>gazeY</label><span class="val" id="vGazeY">0.00</span></div><input type="range" id="gazeY" min="-1" max="1" step="0.01" value="0"></div>
+    <div class="row"><div class="head"><label>mouthOpen</label><span class="val" id="vMouth">0.00</span></div><input type="range" id="mouthOpen" min="0" max="1" step="0.01" value="0"></div>
+    <div class="row"><div class="head"><label>blink</label><span class="val" id="vBlink">0.00</span></div><input type="range" id="blink" min="0" max="1" step="0.01" value="0"></div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Expression</span>
+    <div class="seg" id="exprSeg"></div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Behaviors</span>
+    <div class="toggle" id="tTalk"><span>Talking (auto lip-sync)</span><div class="sw"></div></div>
+    <div class="toggle" id="tFollow"><span>Follow cursor (gaze)</span><div class="sw"></div></div>
+    <div class="hint">Tip: turn on “Follow cursor”, then move the mouse over the face to watch the eyes track it.</div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Eye / Mouth Style</span>
+    <div class="seg" id="styleSeg"></div>
+  </div>
+
+  <div id="readout"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const cv = document.getElementById("stage");
+  const ctx = cv.getContext("2d");
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR; cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize); resize();
+
+  // ───────────────── parameter model (ports 1:1 to Flutter) ─────────────────
+  const params = { state: "idle", gazeX: 0, gazeY: 0, blink: 0, mouthOpen: 0, expression: "neutral" };
+  const ui = { talking: false, follow: false, style: "soft" };
+  // restore
+  try { Object.assign(params, JSON.parse(localStorage.getItem("timoFaceParams") || "{}")); } catch(e){}
+  try { Object.assign(ui, JSON.parse(localStorage.getItem("timoFaceUi") || "{}")); } catch(e){}
+
+  const STATES = [
+    { id: "idle", em: "😌" }, { id: "attentive", em: "👀" }, { id: "greeting", em: "😊" },
+    { id: "listening", em: "👂" }, { id: "thinking", em: "🤔" }, { id: "speaking", em: "💬" }, { id: "sleepy", em: "😴" },
+  ];
+  const EXPRS = ["neutral", "happy", "curious", "surprised"];
+  const STYLES = ["soft", "beam"];
+
+  const HINTS = {
+    idle: "relaxed · drifting gaze · breathing",
+    attentive: "alert · tracking",
+    greeting: "welcome! ^_^",
+    listening: "hearing you…",
+    thinking: "hmm…",
+    speaking: "talking",
+    sleepy: "resting · low power",
+  };
+
+  // pose target for a state — these are the values we ease toward
+  function poseFor(s) {
+    // openL/openR: eyelid 0..1, browY: +up(neg) , browTilt: inner up(+)/furrow(-),
+    // mouthCurve: -1 frown..1 smile, eyeArc: ^_^ , eyeScale, glow, dim, squint, bounceA, gx/gy bias
+    const base = { openL:1, openR:1, browY:0, browTilt:0, mouthCurve:0.25, eyeArc:0, eyeScale:1,
+      glow:0.35, dim:1, squint:0, bounceA:0, gx:0, gy:0, dots:0, ring:0, headTilt:0, breath:1 };
+    switch (s) {
+      case "attentive": return {...base, eyeScale:1.14, browY:-7, browTilt:0.12, mouthCurve:0.12, glow:0.5};
+      case "greeting":  return {...base, eyeArc:1, mouthCurve:0.95, browY:-4, glow:0.75, bounceA:1, eyeScale:1.04};
+      case "listening": return {...base, glow:0.65, ring:1, squint:0.12, mouthCurve:0.2, eyeScale:1.05};
+      case "thinking":  return {...base, gx:-0.55, gy:-0.6, browTilt:-0.5, browY:-2, mouthCurve:-0.05, dots:1, eyeScale:0.96, headTilt:0.06};
+      case "speaking":  return {...base, browY:-3, mouthCurve:0.3, glow:0.5};
+      case "sleepy":    return {...base, openL:0.30, openR:0.30, browY:5, mouthCurve:-0.04, glow:0.12, dim:0.5, squint:0.5, breath:0.5};
+      default:          return base; // idle
+    }
+  }
+  // expression modifiers (added on top of state pose)
+  function exprMod(e) {
+    switch (e) {
+      case "happy":     return { mouthCurve:0.55, eyeArc:0.4, browY:-2 };
+      case "curious":   return { headTilt:0.12, browTilt:0.3, browY:-3, mouthCurve:0.1, asym:1 };
+      case "surprised": return { eyeScale:0.2, browY:-9, mouthOpenAdd:0.55, eyeArc:-1, mouthCurve:-0.15 };
+      default:          return {};
+    }
+  }
+
+  // live (smoothed) values
+  const live = { openL:1, openR:1, browY:0, browTilt:0, mouthCurve:0.25, mouthOpen:0, eyeArc:0,
+    eyeScale:1, glow:0.35, dim:1, squint:0, bounce:0, gx:0, gy:0, dots:0, ring:0, headTilt:0, breath:1, asym:0 };
+
+  // autonomous timers
+  let t = 0, last = performance.now();
+  let nextBlink = 1.5, blinkT = -1;          // blink scheduler
+  let wanderX = 0, wanderY = 0, nextWander = 0;
+  const mouse = { x: 0, y: 0, has: false };
+
+  cv.addEventListener("mousemove", (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.has = true; });
+  cv.addEventListener("mouseleave", () => { mouse.has = false; });
+
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  function ease(cur, tgt, dt, speed) { return cur + (tgt - cur) * (1 - Math.exp(-dt * speed)); }
+
+  // ───────────────── update ─────────────────
+  function update(dt) {
+    t += dt;
+    const pose = poseFor(params.state);
+    const mod = exprMod(params.expression);
+
+    // blink scheduler (idle/attentive/etc. natural blink)
+    blinkT -= dt;
+    if (params.state !== "sleepy") {
+      if (blinkT < -0.25) { // not currently blinking
+        nextBlink -= dt;
+        if (nextBlink <= 0) { blinkT = 0.18; nextBlink = 2.4 + Math.random() * 3.6; }
+      }
+    }
+    // blink pulse → 0..1 closed
+    let autoBlink = 0;
+    if (blinkT >= 0) {
+      const p = 1 - (blinkT / 0.18);       // 0→1 over the blink
+      autoBlink = Math.sin(Math.min(p,1) * Math.PI); // up then down
+    }
+
+    // gaze wander (idle only)
+    if (params.state === "idle") {
+      nextWander -= dt;
+      if (nextWander <= 0) { wanderX = (Math.random()*2-1)*0.4; wanderY = (Math.random()*2-1)*0.28; nextWander = 1.4 + Math.random()*2.6; }
+    } else { wanderX = lerp(wanderX, 0, 0.05); wanderY = lerp(wanderY, 0, 0.05); }
+
+    // resolve gaze target
+    let gxT, gyT;
+    if (ui.follow && mouse.has) {
+      const cx = (W - (panel.classList.contains("hidden") ? 0 : 320)) / 2;
+      gxT = clamp(((mouse.x - cx) / (Math.min(W,H) * 0.42)), -1, 1);
+      gyT = clamp(((mouse.y - H/2) / (Math.min(W,H) * 0.42)), -1, 1);
+    } else {
+      gxT = clamp(params.gazeX + pose.gx + wanderX, -1.2, 1.2);
+      gyT = clamp(params.gazeY + pose.gy + wanderY, -1.2, 1.2);
+    }
+
+    // mouth target
+    const talking = ui.talking || params.state === "speaking";
+    let mouthT;
+    if (talking) {
+      // layered oscillation → natural talking
+      mouthT = 0.5 + 0.32*Math.sin(t*15) + 0.16*Math.sin(t*8.3+1) ;
+      mouthT = clamp(Math.abs(mouthT) * 0.7, 0.04, 1);
+    } else {
+      mouthT = Math.max(params.mouthOpen, mod.mouthOpenAdd || 0, pose.mouthOpenAdd || 0);
+    }
+
+    // eyelid openness (state pose * (1 - blink))
+    const blinkAmt = Math.max(autoBlink, params.blink);
+    const eyeScaleT = pose.eyeScale + (mod.eyeScale || 0);
+    let openLT = pose.openL * (1 - blinkAmt);
+    let openRT = pose.openR * (1 - blinkAmt);
+
+    // targets
+    const targets = {
+      openL: openLT, openR: openRT,
+      browY: pose.browY + (mod.browY || 0),
+      browTilt: pose.browTilt + (mod.browTilt || 0),
+      mouthCurve: clamp(pose.mouthCurve + (mod.mouthCurve || 0), -1, 1),
+      mouthOpen: mouthT,
+      eyeArc: clamp(pose.eyeArc + (mod.eyeArc || 0), 0, 1),
+      eyeScale: eyeScaleT,
+      glow: pose.glow, dim: pose.dim, squint: pose.squint,
+      gx: gxT, gy: gyT, dots: pose.dots, ring: pose.ring,
+      headTilt: pose.headTilt + (mod.headTilt || 0),
+      breath: pose.breath, asym: mod.asym || 0,
+    };
+
+    // breathing bounce
+    const breathPhase = Math.sin(t * 1.1 * targets.breath);
+    const greetBounce = params.state === "greeting" ? Math.max(0, Math.sin(t*5)) * 10 : 0;
+    live.bounce = breathPhase * 5 - greetBounce;
+
+    // ease everything
+    const k = 9; // responsiveness
+    for (const key of ["openL","openR","browY","browTilt","mouthCurve","mouthOpen","eyeArc","eyeScale","glow","dim","squint","gx","gy","dots","ring","headTilt","breath","asym"]) {
+      const sp = (key === "mouthOpen") ? 22 : (key === "openL" || key === "openR") ? 20 : k;
+      live[key] = ease(live[key], targets[key], dt, sp);
+    }
+
+    // reflect resolved gaze/mouth/blink back into sliders when auto-driven (so panel mirrors reality)
+    if (ui.follow && mouse.has) { setSlider("gazeX", live.gx); setSlider("gazeY", live.gy); }
+    if (talking) setSlider("mouthOpen", live.mouthOpen);
+    if (autoBlink > 0.02 && params.blink < 0.02) setSlider("blink", autoBlink, true);
+    updateReadout();
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  // ───────────────── draw ─────────────────
+  const ACCENT = "#FF6B35";
+  const EYE = "#FFE3CE";
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // viewport center (account for panel)
+    const panelW = panel.classList.contains("hidden") ? 0 : 320;
+    const cx = (W - panelW) / 2;
+    const cy = H / 2 + live.bounce;
+    const S = Math.min(W - panelW, H) / 100; // scale unit
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(live.headTilt * 0.12);
+    ctx.globalAlpha = 1;
+
+    const eyeGap = 26 * S;
+    const eyeY = -8 * S;
+    const mouthY = 26 * S;
+
+    // listening ring
+    if (live.ring > 0.02) {
+      const pr = (44 + Math.sin(t*3.2)*4) * S;
+      ctx.save();
+      ctx.globalAlpha = live.ring * (0.18 + 0.12*Math.sin(t*3.2));
+      ctx.strokeStyle = ACCENT; ctx.lineWidth = 2.5 * S;
+      ctx.beginPath(); ctx.arc(0, 6*S, pr, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+
+    drawBrow(-eyeGap, eyeY, S, -1);
+    drawBrow( eyeGap, eyeY, S,  1);
+    drawEye(-eyeGap, eyeY, S, -1);
+    drawEye( eyeGap, eyeY, S,  1);
+    drawMouth(0, mouthY, S);
+
+    // thinking dots
+    if (live.dots > 0.02) drawDots(eyeGap + 16*S, eyeY - 30*S, S);
+
+    ctx.restore();
+
+    // beam scanlines overlay
+    if (ui.style === "beam") {
+      ctx.save();
+      ctx.globalAlpha = 0.05; ctx.fillStyle = "#000";
+      for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W - panelW, 2);
+      ctx.restore();
+    }
+  }
+
+  function withGlow(fn, blur, color) {
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = blur; fn(); ctx.restore();
+  }
+
+  function drawEye(ox, oy, S, side) {
+    const dim = live.dim;
+    const baseW = (ui.style === "beam" ? 19 : 20) * S * live.eyeScale;
+    const baseH = (ui.style === "beam" ? 24 : 26) * S * live.eyeScale;
+    let open = side < 0 ? live.openL : live.openR;
+    // curious asym: one eye a touch wider
+    if (live.asym > 0.02 && side > 0) open = Math.min(1, open * 1.05);
+    open = clamp(open, 0.04, 1.3);
+    const h = baseH * (1 - live.squint * 0.35) * Math.min(open, 1.25);
+    const w = baseW;
+    const rad = ui.style === "beam" ? 7 * S : Math.min(w, h) / 2;
+
+    const arc = live.eyeArc;
+    const col = shade(EYE, dim);
+    const glowBlur = (ui.style === "beam" ? 34 : 20) * (0.5 + live.glow);
+
+    // normal eye (alpha 1-arc)
+    if (arc < 0.985) {
+      ctx.save();
+      ctx.globalAlpha = (1 - arc);
+      withGlow(() => {
+        ctx.fillStyle = col;
+        roundRectPath(ox - w/2, oy - h/2, w, h, rad);
+        ctx.fill();
+      }, glowBlur, withAlpha(ACCENT, dim));
+
+      // iris/pupil + catchlight, clipped to eye
+      ctx.save();
+      roundRectPath(ox - w/2, oy - h/2, w, h, rad); ctx.clip();
+      const gx = clamp(live.gx, -1, 1) * w * 0.42;
+      const gy = clamp(live.gy, -1, 1) * h * 0.42;
+      const ir = (ui.style === "beam" ? 8.5 : 9.5) * S;
+      // iris
+      ctx.fillStyle = withAlpha(ACCENT, dim);
+      ctx.beginPath(); ctx.arc(ox + gx, oy + gy, ir, 0, Math.PI*2); ctx.fill();
+      // pupil
+      ctx.fillStyle = shade("#3A1604", dim);
+      ctx.beginPath(); ctx.arc(ox + gx, oy + gy, ir * 0.52, 0, Math.PI*2); ctx.fill();
+      // fixed catchlight (top-right) — makes it feel alive
+      ctx.fillStyle = withAlpha("#FFFFFF", dim * 0.95);
+      ctx.beginPath(); ctx.arc(ox + gx + ir*0.4, oy + gy - ir*0.5, ir*0.32, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha *= 0.5;
+      ctx.beginPath(); ctx.arc(ox + gx - ir*0.35, oy + gy + ir*0.4, ir*0.16, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // happy ^_^ arc (alpha arc)
+    if (arc > 0.015) {
+      ctx.save();
+      ctx.globalAlpha = arc;
+      withGlow(() => {
+        ctx.strokeStyle = col; ctx.lineWidth = 6 * S; ctx.lineCap = "round";
+        const aw = w * 1.15;
+        ctx.beginPath();
+        ctx.moveTo(ox - aw/2, oy + h*0.18);
+        ctx.quadraticCurveTo(ox, oy - h*0.55, ox + aw/2, oy + h*0.18);
+        ctx.stroke();
+      }, glowBlur, withAlpha(ACCENT, dim));
+      ctx.restore();
+    }
+  }
+
+  function drawBrow(ox, oy, S, side) {
+    const dim = live.dim;
+    if (live.eyeArc > 0.6) return; // hide brows when ^_^
+    const w = 20 * S * live.eyeScale;
+    const y = oy - 22 * S + live.browY * S;
+    // inner up(+)/furrow(-): tilt around center
+    let tilt = live.browTilt * 0.5;
+    if (live.asym > 0.02) tilt += side > 0 ? -0.25 : 0.08; // curious: raise right
+    const innerY = y + (side * -tilt) * 10 * S;
+    const outerY = y + (side *  tilt) * 6 * S;
+    ctx.save();
+    ctx.globalAlpha = (1 - live.eyeArc) * dim;
+    ctx.strokeStyle = shade(EYE, dim); ctx.lineWidth = 5.5 * S; ctx.lineCap = "round";
+    withGlow(() => {
+      ctx.beginPath();
+      const innerX = ox - side * w/2, outerX = ox + side * w/2;
+      ctx.moveTo(innerX, innerY); ctx.lineTo(outerX, outerY); ctx.stroke();
+    }, 10 * (0.4 + live.glow), withAlpha(ACCENT, dim));
+    ctx.restore();
+  }
+
+  function drawMouth(ox, oy, S) {
+    const dim = live.dim;
+    const mw = 34 * S;
+    const curve = live.mouthCurve;
+    const openH = live.mouthOpen * 26 * S;
+    const amt = 18 * S;
+    const cornerY = oy - curve * amt * 0.5;
+    const ctrlY = oy + curve * amt;
+    const col = shade(ACCENT, dim);
+
+    withGlow(() => {
+      // open mouth (lens)
+      if (openH > 1.2) {
+        ctx.fillStyle = withAlpha("#5A1E06", dim);
+        ctx.beginPath();
+        ctx.moveTo(ox - mw/2, cornerY - openH/2);
+        ctx.quadraticCurveTo(ox, ctrlY - openH/2, ox + mw/2, cornerY - openH/2);
+        ctx.lineTo(ox + mw/2, cornerY + openH/2);
+        ctx.quadraticCurveTo(ox, ctrlY + openH/2, ox - mw/2, cornerY + openH/2);
+        ctx.closePath(); ctx.fill();
+        // tongue hint
+        ctx.fillStyle = withAlpha("#FF6B35", dim*0.55);
+        ctx.beginPath();
+        ctx.ellipse(ox, ctrlY + openH*0.18, mw*0.30, openH*0.30, 0, 0, Math.PI*2); ctx.fill();
+      }
+      // lip line (always) — defines the smile/frown
+      ctx.strokeStyle = col; ctx.lineWidth = (ui.style === "beam" ? 6.5 : 5.5) * S; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(ox - mw/2, cornerY - openH/2);
+      ctx.quadraticCurveTo(ox, ctrlY - openH/2, ox + mw/2, cornerY - openH/2);
+      ctx.stroke();
+      if (openH > 1.2) {
+        ctx.beginPath();
+        ctx.moveTo(ox - mw/2, cornerY + openH/2);
+        ctx.quadraticCurveTo(ox, ctrlY + openH/2, ox + mw/2, cornerY + openH/2);
+        ctx.stroke();
+      }
+    }, 16 * (0.4 + live.glow), withAlpha(ACCENT, dim));
+  }
+
+  function drawDots(ox, oy, S) {
+    ctx.save();
+    ctx.globalAlpha = live.dots;
+    for (let i = 0; i < 3; i++) {
+      const phase = (t * 1.6) % 3;
+      const a = clamp(1 - Math.abs(phase - i), 0.25, 1);
+      ctx.globalAlpha = live.dots * a;
+      withGlow(() => {
+        ctx.fillStyle = ACCENT;
+        ctx.beginPath(); ctx.arc(ox + i * 11 * S, oy, 4 * S, 0, Math.PI*2); ctx.fill();
+      }, 12, ACCENT);
+    }
+    ctx.restore();
+  }
+
+  // helpers
+  function roundRectPath(x, y, w, h, r) {
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+  function withAlpha(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${clamp(a,0,1)})`;
+  }
+  function shade(hex, mul) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.round(((n>>16)&255)*mul), g = Math.round(((n>>8)&255)*mul), b = Math.round((n&255)*mul);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // ───────────────── loop ─────────────────
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ───────────────── UI wiring ─────────────────
+  const panel = document.getElementById("panel");
+  document.getElementById("togglePanel").onclick = () => panel.classList.toggle("hidden");
+
+  // states
+  const statesEl = document.getElementById("states");
+  STATES.forEach(s => {
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="em">${s.em}</span>${s.id}`;
+    b.dataset.id = s.id;
+    b.onclick = () => setState(s.id);
+    statesEl.appendChild(b);
+  });
+  function setState(id) {
+    params.state = id;
+    [...statesEl.children].forEach(c => c.classList.toggle("on", c.dataset.id === id));
+    document.getElementById("stName").textContent = id;
+    document.getElementById("stHint").textContent = "· " + (HINTS[id] || "");
+    save();
+  }
+
+  // expression segmented
+  const exprSeg = document.getElementById("exprSeg");
+  EXPRS.forEach(e => {
+    const b = document.createElement("button"); b.textContent = e; b.dataset.id = e;
+    b.onclick = () => { params.expression = e; syncExpr(); save(); };
+    exprSeg.appendChild(b);
+  });
+  function syncExpr(){ [...exprSeg.children].forEach(c => c.classList.toggle("on", c.dataset.id === params.expression)); }
+
+  // style segmented
+  const styleSeg = document.getElementById("styleSeg");
+  STYLES.forEach(s => {
+    const b = document.createElement("button"); b.textContent = s === "soft" ? "Soft (capsule)" : "Beam (OLED)"; b.dataset.id = s;
+    b.onclick = () => { ui.style = s; syncStyle(); save(); };
+    styleSeg.appendChild(b);
+  });
+  function syncStyle(){ [...styleSeg.children].forEach(c => c.classList.toggle("on", c.dataset.id === ui.style)); }
+
+  // sliders
+  const sliders = { gazeX: "vGazeX", gazeY: "vGazeY", mouthOpen: "vMouth", blink: "vBlink" };
+  let lockReflect = {};
+  Object.keys(sliders).forEach(key => {
+    const el = document.getElementById(key);
+    el.value = params[key];
+    el.addEventListener("input", () => { params[key] = parseFloat(el.value); document.getElementById(sliders[key]).textContent = (+el.value).toFixed(2); save(); });
+    document.getElementById(sliders[key]).textContent = (+el.value).toFixed(2);
+  });
+  function setSlider(key, v, soft) {
+    const el = document.getElementById(key);
+    if (document.activeElement === el) return; // don't fight the user
+    el.value = v;
+    document.getElementById(sliders[key]).textContent = (+v).toFixed(2);
+    if (!soft) params[key] = v;
+  }
+
+  // toggles
+  function bindToggle(id, prop) {
+    const el = document.getElementById(id);
+    el.classList.toggle("on", ui[prop]);
+    el.onclick = () => { ui[prop] = !ui[prop]; el.classList.toggle("on", ui[prop]); save(); };
+  }
+  bindToggle("tTalk", "talking");
+  bindToggle("tFollow", "follow");
+
+  function updateReadout() {
+    document.getElementById("readout").innerHTML =
+      `<b>state</b>      ${params.state}\n` +
+      `<b>expression</b> ${params.expression}\n` +
+      `<b>gazeX</b>      ${live.gx.toFixed(2)}\n` +
+      `<b>gazeY</b>      ${live.gy.toFixed(2)}\n` +
+      `<b>mouthOpen</b>  ${live.mouthOpen.toFixed(2)}\n` +
+      `<b>blink</b>      ${(1 - Math.min(live.openL,1)).toFixed(2)}\n` +
+      `<b>style</b>      ${ui.style}`;
+  }
+
+  function save() {
+    try {
+      localStorage.setItem("timoFaceParams", JSON.stringify(params));
+      localStorage.setItem("timoFaceUi", JSON.stringify(ui));
+    } catch(e){}
+  }
+
+  // init UI from restored params
+  setState(params.state); syncExpr(); syncStyle();
+})();
+</script>
+</body>
+</html>
