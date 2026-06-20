@@ -19,6 +19,7 @@ public class MainActivity extends FlutterActivity {
     private static final String BATTERY_EVENT_CH  = "com.timoDesk/battery_events";
     private static final String AUDIO_METHOD_CH    = "com.timoDesk/audio_control";
     private static final String AUDIO_MIC_EVENT_CH = "com.timoDesk/audio_mic";
+    private static final String AUDIO_PLAY_EVENT_CH = "com.timoDesk/audio_playback";
     private static final String WAKE_EVENT_CH      = "com.timoDesk/wake_events";
 
     @Override
@@ -87,6 +88,10 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 AUDIO_MIC_EVENT_CH
         ).setStreamHandler(audioPlugin);
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                AUDIO_PLAY_EVENT_CH
+        ).setStreamHandler(audioPlugin.playbackStreamHandler);
 
         // CSJBot wake word (silent no-op on emulator — SDK absent).
         WakeWordPlugin wakePlugin = new WakeWordPlugin();

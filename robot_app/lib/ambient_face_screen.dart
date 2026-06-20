@@ -65,9 +65,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   final AudioBridge _audioBridge = AudioBridge();
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
+  StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
   bool _voiceActive = false; // a session is open (toggles the debug button)
   double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
-  Timer? _speechGapTimer; // return speaking → listening after Timo's audio stops
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
@@ -91,6 +91,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       apiKey: RobotConfig.elevenLabsApiKey,
     );
     _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
+    // Speaker amplitude (as it plays) → lip-sync + speaking/listening transition.
+    _playbackSub = _audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
 
     // Wake word (Phase B): CSJBot "wakeup" → start a session. Silent stream on
     // the emulator (the native plugin swallows the SDK absence). The face tap is
@@ -120,7 +122,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greetTimer?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
-    _speechGapTimer?.cancel();
+    _playbackSub?.cancel();
     _voiceAgent.dispose();
     _audioBridge.dispose();
     _gazeSub?.cancel();
@@ -235,30 +237,24 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         break;
       case VoiceEventKind.userSpeaking:
         // User cut in (interruption) → stop playback + listen.
-        _speechGapTimer?.cancel();
         _audioBridge.stopPlayback();
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
         // Genuine processing gap (STT done, reply not yet streaming).
-        _speechGapTimer?.cancel();
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
       case VoiceEventKind.agentSpeaking:
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
-        // Play the PCM chunk through the speaker + drive lip-sync from amplitude.
-        // Stay in speaking; a gap timer flips back to listening when audio stops.
+        // Just QUEUE the chunk for playback. Lip-sync (mouthOpen) + the
+        // speaking→listening transition are driven by _onPlaybackLevel, which
+        // tracks the SPEAKER (not network arrival) — so lips move while Timo is
+        // actually talking and close exactly when playback ends.
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
-        if (e.amplitude != null) {
-          setState(() => _face = _face.copyWith(
-              state: FaceStateKind.speaking, mouthOpen: e.amplitude!));
-        }
-        _armSpeechGap();
         break;
       case VoiceEventKind.sessionEnded:
-        _speechGapTimer?.cancel();
         _audioBridge.stopMic();
         _audioBridge.stopPlayback();
         _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
@@ -269,7 +265,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         });
         break;
       case VoiceEventKind.error:
-        _speechGapTimer?.cancel();
         _audioBridge.stopMic();
         setState(() {
           _voiceActive = false;
@@ -301,14 +296,20 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (mounted) setState(() => _micLevel = smoothed);
   }
 
-  // Timo's TTS streams in chunks; when they stop for a beat, the turn is over →
-  // return to listening (no explicit "agent finished" event from ElevenLabs).
-  void _armSpeechGap() {
-    _speechGapTimer?.cancel();
-    _speechGapTimer = Timer(const Duration(milliseconds: 800), () {
-      if (!mounted || !_voiceActive) return;
+  // Speaker amplitude as each chunk PLAYS (native playback thread). Drives
+  // lip-sync in sync with what's heard; level < 0 is the drain sentinel → the
+  // turn is over, return to listening. This replaces the old arrival-based gap
+  // timer that closed the mouth while audio was still queued.
+  void _onPlaybackLevel(double level) {
+    if (!mounted || !_voiceActive) return;
+    if (level < 0) {
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
-    });
+    } else {
+      // Amplify the speech-range RMS so the mouth opens convincingly.
+      final mouth = (level * 3.5).clamp(0.04, 1.0);
+      setState(() =>
+          _face = _face.copyWith(state: FaceStateKind.speaking, mouthOpen: mouth));
+    }
   }
 
   // Debug-only: cycle through every state + nudge gaze manually.
@@ -395,6 +396,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
                 ),
               ),
             ),
+          // Big tap-to-talk button (easy target; toggles the voice session).
+          _voiceButton(),
           // Voice session indicator — current phase + live mic-level meter.
           if (_voiceActive) _voiceIndicator(),
           const Positioned(
@@ -408,6 +411,33 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           ),
           if (kDebugMode) _debugPanel(),
         ]),
+      ),
+    );
+  }
+
+  // Large always-visible tap-to-talk button. Consumes its own tap (won't open the
+  // dashboard). Accent mic when idle → red stop when a session is active.
+  Widget _voiceButton() {
+    final active = _voiceActive;
+    final color = active ? const Color(0xFFE5484D) : const Color(0xFFFF6B35);
+    return Positioned(
+      right: 28,
+      bottom: 28,
+      child: GestureDetector(
+        onTap: active ? _endVoice : _startVoice,
+        child: Container(
+          width: 84,
+          height: 84,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 22, spreadRadius: 1),
+            ],
+          ),
+          child: Icon(active ? Icons.stop_rounded : Icons.mic_rounded,
+              color: Colors.white, size: 40),
+        ),
       ),
     );
   }

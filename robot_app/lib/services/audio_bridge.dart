@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 class AudioBridge {
   static const _method = MethodChannel('com.timoDesk/audio_control');
   static const _micChannel = EventChannel('com.timoDesk/audio_mic');
+  static const _playbackChannel = EventChannel('com.timoDesk/audio_playback');
   static const _wakeChannel = EventChannel('com.timoDesk/wake_events');
 
   StreamSubscription? _micSub;
@@ -54,6 +55,12 @@ class AudioBridge {
       await _method.invokeMethod('stopAudio');
     } catch (_) {}
   }
+
+  /// Playback amplitude (0..1) of each chunk AS IT PLAYS through the speaker —
+  /// drives lip-sync in sync with what's actually heard. Emits -1 when playback
+  /// drains (speech finished), so the face can return to listening on time.
+  Stream<double> get playbackLevelStream =>
+      _playbackChannel.receiveBroadcastStream().map((e) => (e as num).toDouble());
 
   /// Fires "wakeup" each time the CSJBot wake word triggers. Silent on the
   /// emulator (the native plugin swallows the SDK absence).

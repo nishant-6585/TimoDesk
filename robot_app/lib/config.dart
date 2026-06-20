@@ -24,19 +24,32 @@ class RobotConfig {
   // 'kiosk-robot'. See HANDOFF go-live item #5.
   static String kioskToken = '';
 
-  // ElevenLabs Conversational AI (#80 voice pipeline). Set in Settings; the agent
-  // itself (LLM, voice, KB, system prompt) is configured in the ElevenLabs
-  // dashboard. Empty → voice disabled.
-  static String elevenLabsApiKey = '';
-  static String elevenLabsAgentId = '';
+  // ElevenLabs Conversational AI (#80 voice pipeline). Baked-in fleet defaults so a
+  // fresh device works without per-device setup; a value saved in Settings still
+  // overrides. The agent itself (LLM, voice, KB, prompt) is configured in the
+  // ElevenLabs dashboard.
+  static const String defaultElevenLabsAgentId = 'agent_0101kvhwdrnce6p8phkzj93e4kvb';
+
+  // SECURITY NOTE: the API key is a secret. Baking it here commits it to git AND
+  // ships it in the APK (extractable by anyone who has the build) — acceptable only
+  // for a PRIVATE internal kiosk fleet. Restrict/rotate the key in the ElevenLabs
+  // dashboard. To keep it OUT of git, blank the defaultValue below and pass the key
+  // at build time: `flutter build apk --flavor robot --dart-define=ELEVENLABS_API_KEY=sk_...`.
+  static const String defaultElevenLabsApiKey = String.fromEnvironment(
+    'ELEVENLABS_API_KEY',
+    defaultValue: 'sk_ad407f90175e1d153937e02d826a6cd2187ca02c329099f7',
+  );
+
+  static String elevenLabsApiKey = defaultElevenLabsApiKey;
+  static String elevenLabsAgentId = defaultElevenLabsAgentId;
 
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
     cameraBaseUrl = p.getString(_kCamera) ?? defaultCamera;
     kioskToken = p.getString(_kKiosk) ?? '';
-    elevenLabsApiKey = p.getString(_kElevenKey) ?? '';
-    elevenLabsAgentId = p.getString(_kElevenAgent) ?? '';
+    elevenLabsApiKey = p.getString(_kElevenKey) ?? defaultElevenLabsApiKey;
+    elevenLabsAgentId = p.getString(_kElevenAgent) ?? defaultElevenLabsAgentId;
   }
 
   static Future<void> setSpineBaseUrl(String v) async {
