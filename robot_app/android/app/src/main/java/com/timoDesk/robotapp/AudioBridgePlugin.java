@@ -128,7 +128,15 @@ public class AudioBridgePlugin
             sdkLogN = 0;
             CsjRobot.getInstance().registerSpeechListener(new OnSpeechListener() {
                 @Override
-                public void speechInfo(String json, int type) { }
+                public void speechInfo(String json, int type) {
+                    // The robot's system speech service delivers RECOGNIZED TEXT here
+                    // (this is how the stock reception app hears the user — it reads
+                    // the "text" field from this JSON). type 0/2 = ASR results.
+                    String text = "";
+                    try { text = new org.json.JSONObject(json).optString("text", ""); }
+                    catch (Throwable ignore) {}
+                    Log.d(TAG, "ASR speechInfo type=" + type + " text=[" + text + "] raw=" + json);
+                }
 
                 @Override
                 public void onAudio(byte[] audioData) {

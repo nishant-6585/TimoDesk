@@ -31,6 +31,12 @@ public class TimoApplication extends MultiDexApplication {
                 Thread.sleep(1500);
 
                 // Steps 3–6: Configure before init
+                // Do NOT run our own AIUI/CAE. The robot's system speech service
+                // (com.csjbot.robotsdk.ten) already owns the mic and does cloud ASR;
+                // a second AIUI in our process starves it (observed: vad_bos timeout /
+                // silence). The stock reception app never inits a local AIUI either —
+                // it just consumes recognized TEXT via OnSpeechListener.speechInfo,
+                // forwarded over the bridge. We do the same.
                 CsjRobot.enableAsr(false);
                 CsjRobot.enableFace(false);
                 CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement

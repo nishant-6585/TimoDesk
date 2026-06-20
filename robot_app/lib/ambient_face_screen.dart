@@ -10,6 +10,7 @@ import 'providers.dart';
 import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
+import 'services/robot_gestures.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
@@ -202,6 +203,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       _greetVisible = true;
       _face = _face.copyWith(state: FaceStateKind.greeting);
     });
+    // Physical wave to match the on-screen greeting (no-op off the robot).
+    RobotGestures.waveHello(hold: _greetHold);
     _greetTimer = Timer(_greetHold, () {
       if (!mounted) return;
       setState(() {
