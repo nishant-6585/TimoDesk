@@ -149,9 +149,15 @@ public class AudioBridgePlugin
             // registering the listener is not enough).
             try {
                 CsjRobot.getInstance().getSpeech().startSpeechService();
-                Log.d(TAG, "startSpeechService() called");
+                // ACQUIRE the mic resource — the missing step. Per the UBTech/Alpha
+                // SDK spec a third-party app must claim the mic after voice init
+                // (speech_SetMIC(true)); CsjRobot's equivalent is openMicro()
+                // (SPEECH_ISR_MICRO_REQ = "manually wake the robot's microphone").
+                // Without this the vendor never routes mic audio to our listener.
+                CsjRobot.getInstance().getSpeech().openMicro();
+                Log.d(TAG, "startSpeechService() + openMicro() called");
             } catch (Throwable t) {
-                Log.w(TAG, "startSpeechService failed: " + t.getMessage());
+                Log.w(TAG, "startSpeechService/openMicro failed: " + t.getMessage());
             }
             usingSdkMic = true;
             Log.d(TAG, "mic source = CSJBot CAE (registerSpeechListener)");
