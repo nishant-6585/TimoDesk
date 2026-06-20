@@ -327,7 +327,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   void _openDashboard() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DashboardScreen()));
+    // Pass the SHARED voice instances so the dashboard reacts to the same session
+    // (no second ElevenLabs connection) and doesn't double-own playback.
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DashboardScreen(
+        voiceAgent: _voiceAgent,
+        audioBridge: _audioBridge,
+      ),
+    ));
   }
 
   // ── UI ──────────────────────────────────────────────────────────────────────
