@@ -112,7 +112,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
     _lastTick = elapsed;
     if (dt <= 0) return;
-    _rig.tick(_face, dt.clamp(0.0, 0.05));
+    // Dashboard-only: pin gaze forward/centered (no idle wander) so the iris stays
+    // centered in the mini-face. The shared ambient face is unaffected (separate rig).
+    _rig.tick(_face, dt.clamp(0.0, 0.05), followGx: 0, followGy: 0);
     _repaint.ping();
   }
 
@@ -324,7 +326,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Nav rail ──────────────────────────────────────────────────────────────
   Widget _navRail() {
     return Container(
-      width: 210,
+      width: 236,
       decoration: const BoxDecoration(
         color: _surf,
         border: Border(right: BorderSide(color: _border)),
@@ -384,68 +386,95 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       );
 
   // ── Center panel ────────────────────────────────────────────────────────────
+  // Two equal-width cards, full Expanded width, 16 padding all round, 14 gap.
   Widget _centerPanel() {
-    return Column(children: [
-      // Mini face — framed in a rounded "chest screen" card so it reads as a face
-      // on a device. The painter fills its own dark bg; a radial vignette overlay
-      // darkens the edges for depth.
-      Container(
-        height: 224,
-        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(flex: 46, child: _faceCard()),
+        const SizedBox(height: 14),
+        Expanded(flex: 54, child: _convoCard()),
+      ]),
+    );
+  }
+
+  // Face fills a tall rounded "chest screen" card → big, prominent eyes (the
+  // painter scales to shortestSide, so a taller card = larger face).
+  Widget _faceCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: double.infinity,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: _border),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF262626)),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Stack(children: [
-            Positioned.fill(
-              child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
-            ),
-            // Radial vignette over the face for chest-screen depth.
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 0.95,
-                      colors: [Colors.transparent, Color(0x7A000000)],
-                      stops: [0.62, 1.0],
-                    ),
+        child: Stack(children: [
+          Positioned.fill(
+            child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
+          ),
+          // Radial vignette over the face for chest-screen depth.
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 0.95,
+                    colors: [Colors.transparent, Color(0x7A000000)],
+                    stops: [0.62, 1.0],
                   ),
                 ),
               ),
             ),
-            Positioned(bottom: 10, left: 0, right: 0, child: Center(child: _stateChip())),
-          ]),
-        ),
-      ),
-      // Conversation
-      Expanded(
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          constraints: const BoxConstraints(maxWidth: 560),
-          decoration: BoxDecoration(
-            color: _surf,
-            border: Border.all(color: _border),
-            borderRadius: BorderRadius.circular(18),
           ),
-          child: Column(children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-                itemCount: _messages.length,
-                itemBuilder: (_, i) => _bubble(_messages[i]),
-              ),
-            ),
-            if (_messages.length <= 2) _chips(),
-            _inputBar(),
-          ]),
-        ),
+          Positioned(top: 10, left: 12, child: _stateChip()),
+        ]),
       ),
-    ]);
+    );
+  }
+
+  Widget _convoCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _surf,
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(children: [
+        _convoHeader(),
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+            itemCount: _messages.length,
+            itemBuilder: (_, i) => _bubble(_messages[i]),
+          ),
+        ),
+        if (_messages.length <= 2) _chips(),
+        _inputBar(),
+      ]),
+    );
+  }
+
+  Widget _convoHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _border))),
+      child: Row(children: [
+        const Icon(Icons.forum_rounded, size: 15, color: kOrange),
+        const SizedBox(width: 8),
+        const Text('Conversation',
+            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+        const Spacer(),
+        Container(width: 6, height: 6, decoration: BoxDecoration(
+            color: _voiceActive ? _green : Colors.white24, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(_voiceActive ? 'Live' : 'Idle',
+            style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w600)),
+      ]),
+    );
   }
 
   Widget _stateChip() {
@@ -579,7 +608,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Controls panel ──────────────────────────────────────────────────────────
   Widget _controlsPanel() {
     return Container(
-      width: 230,
+      width: 312,
       decoration: const BoxDecoration(
         color: _surf,
         border: Border(left: BorderSide(color: _border)),
