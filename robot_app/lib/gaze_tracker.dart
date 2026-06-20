@@ -38,6 +38,16 @@ class GazeTracker {
     ),
   );
 
+  // ── Gaze mapping (device-tunable — see HANDOFF #82 device-session notes) ────
+  // gaze is derived from the face-box CENTER (not headEulerAngleY). On a
+  // front-facing chest camera the snapshot may be mirrored, so the eyes could
+  // track AWAY from the visitor — flip [_mirrorX] on the real robot to correct.
+  // [_gazeYScale] damps vertical so the eyes don't slam to extremes when a face
+  // is near the top/bottom of frame.
+  static const bool _mirrorX = false;
+  static const double _gazeXScale = 1.0;
+  static const double _gazeYScale = 0.6;
+
   Timer? _timer;
   bool _busy = false;
   int? _imgW, _imgH;
@@ -135,8 +145,9 @@ class GazeTracker {
     // Normalized box center → gaze, centered on the frame middle, ±1 at edges.
     final cx = box.center.dx / w; // 0..1
     final cy = box.center.dy / h; // 0..1
-    final gazeX = ((cx - 0.5) * 2).clamp(-1.0, 1.0);
-    final gazeY = ((cy - 0.5) * 2).clamp(-1.0, 1.0);
-    return GazeResult(true, gazeX, gazeY);
+    double gazeX = (cx - 0.5) * 2 * _gazeXScale;
+    if (_mirrorX) gazeX = -gazeX;
+    final gazeY = (cy - 0.5) * 2 * _gazeYScale;
+    return GazeResult(true, gazeX.clamp(-1.0, 1.0), gazeY.clamp(-1.0, 1.0));
   }
 }
