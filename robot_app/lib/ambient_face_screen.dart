@@ -1,19 +1,25 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
 import 'app_widgets.dart';
 import 'face_painter.dart';
+import 'face_rig.dart';
+import 'gaze_tracker.dart';
+import 'services/spine_client.dart';
 import 'dashboard_screen.dart';
 
-/// The robot's front-of-house home: an ambient animated face (placeholder
-/// CustomPainter, swappable for Rive later). Idle life = randomized blink +
-/// gentle gaze drift (lerped, never snapped). Tap anywhere → Dashboard.
-/// P1 = mock state only (debug toggle cycles all states); real perception is P2.
+/// The robot's front-of-house home: an ambient animated face (Beam/OLED
+/// CustomPainter, #82). #82 P2 wires it to live perception:
+///   • LOCAL ML Kit on /snapshot → gaze x/y + presence → attentive (anonymous).
+///   • SPINE WS face_detected → greeting-by-name (authoritative identity).
+///   • CSJBot personDetected → coarse presence fallback.
+/// Plus a debug-only voice-state cycler (stand-in for #80 until voice lands).
+/// Tap anywhere → Dashboard.
 class AmbientFaceScreen extends ConsumerStatefulWidget {
   const AmbientFaceScreen({super.key});
 
@@ -21,27 +27,56 @@ class AmbientFaceScreen extends ConsumerStatefulWidget {
   ConsumerState<AmbientFaceScreen> createState() => _AmbientFaceScreenState();
 }
 
-class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen> {
-  final _rng = Random();
+class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   FaceState _face = const FaceState();
+  final FaceRig _rig = FaceRig();
+  final _repaint = _FaceRepaint(); // per-frame repaint signal for the painter
 
-  // Gaze lerp targets + blink animation state.
-  double _gazeTX = 0, _gazeTY = 0;
-  bool _blinkClosing = false;
+  late final Ticker _ticker;
+  Duration _lastTick = Duration.zero;
 
-  Timer? _ticker; // ~20fps animation loop (lerp gaze + blink)
-  Timer? _blinkTimer; // schedules the next blink (2–6s)
-  Timer? _driftTimer; // schedules the next gaze drift (3–6s)
+  // ── Live perception (Wire 1 + Wire 2) ──────────────────────────────────────
+  final GazeTracker _gaze = GazeTracker();
+  final SpineClient _spine = SpineClient();
+  StreamSubscription<GazeResult>? _gazeSub;
+  StreamSubscription<FaceDetectedEvent>? _faceSub;
+  StreamSubscription<bool>? _presenceSub;
+
+  bool _useLivePerception = true; // toggle in debug card; drives gaze when on
+  bool _present = false; // a face box is currently visible
+  double _liveGazeX = 0, _liveGazeY = 0;
+  Timer? _presenceHold;
+
+  // Greeting overlay (Wire 2).
+  String? _greetName;
+  bool _greetVisible = false;
+  Timer? _greetTimer;
+  final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
+
+  // Voice cycle demo (Wire 3, debug only).
+  bool _voiceActive = false;
+  int _voiceCycleId = 0;
+  final List<Timer> _voiceTimers = [];
+
+  static const Duration _greetHold = Duration(milliseconds: 3500);
+  static const Duration _regreetWindow = Duration(minutes: 10);
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(milliseconds: 50), (_) => _tick());
-    _scheduleBlink();
-    _scheduleDrift();
+    WidgetsBinding.instance.addObserver(this);
+    _ticker = createTicker(_onTick)..start();
+
+    // Live perception streams.
+    _gazeSub = _gaze.results.listen(_onGaze);
+    _faceSub = _spine.faceDetected.listen(_onFaceDetected);
+    _presenceSub = _spine.personDetected.listen(_onPersonDetected);
+    _gaze.start();
+    _spine.start();
+
     // Preserve old behavior: bring up the control WS servers (:8081-3) if the
-    // camera is already streaming when we mount, so the admin joystick works
-    // without anyone opening Manual Control on the robot.
+    // camera is already streaming when we mount.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(streamProvider).isStreaming) _startControlServers();
     });
@@ -55,71 +90,168 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
-    _blinkTimer?.cancel();
-    _driftTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker.dispose();
+    _presenceHold?.cancel();
+    _greetTimer?.cancel();
+    for (final t in _voiceTimers) {
+      t.cancel();
+    }
+    _gazeSub?.cancel();
+    _faceSub?.cancel();
+    _presenceSub?.cancel();
+    _gaze.dispose();
+    _spine.dispose();
+    _repaint.dispose();
     super.dispose();
   }
 
-  void _scheduleBlink() {
-    _blinkTimer = Timer(Duration(milliseconds: 2000 + _rng.nextInt(4000)), () {
-      _blinkClosing = true; // ticker animates the lid down then up
-      _scheduleBlink();
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause the /snapshot poll when backgrounded (CPU); keep the WS (cheap).
+    if (state == AppLifecycleState.resumed) {
+      _gaze.start();
+    } else {
+      _gaze.stop();
+    }
+  }
+
+  // ── Frame loop ──────────────────────────────────────────────────────────────
+  void _onTick(Duration elapsed) {
+    final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
+    _lastTick = elapsed;
+    if (dt <= 0) return;
+    final follow = _useLivePerception && _present;
+    _rig.tick(
+      _face,
+      dt,
+      followGx: follow ? _liveGazeX : null,
+      followGy: follow ? _liveGazeY : null,
+    );
+    _repaint.ping(); // repaint the face only (no full-tree rebuild)
+  }
+
+  // ── Wire 1: local gaze + presence ───────────────────────────────────────────
+  void _onGaze(GazeResult r) {
+    if (r.facePresent) {
+      _liveGazeX = r.gazeX;
+      _liveGazeY = r.gazeY;
+      _present = true;
+      _presenceHold?.cancel();
+      _presenceHold = null;
+      if (_useLivePerception && _face.state == FaceStateKind.idle) {
+        _setStateKind(FaceStateKind.attentive);
+      }
+    } else {
+      // Hold attentive briefly before returning to idle (kills jitter).
+      if (_present && _presenceHold == null) {
+        final hold = _face.state == FaceStateKind.greeting
+            ? const Duration(seconds: 5)
+            : const Duration(seconds: 3);
+        _presenceHold = Timer(hold, () {
+          _present = false;
+          _presenceHold = null;
+          if (_face.state == FaceStateKind.attentive) {
+            _setStateKind(FaceStateKind.idle);
+          }
+        });
+      }
+    }
+    if (mounted && kDebugMode) setState(() {}); // refresh the perception card
+  }
+
+  // ── Wire 2: spine identity + presence ───────────────────────────────────────
+  void _onFaceDetected(FaceDetectedEvent e) {
+    final now = DateTime.now();
+    final last = _greetedAt[e.name];
+    if (last != null && now.difference(last) < _regreetWindow) return; // debounce
+    _greetedAt[e.name] = now;
+
+    _cancelVoiceCycle();
+    _greetTimer?.cancel();
+    setState(() {
+      _greetName = e.name;
+      _greetVisible = true;
+      _face = _face.copyWith(state: FaceStateKind.greeting);
+    });
+    _greetTimer = Timer(_greetHold, () {
+      if (!mounted) return;
+      setState(() {
+        _greetVisible = false;
+        _face = _face.copyWith(
+            state: _present ? FaceStateKind.attentive : FaceStateKind.idle);
+      });
     });
   }
 
-  void _scheduleDrift() {
-    _driftTimer = Timer(Duration(milliseconds: 3000 + _rng.nextInt(3000)), () {
-      // Small random target so the eyes wander gently.
-      _gazeTX = (_rng.nextDouble() - 0.5) * 1.2;
-      _gazeTY = (_rng.nextDouble() - 0.5) * 0.8;
-      _scheduleDrift();
-    });
+  void _onPersonDetected(bool pd) {
+    // Coarse presence: promote idle → attentive (eyes centered, no box to track).
+    if (pd && !_present && _face.state == FaceStateKind.idle) {
+      setState(() => _face =
+          _face.copyWith(state: FaceStateKind.attentive, gazeX: 0, gazeY: 0));
+    }
   }
 
-  void _tick() {
-    // Lerp gaze toward target (smooth, never snap).
-    final gx = _face.gazeX + (_gazeTX - _face.gazeX) * 0.12;
-    final gy = _face.gazeY + (_gazeTY - _face.gazeY) * 0.12;
+  void _setStateKind(FaceStateKind k) {
+    if (!mounted) return;
+    setState(() => _face = _face.copyWith(state: k));
+  }
 
-    // Blink animation: close fast, then open.
-    double blink = _face.blink;
-    if (_blinkClosing) {
-      blink += 0.4;
-      if (blink >= 1) { blink = 1; _blinkClosing = false; }
-    } else if (blink > 0) {
-      blink = (blink - 0.34).clamp(0.0, 1.0);
+  // ── Wire 3: mock voice cycle (debug) ────────────────────────────────────────
+  void _startVoiceCycle() {
+    _cancelVoiceCycle();
+    final id = ++_voiceCycleId;
+    setState(() {
+      _voiceActive = true;
+      _face = _face.copyWith(state: FaceStateKind.listening);
+    });
+    void at(int ms, FaceStateKind k, {bool end = false}) {
+      _voiceTimers.add(Timer(Duration(milliseconds: ms), () {
+        if (!mounted || id != _voiceCycleId) return;
+        setState(() {
+          _face = _face.copyWith(state: k);
+          if (end) _voiceActive = false;
+        });
+      }));
     }
 
-    setState(() => _face = _face.copyWith(gazeX: gx, gazeY: gy, blink: blink));
+    at(3000, FaceStateKind.thinking);
+    at(5000, FaceStateKind.speaking);
+    at(8000, FaceStateKind.idle, end: true);
   }
 
-  // Debug-only: cycle through every state + nudge gaze, so all states demo
-  // without hardware (P1 acceptance).
+  void _cancelVoiceCycle() {
+    for (final t in _voiceTimers) {
+      t.cancel();
+    }
+    _voiceTimers.clear();
+    if (_voiceActive) _voiceActive = false;
+  }
+
+  // Debug-only: cycle through every state + nudge gaze manually.
   void _debugCycle() {
-    final next = FaceStateKind.values[(_face.state.index + 1) % FaceStateKind.values.length];
+    _cancelVoiceCycle();
+    final next = FaceStateKind
+        .values[(_face.state.index + 1) % FaceStateKind.values.length];
     final expr = switch (next) {
       FaceStateKind.greeting => 1,
       FaceStateKind.thinking => 2,
       FaceStateKind.attentive => 3,
       _ => 0,
     };
-    final mouth = (next == FaceStateKind.speaking) ? 0.6 : 0.0;
-    setState(() => _face = _face.copyWith(state: next, expression: expr, mouthOpen: mouth));
-    _gazeTX = (_rng.nextDouble() - 0.5) * 1.6;
-    _gazeTY = (_rng.nextDouble() - 0.5) * 1.0;
+    setState(() => _face = _face.copyWith(state: next, expression: expr));
   }
 
   void _openDashboard() {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DashboardScreen()));
   }
 
+  // ── UI ──────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final battery = ref.watch(batteryProvider);
     final sdk = ref.watch(streamProvider.select((s) => s.sdkStatus));
 
-    // Control servers come up the moment the camera starts streaming.
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
       if (curr == true) _startControlServers();
     });
@@ -130,13 +262,30 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: _openDashboard,
         child: Stack(children: [
-          // The face fills the screen.
           Positioned.fill(
             child: RepaintBoundary(
-              child: CustomPaint(painter: FacePainter(_face)),
+              child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
             ),
           ),
-          // Unobtrusive status chip, top-right.
+          // Greeting overlay — "Hi, <name>!" below the mouth.
+          if (_greetName != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).size.height * 0.18,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _greetVisible ? 1 : 0,
+                  duration: Duration(milliseconds: _greetVisible ? 300 : 500),
+                  child: Center(
+                    child: Text('Hi, $_greetName!',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+            ),
+          // Status chip, top-right.
           Positioned(
             top: 12,
             right: 16,
@@ -149,7 +298,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen> {
               ]),
             ),
           ),
-          // Tap hint, bottom.
+          // Voice-cycle progress line (top).
+          if (_voiceActive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey(_voiceCycleId),
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(seconds: 8),
+                builder: (_, v, __) => FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: v.clamp(0.0, 1.0),
+                  child: Container(height: 3, color: const Color(0xFFFF6B35)),
+                ),
+              ),
+            ),
           const Positioned(
             bottom: 18,
             left: 0,
@@ -159,26 +324,69 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen> {
                   style: TextStyle(color: Colors.white24, fontSize: 12)),
             ),
           ),
-          // Debug-only state cycler.
-          if (kDebugMode)
-            Positioned(
-              bottom: 14,
-              right: 14,
-              child: FloatingActionButton.small(
-                backgroundColor: const Color(0xFF2A2A2A),
-                onPressed: _debugCycle,
-                child: const Icon(Icons.bug_report, color: kOrange),
-              ),
-            ),
-          if (kDebugMode)
-            Positioned(
-              bottom: 20,
-              left: 16,
-              child: Text('state: ${_face.state.name}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
-            ),
+          if (kDebugMode) _debugPanel(),
         ]),
       ),
     );
   }
+
+  Widget _debugPanel() {
+    return Positioned(
+      bottom: 12,
+      left: 12,
+      child: DefaultTextStyle(
+        style: const TextStyle(color: Colors.white54, fontSize: 11),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF2A2A2A)),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('state: ${_face.state.name}',
+                style: const TextStyle(color: Color(0xFFFF6B35), fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('present: $_present  gaze ${_gaze.last.gazeX.toStringAsFixed(2)},'
+                ' ${_gaze.last.gazeY.toStringAsFixed(2)}'),
+            Text('spine: ${_spine.isConnected ? "connected" : "…"}'),
+            const SizedBox(height: 8),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              _chip('next state', _debugCycle),
+              const SizedBox(width: 6),
+              _chip('voice demo', _startVoiceCycle),
+            ]),
+            const SizedBox(height: 6),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Text('live perception '),
+              Switch(
+                value: _useLivePerception,
+                activeThumbColor: const Color(0xFFFF6B35),
+                onChanged: (v) => setState(() => _useLivePerception = v),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF3A3A3A)),
+          ),
+          child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        ),
+      );
+}
+
+/// Lightweight per-frame repaint signal — wired to FacePainter's `repaint:` so
+/// only the painter repaints each tick (no full widget rebuild).
+class _FaceRepaint extends ChangeNotifier {
+  void ping() => notifyListeners();
 }

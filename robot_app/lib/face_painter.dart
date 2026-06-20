@@ -1,18 +1,22 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
-/// Avatar states — mirrors the Rive `state` input (#82 / design §6).
+import 'face_rig.dart' show LiveState;
+
+/// Avatar states — the locked #89 §6 / #82 Rive `state` contract.
 /// 0 idle · 1 attentive · 2 greeting · 3 listening · 4 thinking · 5 speaking · 6 sleepy
 enum FaceStateKind { idle, attentive, greeting, listening, thinking, speaking, sleepy }
 
-/// The full face input contract (design §6). Code owns these values; the painter
-/// (and later the Rive asset) only renders them. Swapping in `.riv` later means
-/// feeding the same fields into Rive inputs — no state-wiring change.
+/// The public face input contract (design §6). Code owns these values; the painter
+/// (via [LiveState] from [FaceRig]) renders them. Swapping in a Rive `.riv` later
+/// means feeding the SAME fields into Rive inputs — no state-wiring change.
 class FaceState {
   final FaceStateKind state;
   final double gazeX; // -1..1  (left..right)
   final double gazeY; // -1..1  (up..down)
   final double blink; // 0 open .. 1 closed
-  final double mouthOpen; // 0..1 (amplitude lip-sync, P4)
+  final double mouthOpen; // 0..1 (amplitude lip-sync)
   final int expression; // 0 neutral · 1 happy · 2 curious · 3 surprised
 
   const FaceState({
@@ -42,101 +46,272 @@ class FaceState {
       );
 }
 
-/// PLACEHOLDER face — a simple, GPU-light CustomPainter (eyes + brows + mouth)
-/// wired to [FaceState]. Designed to be swapped for the polished Rive `.riv`
-/// asset later without touching the state wiring. Kept to basic shapes for
-/// Android 7.1.2.
+/// Beam / OLED face painter (#82). Renders a smoothed [LiveState] — a faithful
+/// port of robot_app/docs/timo_face_prototype.html (Beam style only), per the
+/// constants in robot_app/docs/timo_face_poses.md.
+///
+/// Glow is two-pass: a blurred bloom copy (accent, MaskFilter) THEN the sharp
+/// shape — canvas2d's shadowBlur has no 1:1 Flutter equivalent.
 class FacePainter extends CustomPainter {
-  final FaceState face;
-  const FacePainter(this.face);
+  final LiveState live;
+  double get t => live.t; // animation phase (ring/dots/scanline/breath)
+  const FacePainter(this.live, {Listenable? repaint}) : super(repaint: repaint);
 
-  static const _orange = Color(0xFFFF6B35);
+  // ── Color tokens (timo_face_poses.md §A) ──────────────────────────────────
+  static const Color _bg = Color(0xFF0F0F0F);
+  static const Color _eye = Color(0xFFFFE3CE); // warm off-white
+  static const Color _accent = Color(0xFFFF6B35);
+  static const Color _pupil = Color(0xFF3A1604);
+  static const Color _mouthOpenFill = Color(0xFF5A1E06);
+  static const Color _tongue = Color(0xFFFF6B35);
+  static const Color _catchlight = Color(0xFFFFFFFF);
+
+  // ── Geometry (×S, S = shortestSide / 100) ─────────────────────────────────
+  static const double _eyeGap = 26; // center→center half, ×S
+  static const double _eyeYUnit = -8; // eyes above midline, ×S
+  static const double _mouthYUnit = 26; // mouth below center, ×S
+  static const double _eyeWUnit = 19;
+  static const double _eyeHUnit = 24;
+  static const double _eyeRadUnit = 7;
+  static const double _irisUnit = 8.5;
+  static const double _browThick = 5.5;
+  static const double _browLen = 20;
+  static const double _mouthWUnit = 34;
+  static const double _mouthOpenMax = 26;
+  static const double _mouthCurveAmt = 18;
+  static const double _lipStroke = 6.5;
+
+  // ── Glow sigmas (visual-tuning point — spec authors these as ×S; tune on
+  // device). Modest coefficients keep bloom GPU-light on Android 7.1.2. ──────
+  double _eyeGlow(double s) => (0.5 + live.glow) * 4.0 * s;
+  double _browGlow(double s) => (0.4 + live.glow) * 2.0 * s;
+  double _mouthGlow(double s) => (0.4 + live.glow) * 3.0 * s;
+  double _dotGlow(double s) => 2.0 * s;
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = _bg);
+
+    final s = size.shortestSide / 100.0;
     final cx = size.width / 2;
-    final cy = size.height / 2;
-    final unit = size.shortestSide;
-    final eyeR = unit * 0.10;
-    final eyeDx = unit * 0.20;
-    final eyeY = cy - unit * 0.06;
+    final cy = size.height / 2 + live.bounce * s;
 
-    final happy = face.expression == 1 || face.state == FaceStateKind.greeting;
-    final surprised = face.expression == 3 || face.state == FaceStateKind.attentive;
-    final dim = face.state == FaceStateKind.sleepy;
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(live.headTilt * 0.12);
 
-    final scleraPaint = Paint()..color = dim ? const Color(0xFF2A2A2A) : const Color(0xFFEDEDED);
-    final pupilPaint = Paint()..color = const Color(0xFF121212);
+    final eyeGap = _eyeGap * s;
+    final eyeY = _eyeYUnit * s;
+    final mouthY = _mouthYUnit * s;
 
-    // Eye openness: 1 - blink, with state nudges (surprised wider, sleepy half).
-    double open = (1 - face.blink).clamp(0.0, 1.0);
-    if (surprised) open = (open * 1.15).clamp(0.0, 1.0);
-    if (dim) open = open * 0.5;
-
-    for (final sign in [-1.0, 1.0]) {
-      final ex = cx + sign * eyeDx;
-      // Eye (rounded rect, height scaled by openness = blink/lid).
-      final eyeRect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(ex, eyeY), width: eyeR * 2.0, height: eyeR * 2.0 * open),
-        Radius.circular(eyeR),
-      );
-      canvas.drawRRect(eyeRect, scleraPaint);
-      // Pupil — offset by gaze.
-      if (open > 0.15) {
-        final px = ex + face.gazeX * eyeR * 0.7;
-        final py = eyeY + face.gazeY * eyeR * 0.6;
-        canvas.drawCircle(Offset(px, py), eyeR * 0.45 * open, pupilPaint);
-      }
-      // Brow — angle/lift by expression.
-      final browPaint = Paint()
-        ..color = const Color(0xFF9A9A9A)
-        ..strokeWidth = unit * 0.018
-        ..strokeCap = StrokeCap.round;
-      final browY = eyeY - eyeR * (surprised ? 1.9 : 1.4);
-      final tilt = happy ? -eyeR * 0.18 : (face.expression == 2 ? eyeR * 0.25 * sign : 0.0);
-      canvas.drawLine(
-        Offset(ex - eyeR * 0.8, browY + tilt),
-        Offset(ex + eyeR * 0.8, browY - tilt),
-        browPaint,
+    // Listening ring (behind the face).
+    if (live.ring > 0.02) {
+      final pr = (44 + sin(t * 3.2) * 4) * s;
+      final ringA =
+          (live.ring * (0.18 + 0.12 * sin(t * 3.2))).clamp(0.0, 1.0);
+      canvas.drawCircle(
+        Offset(0, 6 * s),
+        pr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5 * s
+          ..color = _accent.withValues(alpha: ringA),
       );
     }
 
-    // Mouth — smile when happy, with openness (speaking/lip-sync).
-    final mouthY = cy + unit * 0.16;
-    final mouthW = unit * 0.26;
-    final mouthPaint = Paint()
-      ..color = _orange
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = unit * 0.022
-      ..strokeCap = StrokeCap.round;
-    final openH = face.mouthOpen.clamp(0.0, 1.0) * unit * 0.10;
-    if (openH > unit * 0.012) {
-      // Open mouth (speaking) — filled oval.
-      canvas.drawOval(
-        Rect.fromCenter(center: Offset(cx, mouthY), width: mouthW * 0.7, height: openH * 2),
-        Paint()..color = _orange,
+    _drawBrow(canvas, -eyeGap, eyeY, s, -1);
+    _drawBrow(canvas, eyeGap, eyeY, s, 1);
+    _drawEye(canvas, -eyeGap, eyeY, s, -1);
+    _drawEye(canvas, eyeGap, eyeY, s, 1);
+    _drawMouth(canvas, 0, mouthY, s);
+
+    if (live.dots > 0.02) {
+      _drawDots(canvas, eyeGap + 16 * s, eyeY - 30 * s, s);
+    }
+
+    canvas.restore();
+
+    // Beam scanlines (OLED texture) — full screen, after the face group.
+    final scan = Paint()..color = Colors.black.withValues(alpha: 0.05);
+    for (double y = 0; y < size.height; y += 4) {
+      canvas.drawRect(Rect.fromLTWH(0, y, size.width, 2), scan);
+    }
+  }
+
+  // Two-pass glow: blurred accent bloom, then the sharp shape.
+  void _withGlow(
+    Canvas canvas,
+    double sigma,
+    double glowAlpha,
+    Paint real,
+    void Function(Paint) drawShape,
+  ) {
+    final bloom = Paint()
+      ..style = real.style
+      ..strokeWidth = real.strokeWidth
+      ..strokeCap = real.strokeCap
+      ..color = _accent.withValues(alpha: glowAlpha.clamp(0.0, 1.0))
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, max(0.01, sigma));
+    drawShape(bloom);
+    drawShape(real);
+  }
+
+  Color _shade(Color c, double mul) => Color.fromARGB(
+        255,
+        (c.r * 255 * mul).round().clamp(0, 255),
+        (c.g * 255 * mul).round().clamp(0, 255),
+        (c.b * 255 * mul).round().clamp(0, 255),
       );
-    } else {
-      // Closed mouth — curve; happy = upward smile, else gentle line.
-      final curve = happy ? -unit * 0.06 : (dim ? unit * 0.01 : unit * 0.015);
+
+  void _drawEye(Canvas canvas, double ox, double oy, double s, int side) {
+    final dim = live.dim;
+    final baseW = _eyeWUnit * s * live.eyeScale;
+    final baseH = _eyeHUnit * s * live.eyeScale;
+    double open = side < 0 ? live.openL : live.openR;
+    if (live.asym > 0.02 && side > 0) open = min(1.0, open * 1.05); // curious
+    open = open.clamp(0.04, 1.3);
+    final h = baseH * (1 - live.squint * 0.35) * min(open, 1.25);
+    final w = baseW;
+    final rad = _eyeRadUnit * s;
+    final arc = live.eyeArc;
+    final col = _shade(_eye, dim);
+    final sigma = _eyeGlow(s);
+
+    final eyeRRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset(ox, oy), width: w, height: h),
+      Radius.circular(rad),
+    );
+
+    // Normal eye (alpha 1−arc).
+    if (arc < 0.985) {
+      final a = (1 - arc).clamp(0.0, 1.0);
+      final fill = Paint()
+        ..style = PaintingStyle.fill
+        ..color = col.withValues(alpha: a);
+      _withGlow(canvas, sigma, dim * a * 0.6, fill,
+          (p) => canvas.drawRRect(eyeRRect, p));
+
+      // Iris / pupil / catchlight — clipped to the eye.
+      canvas.save();
+      canvas.clipRRect(eyeRRect);
+      final gx = live.gx.clamp(-1.0, 1.0) * w * 0.42;
+      final gy = live.gy.clamp(-1.0, 1.0) * h * 0.42;
+      final ir = _irisUnit * s;
+      canvas.drawCircle(Offset(ox + gx, oy + gy), ir,
+          Paint()..color = _accent.withValues(alpha: dim * a));
+      canvas.drawCircle(Offset(ox + gx, oy + gy), ir * 0.52,
+          Paint()..color = _shade(_pupil, dim).withValues(alpha: a));
+      canvas.drawCircle(
+          Offset(ox + gx + ir * 0.4, oy + gy - ir * 0.5),
+          ir * 0.32,
+          Paint()..color = _catchlight.withValues(alpha: dim * 0.95 * a));
+      canvas.drawCircle(
+          Offset(ox + gx - ir * 0.35, oy + gy + ir * 0.4),
+          ir * 0.16,
+          Paint()..color = _catchlight.withValues(alpha: dim * 0.48 * a));
+      canvas.restore();
+    }
+
+    // Happy ^_^ arc (alpha arc).
+    if (arc > 0.015) {
+      final stroke = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6 * s
+        ..strokeCap = StrokeCap.round
+        ..color = col.withValues(alpha: arc.clamp(0.0, 1.0));
+      final aw = w * 1.15;
       final path = Path()
-        ..moveTo(cx - mouthW / 2, mouthY)
-        ..quadraticBezierTo(cx, mouthY + curve * (happy ? 1 : -1) + (happy ? 0 : 0), cx + mouthW / 2, mouthY);
-      if (happy) {
-        path.reset();
-        path.moveTo(cx - mouthW / 2, mouthY);
-        path.quadraticBezierTo(cx, mouthY + unit * 0.08, cx + mouthW / 2, mouthY);
-      }
-      canvas.drawPath(path, mouthPaint);
+        ..moveTo(ox - aw / 2, oy + h * 0.18)
+        ..quadraticBezierTo(ox, oy - h * 0.55, ox + aw / 2, oy + h * 0.18);
+      _withGlow(canvas, sigma, dim * arc * 0.7, stroke,
+          (p) => canvas.drawPath(path, p));
+    }
+  }
+
+  void _drawBrow(Canvas canvas, double ox, double oy, double s, int side) {
+    if (live.eyeArc > 0.6) return; // hidden when ^_^
+    final dim = live.dim;
+    final w = _browLen * s * live.eyeScale;
+    final y = oy - 22 * s + live.browY * s;
+    double tilt = live.browTilt * 0.5;
+    if (live.asym > 0.02) tilt += side > 0 ? -0.25 : 0.08; // curious: raise right
+    final innerY = y + (side * -tilt) * 10 * s;
+    final outerY = y + (side * tilt) * 6 * s;
+    final a = ((1 - live.eyeArc) * dim).clamp(0.0, 1.0);
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _browThick * s
+      ..strokeCap = StrokeCap.round
+      ..color = _shade(_eye, dim).withValues(alpha: a);
+    final innerX = ox - side * w / 2, outerX = ox + side * w / 2;
+    final path = Path()
+      ..moveTo(innerX, innerY)
+      ..lineTo(outerX, outerY);
+    _withGlow(canvas, _browGlow(s), dim * a * 0.5, stroke,
+        (p) => canvas.drawPath(path, p));
+  }
+
+  void _drawMouth(Canvas canvas, double ox, double oy, double s) {
+    final dim = live.dim;
+    final mw = _mouthWUnit * s;
+    final curve = live.mouthCurve;
+    final openH = live.mouthOpen * _mouthOpenMax * s;
+    final amt = _mouthCurveAmt * s;
+    final cornerY = oy - curve * amt * 0.5;
+    final ctrlY = oy + curve * amt;
+    final col = _shade(_accent, dim);
+    final sigma = _mouthGlow(s);
+    final glowA = dim * 0.5;
+
+    // Inner mouth + tongue when open.
+    if (openH > 1.2 * s) {
+      final inner = Path()
+        ..moveTo(ox - mw / 2, cornerY - openH / 2)
+        ..quadraticBezierTo(ox, ctrlY - openH / 2, ox + mw / 2, cornerY - openH / 2)
+        ..lineTo(ox + mw / 2, cornerY + openH / 2)
+        ..quadraticBezierTo(ox, ctrlY + openH / 2, ox - mw / 2, cornerY + openH / 2)
+        ..close();
+      canvas.drawPath(
+          inner, Paint()..color = _mouthOpenFill.withValues(alpha: dim));
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(ox, ctrlY + openH * 0.18),
+            width: mw * 0.60,
+            height: openH * 0.60),
+        Paint()..color = _tongue.withValues(alpha: dim * 0.55),
+      );
+    }
+
+    // Upper lip — always (defines smile/frown).
+    final lip = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _lipStroke * s
+      ..strokeCap = StrokeCap.round
+      ..color = col;
+    final upper = Path()
+      ..moveTo(ox - mw / 2, cornerY - openH / 2)
+      ..quadraticBezierTo(ox, ctrlY - openH / 2, ox + mw / 2, cornerY - openH / 2);
+    _withGlow(canvas, sigma, glowA, lip, (p) => canvas.drawPath(upper, p));
+
+    // Lower lip — only when open.
+    if (openH > 1.2 * s) {
+      final lower = Path()
+        ..moveTo(ox - mw / 2, cornerY + openH / 2)
+        ..quadraticBezierTo(ox, ctrlY + openH / 2, ox + mw / 2, cornerY + openH / 2);
+      _withGlow(canvas, sigma, glowA, lip, (p) => canvas.drawPath(lower, p));
+    }
+  }
+
+  void _drawDots(Canvas canvas, double ox, double oy, double s) {
+    final phase = (t * 1.6) % 3;
+    for (int i = 0; i < 3; i++) {
+      final a = (1 - (phase - i).abs()).clamp(0.25, 1.0) * live.dots;
+      final paint = Paint()..color = _accent.withValues(alpha: a.clamp(0.0, 1.0));
+      _withGlow(canvas, _dotGlow(s), a * 0.8, paint,
+          (p) => canvas.drawCircle(Offset(ox + i * 11 * s, oy), 4 * s, p));
     }
   }
 
   @override
-  bool shouldRepaint(FacePainter old) =>
-      old.face.gazeX != face.gazeX ||
-      old.face.gazeY != face.gazeY ||
-      old.face.blink != face.blink ||
-      old.face.mouthOpen != face.mouthOpen ||
-      old.face.state != face.state ||
-      old.face.expression != face.expression;
+  bool shouldRepaint(covariant FacePainter old) => true; // driven every frame
 }

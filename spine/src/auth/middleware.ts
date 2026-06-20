@@ -20,6 +20,15 @@ const JWKS = SUPABASE_URL
   ? createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
   : null;
 
+// Kiosk credential — a static shared secret the robot chest-screen (robot_app) sends
+// over the WS + HTTP. The kiosk has no Supabase session, so it can't present an ES256
+// user token; this is the supported production path for it (auth go-live item #5).
+// Honored ONLY when set to a non-empty value, and works in production (not gated by
+// DEV_AUTH_BYPASS). Tradeoff: a long-lived static secret — rotate it manually. Set a
+// long random string in spine's env; mirror it in robot_app Settings → kiosk token.
+const KIOSK_TOKEN = (process.env.KIOSK_TOKEN ?? '').trim() || null;
+const KIOSK_USER_ID = 'kiosk-robot';
+
 /**
  * The ONE gate. Dev bypass allowed only with the explicit flag AND not prod.
  */
@@ -39,6 +48,12 @@ if (DEV_AUTH_BYPASS) {
 export async function verifyToken(
   token: string
 ): Promise<{ valid: boolean; userId?: string; reason?: string }> {
+  // Kiosk shared secret — checked first, honored in production too (the chest
+  // screen has no Supabase session). Constant-time-ish: exact string match.
+  if (KIOSK_TOKEN && token === KIOSK_TOKEN) {
+    return { valid: true, userId: KIOSK_USER_ID };
+  }
+
   if (!JWKS) {
     // No JWKS configured: accept-all ONLY under the dev bypass, else fail closed.
     if (DEV_AUTH_BYPASS) return { valid: true, userId: 'dev-user' };

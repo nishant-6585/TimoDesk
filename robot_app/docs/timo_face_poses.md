@@ -120,7 +120,7 @@ to every color and glow alpha.
 - **all states** — fixed eye **catchlight** (see A) and **breathing** (see C) keep the face alive.
 
 > **Expression modifiers** (additive, optional) for reference:
-> `happy` → mouthCurve +0.55, eyeArc +0.40, browY −2 · `curious` → headTilt +0.12, browTilt +0.30 (asymmetric, raises one brow), browY −3, mouthCurve +0.10 · `surprised` → eyeScale +0.20, browY −9, mouthOpen +0.55, mouthCurve −0.15.
+> `happy` → mouthCurve +0.55, **squint +0.35** (a clean smiling squint — NOT a partial `eyeArc`, which would ghost a faint ^_^ over the open capsule; the full arc is greeting-only at `eyeArc 1`), browY −2 · `curious` → headTilt +0.12, browTilt +0.30 (asymmetric, raises one brow), browY −3, mouthCurve +0.10 · `surprised` → eyeScale +0.20, browY −9, mouthOpen +0.55, mouthCurve −0.15.
 
 ---
 

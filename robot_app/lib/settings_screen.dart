@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'config.dart';
-import 'enroll_screen.dart' show kAuthToken;
 
 const _orange = Color(0xFFFF6B35);
 
-/// Settings dashboard tile — edit + persist spine/camera URLs (RobotConfig).
-/// Kiosk auth is read-only for now (see HANDOFF go-live: needs an operator login).
+/// Settings dashboard tile — edit + persist spine/camera URLs + kiosk token
+/// (RobotConfig). The kiosk token must match spine's KIOSK_TOKEN env for the
+/// chest screen to authenticate in production (see HANDOFF go-live item #5).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -16,6 +16,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _spine;
   late final TextEditingController _camera;
+  late final TextEditingController _kiosk;
   bool _saved = false;
 
   @override
@@ -23,18 +24,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _spine = TextEditingController(text: RobotConfig.spineBaseUrl);
     _camera = TextEditingController(text: RobotConfig.cameraBaseUrl);
+    _kiosk = TextEditingController(text: RobotConfig.kioskToken);
   }
 
   @override
   void dispose() {
     _spine.dispose();
     _camera.dispose();
+    _kiosk.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     await RobotConfig.setSpineBaseUrl(_spine.text);
     await RobotConfig.setCameraBaseUrl(_camera.text);
+    await RobotConfig.setKioskToken(_kiosk.text);
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -65,24 +69,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 20),
           TextField(controller: _camera, style: const TextStyle(fontSize: 16),
               decoration: _dec('Camera base URL', "The robot's own MJPEG/snapshot server")),
-          const SizedBox(height: 24),
-          // Kiosk auth — read-only for now.
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF2A2A2A)),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Kiosk auth token (read-only)',
-                  style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 0.5)),
-              const SizedBox(height: 6),
-              Text(kAuthToken, style: const TextStyle(color: _orange, fontFamily: 'monospace')),
-              const SizedBox(height: 6),
-              const Text('TODO: production kiosk needs a real Supabase operator login (see HANDOFF).',
-                  style: TextStyle(color: Colors.white38, fontSize: 11)),
-            ]),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _kiosk,
+            style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
+            decoration: _dec('Kiosk token',
+                "Must match spine's KIOSK_TOKEN. Empty = dev bypass only."),
           ),
           const SizedBox(height: 28),
           FilledButton.icon(

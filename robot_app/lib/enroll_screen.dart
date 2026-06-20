@@ -14,16 +14,10 @@ import 'config.dart';
 // Settings dashboard tile). The robot serves its OWN camera (CameraStreamPlugin /
 // camera2) — we REUSE /snapshot, never open a second camera.
 
-// Bearer token the kiosk sends to spine. In dev this is the bypass token (works
-// only behind spine's DEV_AUTH_BYPASS).
-//
-// TODO(auth go-live): the kiosk must obtain + refresh a REAL Supabase operator
-// access token — sign in a dedicated kiosk account via
-// supabase.auth.signInWithPassword and send its ES256 access_token here (same
-// JWKS verify path as the admin app). Once spine's bypass is off, this literal
-// stops working. Source from config/secure storage, not a hardcoded constant.
-const String kKioskDevToken = 'test-token';
-const String kAuthToken = kKioskDevToken;
+// Bearer token the kiosk sends to spine — now sourced from RobotConfig.authToken
+// (the kiosk token set in Settings; falls back to the dev bypass 'test-token' when
+// unset). In production set spine's KIOSK_TOKEN and the matching Settings value so
+// the kiosk authenticates as 'kiosk-robot' (auth go-live item #5).
 
 const _orange = Color(0xFFFF6B35);
 
@@ -293,7 +287,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
       final res = await http
           .post(
             Uri.parse('${RobotConfig.spineBaseUrl}/check-face'),
-            headers: {'Authorization': 'Bearer $kAuthToken', 'Content-Type': 'application/json'},
+            headers: {'Authorization': 'Bearer ${RobotConfig.authToken}', 'Content-Type': 'application/json'},
             body: jsonEncode({'image_base64': base64Encode(frame)}),
           )
           .timeout(const Duration(seconds: 20));
@@ -336,7 +330,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
         final res = await http
             .post(
               Uri.parse('${RobotConfig.spineBaseUrl}/enroll'),
-              headers: {'Authorization': 'Bearer $kAuthToken', 'Content-Type': 'application/json'},
+              headers: {'Authorization': 'Bearer ${RobotConfig.authToken}', 'Content-Type': 'application/json'},
               body: jsonEncode({
                 'full_name': _nameCtr.text,
                 'phone': _phoneCtr.text,

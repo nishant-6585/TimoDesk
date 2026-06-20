@@ -190,7 +190,7 @@
   // expression modifiers (added on top of state pose)
   function exprMod(e) {
     switch (e) {
-      case "happy":     return { mouthCurve:0.55, eyeArc:0.4, browY:-2 };
+      case "happy":     return { mouthCurve:0.55, squint:0.35, browY:-2 }; // smiling squint, not a partial ^_^ arc
       case "curious":   return { headTilt:0.12, browTilt:0.3, browY:-3, mouthCurve:0.1, asym:1 };
       case "surprised": return { eyeScale:0.2, browY:-9, mouthOpenAdd:0.55, eyeArc:-1, mouthCurve:-0.15 };
       default:          return {};
