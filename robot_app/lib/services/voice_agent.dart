@@ -134,10 +134,14 @@ class VoiceAgent {
         return;
 
       case 'agent_response':
+        // The agent's text reply — captured for logging only. Do NOT change face
+        // state here: this text arrives alongside / just before the audio, so
+        // emitting "thinking" would flip the face out of speaking mid-sentence.
+        // The face goes to "speaking" when the first audio chunk arrives (below),
+        // and "thinking" is owned solely by user_transcript (genuine processing gap).
         final t = _nested(msg, 'agent_response_event', 'agent_response');
         if (t is String && t.isNotEmpty) {
           _transcript.add({'role': 'assistant', 'text': t, 'ts': _nowIso()});
-          _emit(VoiceEvent(VoiceEventKind.agentThinking, text: t));
         }
         return;
 
@@ -215,9 +219,12 @@ class VoiceAgent {
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
-  /// RMS energy of a 16-bit little-endian PCM chunk, normalized 0..1.
-  /// A cheap audio-amplitude estimate that drives mouthOpen for lip-sync.
-  double _rms(Uint8List bytes) {
+  double _rms(Uint8List bytes) => pcmRms(bytes);
+
+  /// RMS energy of a 16-bit little-endian PCM chunk, normalized 0..1. A cheap
+  /// audio-amplitude estimate — drives TTS mouthOpen lip-sync AND the mic-level
+  /// "listening" meter in the UI.
+  static double pcmRms(Uint8List bytes) {
     if (bytes.length < 2) return 0;
     double sum = 0;
     int n = 0;

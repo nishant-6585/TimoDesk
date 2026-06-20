@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -65,6 +66,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
   bool _voiceActive = false; // a session is open (toggles the debug button)
+  double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
+  Timer? _speechGapTimer; // return speaking → listening after Timo's audio stops
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
@@ -117,6 +120,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greetTimer?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
+    _speechGapTimer?.cancel();
     _voiceAgent.dispose();
     _audioBridge.dispose();
     _gazeSub?.cancel();
@@ -223,37 +227,54 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _onVoiceEvent(VoiceEvent e) {
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
-        setState(() => _voiceActive = true);
+        // Open in listening — Timo is waiting for the user (the ring shows).
+        setState(() {
+          _voiceActive = true;
+          _face = _face.copyWith(state: FaceStateKind.listening);
+        });
         break;
       case VoiceEventKind.userSpeaking:
-        setState(() => _face = _face.copyWith(state: FaceStateKind.listening));
+        // User cut in (interruption) → stop playback + listen.
+        _speechGapTimer?.cancel();
+        _audioBridge.stopPlayback();
+        setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
-        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        // Genuine processing gap (STT done, reply not yet streaming).
+        _speechGapTimer?.cancel();
+        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
       case VoiceEventKind.agentSpeaking:
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
-        // Phase B: play the PCM chunk through the robot speaker (AudioTrack) and
-        // drive lip-sync from its amplitude.
+        // Play the PCM chunk through the speaker + drive lip-sync from amplitude.
+        // Stay in speaking; a gap timer flips back to listening when audio stops.
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         if (e.amplitude != null) {
-          setState(() => _face = _face.copyWith(mouthOpen: e.amplitude!));
+          setState(() => _face = _face.copyWith(
+              state: FaceStateKind.speaking, mouthOpen: e.amplitude!));
         }
+        _armSpeechGap();
         break;
       case VoiceEventKind.sessionEnded:
+        _speechGapTimer?.cancel();
         _audioBridge.stopMic();
         _audioBridge.stopPlayback();
         _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
         setState(() {
           _voiceActive = false;
+          _micLevel = 0;
           _face = _face.copyWith(state: FaceStateKind.idle, mouthOpen: 0);
         });
         break;
       case VoiceEventKind.error:
+        _speechGapTimer?.cancel();
         _audioBridge.stopMic();
-        setState(() => _voiceActive = false);
+        setState(() {
+          _voiceActive = false;
+          _micLevel = 0;
+        });
         break;
     }
     // Mirror the voice phase to spine → admin app.
@@ -262,12 +283,33 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   void _startVoice() {
     _voiceAgent.startSession();
-    // Capture mic → pipe PCM chunks to the agent (no-op on emulator: mic fails
-    // gracefully and the session simply has no user audio).
-    _audioBridge.startMic((chunk) => _voiceAgent.sendAudioChunk(chunk));
+    // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI
+    // shows we're actually hearing audio (mic fails gracefully on the emulator).
+    _audioBridge.startMic((chunk) {
+      _voiceAgent.sendAudioChunk(chunk);
+      _updateMicLevel(chunk);
+    });
   }
 
   void _endVoice() => _voiceAgent.endSession();
+
+  // Smoothed mic RMS → drives the "Listening / Hearing you" meter. If this never
+  // moves while you talk, the mic isn't capturing (vs. a downstream problem).
+  void _updateMicLevel(Uint8List chunk) {
+    final lvl = VoiceAgent.pcmRms(chunk);
+    final smoothed = _micLevel * 0.6 + lvl * 0.4;
+    if (mounted) setState(() => _micLevel = smoothed);
+  }
+
+  // Timo's TTS streams in chunks; when they stop for a beat, the turn is over →
+  // return to listening (no explicit "agent finished" event from ElevenLabs).
+  void _armSpeechGap() {
+    _speechGapTimer?.cancel();
+    _speechGapTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted || !_voiceActive) return;
+      setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
+    });
+  }
 
   // Debug-only: cycle through every state + nudge gaze manually.
   void _debugCycle() {
@@ -353,6 +395,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
                 ),
               ),
             ),
+          // Voice session indicator — current phase + live mic-level meter.
+          if (_voiceActive) _voiceIndicator(),
           const Positioned(
             bottom: 18,
             left: 0,
@@ -364,6 +408,84 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           ),
           if (kDebugMode) _debugPanel(),
         ]),
+      ),
+    );
+  }
+
+  // A production voice indicator: shows the current phase (Listening / Hearing
+  // you / Thinking / Speaking) and a LIVE mic-level meter so the user knows the
+  // app is actually capturing their voice.
+  Widget _voiceIndicator() {
+    const accent = Color(0xFFFF6B35);
+    const green = Color(0xFF4ADE80);
+    final speaking = _face.state == FaceStateKind.speaking;
+    final thinking = _face.state == FaceStateKind.thinking;
+    final hearing = _micLevel > 0.02; // user voice registering
+
+    final String label;
+    final Color color;
+    final IconData icon;
+    if (speaking) {
+      label = 'Speaking…';
+      color = accent;
+      icon = Icons.volume_up_rounded;
+    } else if (thinking) {
+      label = 'Thinking…';
+      color = Colors.amber;
+      icon = Icons.more_horiz_rounded;
+    } else if (hearing) {
+      label = 'Hearing you';
+      color = green;
+      icon = Icons.mic_rounded;
+    } else {
+      label = 'Listening…';
+      color = accent;
+      icon = Icons.mic_none_rounded;
+    }
+    final meter = (_micLevel * 5).clamp(0.0, 1.0); // amplify speech-range RMS
+
+    return Positioned(
+      bottom: 56,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: color.withValues(alpha: 0.5)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 10),
+              Text(label,
+                  style: TextStyle(
+                      color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 14),
+              // Live mic level — moves when the mic actually captures your voice.
+              Container(
+                width: 96,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: meter,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: hearing ? green : accent.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
       ),
     );
   }
@@ -388,6 +510,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             Text('present: $_present  gaze ${_gaze.last.gazeX.toStringAsFixed(2)},'
                 ' ${_gaze.last.gazeY.toStringAsFixed(2)}'),
             Text('spine: ${_spine.isConnected ? "connected" : "…"}'),
+            Text('voice: ${_voiceActive ? "on" : "off"}  mic: ${_micLevel.toStringAsFixed(3)}'),
             const SizedBox(height: 8),
             Row(mainAxisSize: MainAxisSize.min, children: [
               _chip('next state', _debugCycle),
