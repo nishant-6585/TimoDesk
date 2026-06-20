@@ -13,6 +13,7 @@ import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
 import 'services/voice_agent.dart';
+import 'services/audio_bridge.dart';
 import 'dashboard_screen.dart';
 
 /// The robot's front-of-house home: an ambient animated face (Beam/OLED
@@ -58,9 +59,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _greetTimer;
   final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
 
-  // Voice (#80) — ElevenLabs Conversational AI session.
+  // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
   late final VoiceAgent _voiceAgent;
+  final AudioBridge _audioBridge = AudioBridge();
   StreamSubscription<VoiceEvent>? _voiceSub;
+  StreamSubscription<String>? _wakeSub;
   bool _voiceActive = false; // a session is open (toggles the debug button)
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
@@ -86,6 +89,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     );
     _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
 
+    // Wake word (Phase B): CSJBot "wakeup" → start a session. Silent stream on
+    // the emulator (the native plugin swallows the SDK absence). The face tap is
+    // the other trigger (debug overlay today; whole-face tap later).
+    _wakeSub = _audioBridge.wakeWordStream.listen((_) {
+      if (!_voiceAgent.isActive) _startVoice();
+    });
+
     // Preserve old behavior: bring up the control WS servers (:8081-3) if the
     // camera is already streaming when we mount.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -106,7 +116,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _presenceHold?.cancel();
     _greetTimer?.cancel();
     _voiceSub?.cancel();
+    _wakeSub?.cancel();
     _voiceAgent.dispose();
+    _audioBridge.dispose();
     _gazeSub?.cancel();
     _faceSub?.cancel();
     _presenceSub?.cancel();
@@ -223,13 +235,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
-        // TODO Phase B: play e.audioChunk via android_audio_track (CSJBot speaker).
-        // For now mouthOpen is driven by amplitude only — no actual sound output.
+        // Phase B: play the PCM chunk through the robot speaker (AudioTrack) and
+        // drive lip-sync from its amplitude.
+        if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         if (e.amplitude != null) {
           setState(() => _face = _face.copyWith(mouthOpen: e.amplitude!));
         }
         break;
       case VoiceEventKind.sessionEnded:
+        _audioBridge.stopMic();
+        _audioBridge.stopPlayback();
         _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
         setState(() {
           _voiceActive = false;
@@ -237,6 +252,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         });
         break;
       case VoiceEventKind.error:
+        _audioBridge.stopMic();
         setState(() => _voiceActive = false);
         break;
     }
@@ -244,7 +260,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _spine.sendVoiceState(e.kind);
   }
 
-  void _startVoice() => _voiceAgent.startSession();
+  void _startVoice() {
+    _voiceAgent.startSession();
+    // Capture mic → pipe PCM chunks to the agent (no-op on emulator: mic fails
+    // gracefully and the session simply has no user audio).
+    _audioBridge.startMic((chunk) => _voiceAgent.sendAudioChunk(chunk));
+  }
+
   void _endVoice() => _voiceAgent.endSession();
 
   // Debug-only: cycle through every state + nudge gaze manually.

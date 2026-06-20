@@ -17,6 +17,9 @@ public class MainActivity extends FlutterActivity {
     private static final String ARM_EVENT_CH  = "com.timoDesk/arm_events";
     private static final String BATTERY_METHOD_CH = "com.timoDesk/battery";
     private static final String BATTERY_EVENT_CH  = "com.timoDesk/battery_events";
+    private static final String AUDIO_METHOD_CH    = "com.timoDesk/audio_control";
+    private static final String AUDIO_MIC_EVENT_CH = "com.timoDesk/audio_mic";
+    private static final String WAKE_EVENT_CH      = "com.timoDesk/wake_events";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -72,5 +75,25 @@ public class MainActivity extends FlutterActivity {
                 BATTERY_EVENT_CH
         ).setStreamHandler(batteryPlugin);
         batteryPlugin.register();
+
+        // Audio bridge (#80 Phase B): mic capture (EventChannel) + speaker playback
+        // (MethodChannel).
+        AudioBridgePlugin audioPlugin = new AudioBridgePlugin(this);
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                AUDIO_METHOD_CH
+        ).setMethodCallHandler(audioPlugin);
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                AUDIO_MIC_EVENT_CH
+        ).setStreamHandler(audioPlugin);
+
+        // CSJBot wake word (silent no-op on emulator — SDK absent).
+        WakeWordPlugin wakePlugin = new WakeWordPlugin();
+        wakePlugin.register(this);
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                WAKE_EVENT_CH
+        ).setStreamHandler(wakePlugin);
     }
 }

@@ -76,6 +76,10 @@ class VoiceAgent {
             'prompt': {'prompt': null}, // use the agent's dashboard prompt
             'language': 'en',
           },
+          // Force 16 kHz mono 16-bit PCM out — exactly what AudioTrack playback +
+          // _rms() expect. Without this ElevenLabs sends MP3 and the bytes decode
+          // as garbled noise (#80 Phase B critical fix).
+          'tts': {'output_format': 'pcm_16000'},
         },
       }));
 
