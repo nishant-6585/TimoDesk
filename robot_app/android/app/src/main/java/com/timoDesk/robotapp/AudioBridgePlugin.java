@@ -175,9 +175,11 @@ public class AudioBridgePlugin
     private void startAudioRecordMic(MethodChannel.Result result) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "AudioRecord path: RECORD_AUDIO NOT granted");
             if (result != null) result.error("MIC_PERMISSION", "RECORD_AUDIO not granted", null);
             return;
         }
+        Log.d(TAG, "AudioRecord path: opening device mic…");
         if (micRunning) {
             if (result != null) result.success(null);
             return;
@@ -195,6 +197,7 @@ public class AudioBridgePlugin
                         MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_IN, FORMAT, bufferSize);
             }
             if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+                Log.w(TAG, "AudioRecord FAILED to initialize — device mic busy/owned (CSJBot CAE)");
                 audioRecord.release();
                 audioRecord = null;
                 if (result != null) result.error("MIC_ERROR", "AudioRecord failed to initialize", null);
@@ -202,13 +205,22 @@ public class AudioBridgePlugin
             }
 
             audioRecord.startRecording();
+            Log.d(TAG, "AudioRecord started (source ok) — capturing");
             micRunning = true;
             micThread = new Thread(() -> {
                 byte[] buf = new byte[bufferSize / 2];
+                int logged = 0;
                 while (micRunning) {
                     int n = audioRecord.read(buf, 0, buf.length);
                     if (n > 0) {
                         final byte[] chunk = Arrays.copyOf(buf, n);
+                        // Diagnostic: is the Android mic actually capturing audio, or
+                        // is it silence (CSJBot CAE owns the hardware)? Log RMS of the
+                        // first ~12 chunks — >0 while speaking ⇒ AudioRecord works.
+                        if (logged < 12) {
+                            Log.d(TAG, "AudioRecord RMS = " + String.format("%.4f", rms16(chunk)));
+                            logged++;
+                        }
                         main.post(() -> {
                             if (micSink != null) micSink.success(chunk);
                         });
