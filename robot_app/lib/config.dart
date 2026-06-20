@@ -7,6 +7,8 @@ class RobotConfig {
   static const _kSpine = 'spine_base_url';
   static const _kCamera = 'camera_base_url';
   static const _kKiosk = 'kiosk_token';
+  static const _kElevenKey = 'elevenlabs_api_key';
+  static const _kElevenAgent = 'elevenlabs_agent_id';
 
   // Defaults = the values enroll_screen previously hardcoded. (DHCP — editable
   // in Settings; spine host changes between sessions.)
@@ -22,11 +24,19 @@ class RobotConfig {
   // 'kiosk-robot'. See HANDOFF go-live item #5.
   static String kioskToken = '';
 
+  // ElevenLabs Conversational AI (#80 voice pipeline). Set in Settings; the agent
+  // itself (LLM, voice, KB, system prompt) is configured in the ElevenLabs
+  // dashboard. Empty → voice disabled.
+  static String elevenLabsApiKey = '';
+  static String elevenLabsAgentId = '';
+
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
     cameraBaseUrl = p.getString(_kCamera) ?? defaultCamera;
     kioskToken = p.getString(_kKiosk) ?? '';
+    elevenLabsApiKey = p.getString(_kElevenKey) ?? '';
+    elevenLabsAgentId = p.getString(_kElevenAgent) ?? '';
   }
 
   static Future<void> setSpineBaseUrl(String v) async {
@@ -42,6 +52,16 @@ class RobotConfig {
   static Future<void> setKioskToken(String v) async {
     kioskToken = v.trim();
     (await SharedPreferences.getInstance()).setString(_kKiosk, kioskToken);
+  }
+
+  static Future<void> setElevenLabsApiKey(String v) async {
+    elevenLabsApiKey = v.trim();
+    (await SharedPreferences.getInstance()).setString(_kElevenKey, elevenLabsApiKey);
+  }
+
+  static Future<void> setElevenLabsAgentId(String v) async {
+    elevenLabsAgentId = v.trim();
+    (await SharedPreferences.getInstance()).setString(_kElevenAgent, elevenLabsAgentId);
   }
 
   /// The token to send to spine. Falls back to the dev bypass token when no

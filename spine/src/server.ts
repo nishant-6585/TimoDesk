@@ -15,6 +15,7 @@ import { createSensorPipeline } from './sensors';
 import { handleEnroll } from './handlers/enroll';
 import { handleCheckFace } from './handlers/check-face';
 import { handleVisit } from './handlers/visit';
+import { handleVoiceLog } from './handlers/voice';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
@@ -84,6 +85,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/visit' && req.method === 'POST') {
         await handleVisit(req, res, supabase, broadcastRobotEvent);
+        return;
+      }
+
+      if (url === '/voice/log' && req.method === 'POST') {
+        await handleVoiceLog(req, res, supabase);
         return;
       }
 
@@ -194,6 +200,19 @@ export function startServer(sdk: RobotSDK): Promise<void> {
                 message: 'Not authenticated — send auth message first',
               } as SpineMessage)
             );
+            return;
+          }
+
+          // Voice phase (#80): robot_app broadcasts its voice state → re-broadcast
+          // to ALL clients (admin app) as a voice_* event. Not a robot command, so
+          // it bypasses the interlock/handler path. Payload shape mirrors the other
+          // events (eventPayload.payload.state), consistent with face_detected.
+          if (msg.type === 'intent' && msg.intent?.intent === 'voice_state') {
+            const vs = msg.intent.voiceState;
+            if (vs === 'listening' || vs === 'thinking' || vs === 'speaking' || vs === 'idle') {
+              broadcastRobotEvent({ type: `voice_${vs}`, payload: { state: vs } });
+            }
+            ws.send(JSON.stringify({ type: 'ack', intent: 'voice_state', ok: true } as SpineMessage));
             return;
           }
 

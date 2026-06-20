@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
+
 import '../config.dart';
+import 'voice_agent.dart' show VoiceEventKind;
 
 /// A recognized staff member, from spine's Milestone D recognizer.
 class FaceDetectedEvent {
@@ -49,6 +52,54 @@ class SpineClient {
   bool get isConnected => _authed;
 
   void start() => _connect();
+
+  // ── Voice (#80) ─────────────────────────────────────────────────────────────
+
+  /// Broadcast the current voice phase to spine → admin app. Maps the VoiceAgent
+  /// event kind to a `voice_state` intent; spine re-broadcasts it as a voice_*
+  /// event. No-op if not connected (best-effort telemetry).
+  String? _lastVoiceState; // dedupe — only broadcast on change
+  void sendVoiceState(VoiceEventKind kind) {
+    final state = switch (kind) {
+      VoiceEventKind.userSpeaking => 'listening',
+      VoiceEventKind.agentThinking => 'thinking',
+      VoiceEventKind.agentSpeaking => 'speaking',
+      VoiceEventKind.sessionEnded => 'idle',
+      _ => null,
+    };
+    if (state == null || state == _lastVoiceState) return;
+    _lastVoiceState = state;
+    _send({
+      'type': 'intent',
+      'intent': {'intent': 'voice_state', 'voiceState': state},
+    });
+  }
+
+  /// Persist a completed conversation to spine `/voice/log` (HTTP one-shot write).
+  /// Best-effort — a logging failure must never affect the conversation UX.
+  Future<void> logConversation(List<Map<String, dynamic>> transcript) async {
+    if (transcript.isEmpty) return;
+    try {
+      await http
+          .post(
+            Uri.parse('${RobotConfig.spineBaseUrl}/voice/log'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${RobotConfig.authToken}',
+            },
+            body: jsonEncode({'transcript': transcript, 'resolved_by': 'elevenlabs'}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // swallow — telemetry only
+    }
+  }
+
+  void _send(Map<String, dynamic> msg) {
+    final ws = _ws;
+    if (ws == null || !_authed) return;
+    ws.add(jsonEncode(msg));
+  }
 
   Future<void> _connect() async {
     if (_disposed) return;

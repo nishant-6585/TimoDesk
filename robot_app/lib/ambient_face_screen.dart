@@ -7,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
 import 'app_widgets.dart';
+import 'config.dart';
 import 'face_painter.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
+import 'services/voice_agent.dart';
 import 'dashboard_screen.dart';
 
 /// The robot's front-of-house home: an ambient animated face (Beam/OLED
@@ -18,7 +20,9 @@ import 'dashboard_screen.dart';
 ///   • LOCAL ML Kit on /snapshot → gaze x/y + presence → attentive (anonymous).
 ///   • SPINE WS face_detected → greeting-by-name (authoritative identity).
 ///   • CSJBot personDetected → coarse presence fallback.
-/// Plus a debug-only voice-state cycler (stand-in for #80 until voice lands).
+/// #80 voice: an ElevenLabs Conversational AI session drives listening/thinking/
+/// speaking + amplitude lip-sync, and logs the transcript to spine. (Phase A —
+/// triggered manually from the debug overlay; wake word + mic are Phase B.)
 /// Tap anywhere → Dashboard.
 class AmbientFaceScreen extends ConsumerStatefulWidget {
   const AmbientFaceScreen({super.key});
@@ -54,10 +58,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _greetTimer;
   final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
 
-  // Voice cycle demo (Wire 3, debug only).
-  bool _voiceActive = false;
-  int _voiceCycleId = 0;
-  final List<Timer> _voiceTimers = [];
+  // Voice (#80) — ElevenLabs Conversational AI session.
+  late final VoiceAgent _voiceAgent;
+  StreamSubscription<VoiceEvent>? _voiceSub;
+  bool _voiceActive = false; // a session is open (toggles the debug button)
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
@@ -74,6 +78,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _presenceSub = _spine.personDetected.listen(_onPersonDetected);
     _gaze.start();
     _spine.start();
+
+    // Voice (#80) — session is opened on demand (debug overlay / Phase B wake word).
+    _voiceAgent = VoiceAgent(
+      agentId: RobotConfig.elevenLabsAgentId,
+      apiKey: RobotConfig.elevenLabsApiKey,
+    );
+    _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
 
     // Preserve old behavior: bring up the control WS servers (:8081-3) if the
     // camera is already streaming when we mount.
@@ -94,9 +105,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _ticker.dispose();
     _presenceHold?.cancel();
     _greetTimer?.cancel();
-    for (final t in _voiceTimers) {
-      t.cancel();
-    }
+    _voiceSub?.cancel();
+    _voiceAgent.dispose();
     _gazeSub?.cancel();
     _faceSub?.cancel();
     _presenceSub?.cancel();
@@ -162,12 +172,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // ── Wire 2: spine identity + presence ───────────────────────────────────────
   void _onFaceDetected(FaceDetectedEvent e) {
+    if (_voiceActive) return; // don't greet over a live conversation
     final now = DateTime.now();
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     _greetedAt[e.name] = now;
 
-    _cancelVoiceCycle();
     _greetTimer?.cancel();
     setState(() {
       _greetName = e.name;
@@ -197,40 +207,49 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
-  // ── Wire 3: mock voice cycle (debug) ────────────────────────────────────────
-  void _startVoiceCycle() {
-    _cancelVoiceCycle();
-    final id = ++_voiceCycleId;
-    setState(() {
-      _voiceActive = true;
-      _face = _face.copyWith(state: FaceStateKind.listening);
-    });
-    void at(int ms, FaceStateKind k, {bool end = false}) {
-      _voiceTimers.add(Timer(Duration(milliseconds: ms), () {
-        if (!mounted || id != _voiceCycleId) return;
+  // ── #80 voice: ElevenLabs session drives the face state machine ─────────────
+  void _onVoiceEvent(VoiceEvent e) {
+    switch (e.kind) {
+      case VoiceEventKind.sessionStarted:
+        setState(() => _voiceActive = true);
+        break;
+      case VoiceEventKind.userSpeaking:
+        setState(() => _face = _face.copyWith(state: FaceStateKind.listening));
+        break;
+      case VoiceEventKind.agentThinking:
+        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        break;
+      case VoiceEventKind.agentSpeaking:
+        setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
+        break;
+      case VoiceEventKind.audioChunk:
+        // TODO Phase B: play e.audioChunk via android_audio_track (CSJBot speaker).
+        // For now mouthOpen is driven by amplitude only — no actual sound output.
+        if (e.amplitude != null) {
+          setState(() => _face = _face.copyWith(mouthOpen: e.amplitude!));
+        }
+        break;
+      case VoiceEventKind.sessionEnded:
+        _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
         setState(() {
-          _face = _face.copyWith(state: k);
-          if (end) _voiceActive = false;
+          _voiceActive = false;
+          _face = _face.copyWith(state: FaceStateKind.idle, mouthOpen: 0);
         });
-      }));
+        break;
+      case VoiceEventKind.error:
+        setState(() => _voiceActive = false);
+        break;
     }
-
-    at(3000, FaceStateKind.thinking);
-    at(5000, FaceStateKind.speaking);
-    at(8000, FaceStateKind.idle, end: true);
+    // Mirror the voice phase to spine → admin app.
+    _spine.sendVoiceState(e.kind);
   }
 
-  void _cancelVoiceCycle() {
-    for (final t in _voiceTimers) {
-      t.cancel();
-    }
-    _voiceTimers.clear();
-    if (_voiceActive) _voiceActive = false;
-  }
+  void _startVoice() => _voiceAgent.startSession();
+  void _endVoice() => _voiceAgent.endSession();
 
   // Debug-only: cycle through every state + nudge gaze manually.
   void _debugCycle() {
-    _cancelVoiceCycle();
+    if (_voiceActive) _endVoice();
     final next = FaceStateKind
         .values[(_face.state.index + 1) % FaceStateKind.values.length];
     final expr = switch (next) {
@@ -298,20 +317,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
               ]),
             ),
           ),
-          // Voice-cycle progress line (top).
+          // Voice-session active indicator (top accent bar).
           if (_voiceActive)
-            Positioned(
+            const Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey(_voiceCycleId),
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(seconds: 8),
-                builder: (_, v, __) => FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: v.clamp(0.0, 1.0),
-                  child: Container(height: 3, color: const Color(0xFFFF6B35)),
+              child: SizedBox(
+                height: 3,
+                child: LinearProgressIndicator(
+                  backgroundColor: Colors.transparent,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFFFF6B35)),
                 ),
               ),
             ),
@@ -354,7 +370,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             Row(mainAxisSize: MainAxisSize.min, children: [
               _chip('next state', _debugCycle),
               const SizedBox(width: 6),
-              _chip('voice demo', _startVoiceCycle),
+              _chip(_voiceActive ? 'end voice' : 'start voice',
+                  _voiceActive ? _endVoice : _startVoice),
             ]),
             const SizedBox(height: 6),
             Row(mainAxisSize: MainAxisSize.min, children: [

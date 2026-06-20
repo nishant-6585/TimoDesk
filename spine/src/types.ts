@@ -5,12 +5,26 @@
 
 // Admin client intents (what the app sends to the spine)
 export interface Intent {
-  intent: 'drive' | 'head' | 'arm' | 'wave' | 'stop' | 'resume' | 'snapshot' | 'get_status';
+  intent:
+    | 'drive'
+    | 'head'
+    | 'arm'
+    | 'wave'
+    | 'stop'
+    | 'resume'
+    | 'snapshot'
+    | 'get_status'
+    | 'voice_state' // robot_app → spine: broadcast current voice phase (#80)
+    | 'voice_log'; // robot_app → spine: log a completed conversation turn (#80)
   dir?: 'forward' | 'back' | 'left' | 'right'; // for drive
   lr?: number; // 0–100, for head
   ud?: number; // 0–100, for head
   left?: number; // 0–100, for arm
   right?: number; // 0–100, for arm
+  // Voice (#80)
+  voiceState?: 'listening' | 'thinking' | 'speaking' | 'idle'; // for voice_state
+  transcript?: { role: 'user' | 'assistant'; text: string; ts: string }[]; // for voice_log
+  resolvedBy?: 'elevenlabs';
 }
 
 // ── Sensor / obstacle awareness (Phase 1A) ──────────────────────────────────
@@ -55,7 +69,17 @@ export type SensorEvent =
 
 // Events emitted by the robot (or mock)
 export interface RobotEvent {
-  type: 'face_detected' | 'battery_update' | 'robot_online' | 'robot_offline' | 'visitor_arrived';
+  type:
+    | 'face_detected'
+    | 'battery_update'
+    | 'robot_online'
+    | 'robot_offline'
+    | 'visitor_arrived'
+    // Voice phase, broadcast to the admin app (#80)
+    | 'voice_listening'
+    | 'voice_thinking'
+    | 'voice_speaking'
+    | 'voice_idle';
   payload?: Record<string, any>;
   timestamp?: number;
 }
