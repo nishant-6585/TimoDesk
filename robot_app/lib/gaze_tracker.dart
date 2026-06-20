@@ -27,7 +27,7 @@ class GazeResult {
 /// On-device detection is for GAZE / PRESENCE only. Identity stays on spine
 /// (Milestone D `face_detected`) — the two pipelines are never crossed.
 class GazeTracker {
-  GazeTracker({this.pollEvery = const Duration(milliseconds: 300)});
+  GazeTracker({this.pollEvery = const Duration(milliseconds: 400)});
 
   final Duration pollEvery;
 

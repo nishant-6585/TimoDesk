@@ -81,12 +81,18 @@ class FacePainter extends CustomPainter {
   static const double _mouthCurveAmt = 18;
   static const double _lipStroke = 6.5;
 
-  // ── Glow sigmas (visual-tuning point — spec authors these as ×S; tune on
-  // device). Modest coefficients keep bloom GPU-light on Android 7.1.2. ──────
-  double _eyeGlow(double s) => (0.5 + live.glow) * 4.0 * s;
-  double _browGlow(double s) => (0.4 + live.glow) * 2.0 * s;
-  double _mouthGlow(double s) => (0.4 + live.glow) * 3.0 * s;
-  double _dotGlow(double s) => 2.0 * s;
+  // ── Glow sigma multipliers — tune these on the real robot (see HANDOFF #82).
+  // Current values are conservative for Android 7.1.2. Spec-implied targets (blur/2):
+  // eye ~17·S, brow ~5·S, mouth ~8·S. Raise toward those if the panel can hold it.
+  static const double _kEyeGlowCoeff = 8.0; // was 4.0
+  static const double _kBrowGlowCoeff = 3.0; // was 2.0
+  static const double _kMouthGlowCoeff = 5.0; // was 3.0
+  static const double _kDotGlowCoeff = 2.5; // was 2.0
+
+  double _eyeGlow(double s) => (0.5 + live.glow) * _kEyeGlowCoeff * s;
+  double _browGlow(double s) => (0.4 + live.glow) * _kBrowGlowCoeff * s;
+  double _mouthGlow(double s) => (0.4 + live.glow) * _kMouthGlowCoeff * s;
+  double _dotGlow(double s) => _kDotGlowCoeff * s;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -264,7 +270,7 @@ class FacePainter extends CustomPainter {
     final glowA = dim * 0.5;
 
     // Inner mouth + tongue when open.
-    if (openH > 1.2 * s) {
+    if (openH > 0.3 * s) {
       final inner = Path()
         ..moveTo(ox - mw / 2, cornerY - openH / 2)
         ..quadraticBezierTo(ox, ctrlY - openH / 2, ox + mw / 2, cornerY - openH / 2)
@@ -294,7 +300,7 @@ class FacePainter extends CustomPainter {
     _withGlow(canvas, sigma, glowA, lip, (p) => canvas.drawPath(upper, p));
 
     // Lower lip — only when open.
-    if (openH > 1.2 * s) {
+    if (openH > 0.3 * s) {
       final lower = Path()
         ..moveTo(ox - mw / 2, cornerY + openH / 2)
         ..quadraticBezierTo(ox, ctrlY + openH / 2, ox + mw / 2, cornerY + openH / 2);
