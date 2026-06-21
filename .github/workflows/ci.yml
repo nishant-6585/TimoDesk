@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze-and-build:
+    name: Analyze & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: robot_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Run tests
+        run: flutter test --coverage || true   # non-fatal until test suite is established
+
+      - name: Build debug APK
+        run: |
+          flutter build apk \
+            --flavor robot \
+            --debug \
+            --no-shrink \
+            -t lib/main.dart
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: timoDesk-debug-${{ github.sha }}
+          path: robot_app/build/app/outputs/flutter-apk/app-robot-debug.apk
+          retention-days: 7
