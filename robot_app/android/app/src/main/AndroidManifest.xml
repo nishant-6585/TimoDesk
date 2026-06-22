@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <!-- All-files access — matches the vendor demo. The CSJBot SDK reads the robot's
+         own AIUI key from /sdcard/.robot_info/aiuikey.txt; Android-14 scoped storage
+         blocks plain READ_EXTERNAL_STORAGE for non-media files, causing InvalidAppId
+         (no ASR). Granted at runtime via Settings → All files access (or appops). -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
@@ -42,8 +48,7 @@
         <package android:name="com.google.android.tts" />
         <package android:name="com.android.tts" />
         <package android:name="com.csjbot.robotsdk.ten" />
-        <!-- Required on Android 11+ so the SDK can resolve/start the robot speech
-             service by action (matches the vendor demo's manifest). -->
+        <!-- Matches the vendor demo's manifest (Android-11+ service visibility). -->
         <intent>
             <action android:name="com.csjbot.robotsdkservice.startservice" />
         </intent>

@@ -10,6 +10,8 @@ import 'face_painter.dart'; // FaceState, FaceStateKind, FacePainter
 import 'face_rig.dart'; // FaceRig
 import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
+import 'services/elevenlabs_tts.dart';
+import 'config.dart';
 import 'enroll_screen.dart';
 import 'status_screen.dart';
 import 'control_screen.dart';
@@ -59,6 +61,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   final _FaceRepaint _repaint = _FaceRepaint();
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
+  double _paintAccum = 0; // throttles repaint to ~30fps (halves render CPU)
   FaceState _face = const FaceState(state: FaceStateKind.greeting);
 
   Timer? _idle;
@@ -73,6 +76,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   StreamSubscription<double>? _playbackSub;
   bool _voiceActive = false;
   bool _perceptionOn = true;
+
+  // Speaks action phrases in the agent's real voice (same as the face screen),
+  // streamed through the shared speaker; falls back to on-device TTS.
+  late final ElevenLabsTts _tts;
 
   // Action state
   _Act? _activeAct; // tile currently lit
@@ -101,6 +108,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _resetIdle();
     _voiceSub = widget.voiceAgent.events.listen(_onVoiceEvent);
     _playbackSub = widget.audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
+    _tts = ElevenLabsTts(
+      apiKey: RobotConfig.elevenLabsApiKey,
+      voiceId: RobotConfig.elevenLabsVoiceId,
+      audio: widget.audioBridge,
+    );
     // Intro: open in greeting, settle to attentive after ~2.8s (§6).
     _intro = Timer(const Duration(milliseconds: 2800), () {
       if (mounted && !_resting && _activeAct == null) _setKind(FaceStateKind.attentive);
@@ -118,6 +130,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _toastTimer?.cancel();
     _voiceSub?.cancel();
     _playbackSub?.cancel();
+    _tts.dispose();
     _repaint.dispose();
     // Do NOT dispose voiceAgent / audioBridge — owned by AmbientFaceScreen.
     super.dispose();
@@ -128,9 +141,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
     _lastTick = elapsed;
     if (dt <= 0) return;
+    // Cap to ~30fps: the Ticker fires every vsync (~60fps), but the FacePainter's
+    // glows/blurs are expensive (raster+GPU). Repainting at 30fps roughly halves
+    // the render CPU on the RK3576 with no visible loss for a face.
+    _paintAccum += dt;
+    if (_paintAccum < 0.033) return;
     // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Timo stays
     // engaged with whoever's at the desk (the ambient face is a separate rig).
-    _rig.tick(_face, dt.clamp(0.0, 0.05), followGx: 0, followGy: 0.04);
+    _rig.tick(_face, _paintAccum.clamp(0.0, 0.05), followGx: 0, followGy: 0.04);
+    _paintAccum = 0;
     _repaint.ping();
   }
 
@@ -230,12 +249,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _setKind(FaceStateKind.greeting);
         ref.read(armProvider.notifier).wave(); // real wave gesture
         _toast('Greeting visitor', Icons.waving_hand_rounded);
+        _say('Hello! Welcome to xboom. How can I help you today?');
         _revertAfter(2600);
         break;
       case _Act.listen:
         // Preview: listening → thinking → speaking (real voice flow lands later).
         _setKind(FaceStateKind.listening);
         _toast('Listening…', Icons.mic_rounded);
+        _say("I'm listening, go ahead.");
         _seq = Timer(const Duration(milliseconds: 2200), () {
           if (!mounted) return;
           _setKind(FaceStateKind.thinking);
@@ -249,16 +270,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case _Act.checkIn:
         _setKind(FaceStateKind.attentive);
         _toast('Who are you here to see?', Icons.assignment_ind_outlined);
+        _say('Sure — who are you here to see?');
         _revertAfter(2600);
         break;
       case _Act.directions:
         _setKind(FaceStateKind.speaking);
         _toast('Giving directions →', Icons.signpost_outlined);
+        _say('Of course, let me show you the way.');
         _revertAfter(2600);
         break;
       case _Act.pageStaff:
         _setKind(FaceStateKind.speaking);
         _toast('Paging the front desk…', Icons.campaign_outlined);
+        _say('One moment, I am paging the front desk.');
         _revertAfter(2600);
         break;
       case _Act.rest:
@@ -267,12 +291,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         if (_resting) {
           _setKind(FaceStateKind.sleepy);
           _toast('Resting', Icons.bedtime_outlined);
+          _say('Going to rest now. Tap me when you need me.');
         } else {
           setState(() => _activeAct = null);
           _setKind(FaceStateKind.attentive);
         }
         break;
     }
+  }
+
+  /// Speak a phrase aloud in Timo's real voice — ElevenLabs TTS (same voice as the
+  /// face screen), streamed through the shared speaker. Falls back to the on-device
+  /// Google TTS only if ElevenLabs is unreachable.
+  Future<void> _say(String text) async {
+    final ok = await _tts.speak(text);
+    if (!ok && mounted) widget.audioBridge.speak(text);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -299,8 +332,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
                 // clamp(min, …vh, max) sizing from the body height.
                 _dockH = _vh(h, 0.13, 78, 116);
-                _padSq = _vh(h, 0.13, 64, 150);
-                _armH = _vh(h, 0.046, 32, 38);
+                _padSq = _vh(h, 0.20, 140, 195); // bigger d-pad → easy to tap (fits chassis + speed row)
+                _armH = _vh(h, 0.12, 54, 96); // bigger Wave/Reset buttons
                 _estopH = _vh(h, 0.06, 44, 52);
                 _tileLabel = _vh(h, 0.0175, 12, 14);
                 _tileSub = _vh(h, 0.0135, 9, 10.5);

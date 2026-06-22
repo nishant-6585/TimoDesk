@@ -10,9 +10,12 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
+
+import java.util.Locale;
 
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnSpeechListener;
@@ -51,6 +54,12 @@ public class AudioBridgePlugin
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    // Android built-in TTS (Google engine) — Timo speaks action phrases in English.
+    // Independent of the CSJBot AIUI/baker TTS (which needs the disabled speech
+    // service and is Chinese). Initialized once; ready by the time the user taps.
+    private TextToSpeech tts;
+    private volatile boolean ttsReady = false;
+
     private EventChannel.EventSink micSink;
 
     // Mic — two possible sources: the CSJBot CAE stream (real robot) or AudioRecord.
@@ -78,6 +87,19 @@ public class AudioBridgePlugin
 
     AudioBridgePlugin(Context context) {
         this.context = context;
+        try {
+            tts = new TextToSpeech(context, status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    try { tts.setLanguage(Locale.US); } catch (Throwable ignore) {}
+                    ttsReady = true;
+                    Log.d(TAG, "Android TTS ready");
+                } else {
+                    Log.w(TAG, "Android TTS init failed: " + status);
+                }
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "Android TTS unavailable: " + t.getMessage());
+        }
     }
 
     // ── MethodChannel ───────────────────────────────────────────────────────────
@@ -98,6 +120,30 @@ public class AudioBridgePlugin
                 break;
             case "stopAudio":
                 stopAudio();
+                result.success(null);
+                break;
+            case "speak":
+                // Android built-in TTS (Google) — reliable English speech through the
+                // robot speaker, independent of the CSJBot AIUI/baker TTS.
+                try {
+                    String text = (String) call.argument("text");
+                    if (text != null && !text.isEmpty() && tts != null) {
+                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "timo");
+                        Log.d(TAG, "TTS speak: " + text);
+                    } else {
+                        Log.w(TAG, "TTS not ready (ready=" + ttsReady + ")");
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "speak failed: " + t.getMessage());
+                }
+                result.success(null);
+                break;
+            case "stopSpeak":
+                try {
+                    if (tts != null) tts.stop();
+                } catch (Throwable t) {
+                    Log.w(TAG, "stopSpeak failed: " + t.getMessage());
+                }
                 result.success(null);
                 break;
             default:
@@ -152,30 +198,18 @@ public class AudioBridgePlugin
                     });
                 }
             });
-            // Start the recognition pipeline EXACTLY as the vendor's demo app does
-            // (AsrNlpActivity: startSpeechService() then startIsr()). startIsr()
-            // ("intelligent speech recognition") is the command — confirmed by Alpha
-            // Robotics — that makes the system service stream mic audio to
-            // OnSpeechListener.onAudio (raw PCM) and recognized text to speechInfo().
-            // Our earlier openMicro() was the wrong call, which is why onAudio never
-            // fired.
-            try {
-                CsjRobot.getInstance().getSpeech().startSpeechService();
-                CsjRobot.getInstance().getSpeech().startIsr();
-                Log.d(TAG, "startSpeechService() + startIsr() called");
-            } catch (Throwable t) {
-                Log.w(TAG, "startSpeechService/startIsr failed: " + t.getMessage());
-            }
+            // IMPORTANT: do NOT start the speech engine here. startSpeechService() +
+            // startIsr() spin up a local AIUI/CAE in OUR process that floods
+            // onAudio→sendAlsaData (DeadObjectException) and pegs the CPU at ~130%,
+            // starving the whole system (we saw com.android.phone ANRs). The mic is
+            // vendor-blocked anyway: CSJBot's OWN demo app gets empty results on this
+            // robot — the system recognizes speech but forwards result:"" to every
+            // client app (a robot/server-side config issue, not ours). The listener
+            // above stays registered PASSIVELY, so the moment CSJBot fixes result
+            // forwarding we receive speechInfo/onAudio with NO code change — just
+            // re-add startSpeechService()+startIsr() then.
             usingSdkMic = true;
-            Log.d(TAG, "mic source = CSJBot CAE (registerSpeechListener)");
-            // Emulator/no-SDK safety: if no CAE audio arrives, fall back to AudioRecord.
-            main.postDelayed(() -> {
-                if (usingSdkMic && sdkChunkCount == 0) {
-                    Log.w(TAG, "no CSJBot mic audio in 2s → falling back to AudioRecord");
-                    usingSdkMic = false;
-                    startAudioRecordMic(null);
-                }
-            }, 2000);
+            Log.d(TAG, "SDK speech listener registered (passive; engine NOT started — mic vendor-blocked)");
             return true;
         } catch (Throwable e) {
             Log.w(TAG, "CSJBot SDK mic unavailable: " + e.getMessage());
@@ -249,15 +283,9 @@ public class AudioBridgePlugin
     }
 
     private void stopMic() {
-        if (usingSdkMic) {
-            try {
-                CsjRobot.getInstance().getSpeech().stopIsr();          // counterpart to startIsr()
-                CsjRobot.getInstance().getSpeech().closeSpeechService();
-            } catch (Throwable t) {
-                Log.w(TAG, "stopIsr/closeSpeechService failed: " + t.getMessage());
-            }
-        }
-        usingSdkMic = false; // stop forwarding CSJBot CAE audio
+        // We never start the speech engine (see startSdkMic), so there's nothing to
+        // stop here — and closeSpeechService() can crash the iFlytek AIUI on teardown.
+        usingSdkMic = false; // stop forwarding any CAE audio
         micRunning = false;
         try {
             if (audioRecord != null) {

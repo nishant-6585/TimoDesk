@@ -30,13 +30,13 @@ public class TimoApplication extends MultiDexApplication {
                 // Step 2: Mandatory delay before configuration
                 Thread.sleep(1500);
 
-                // Steps 3–6: Configure before init
-                // Do NOT run our own AIUI/CAE. The robot's system speech service
-                // (com.csjbot.robotsdk.ten) already owns the mic and does cloud ASR;
-                // a second AIUI in our process starves it (observed: vad_bos timeout /
-                // silence). The stock reception app never inits a local AIUI either —
-                // it just consumes recognized TEXT via OnSpeechListener.speechInfo,
-                // forwarded over the bridge. We do the same.
+                // Configure BEFORE init — mirrors the vendor demo's MyApplication
+                // exactly (enableAsr(false) + enableSlam + setRobotType +
+                // setPersonCheckType all before init). Calling setPersonCheckType
+                // AFTER init (as our PersonDetectPlugin did) reconfigured the
+                // perception engine at runtime and raced the iFlytek AIUI teardown
+                // (libaiui destroyAgent → "pthread_mutex_lock on a destroyed mutex"),
+                // crashing the app on launch. Doing it here, pre-init, matches the demo.
                 CsjRobot.enableAsr(false);
                 CsjRobot.enableFace(false);
                 CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement
@@ -46,6 +46,10 @@ public class TimoApplication extends MultiDexApplication {
                 if (!BuildConfig.SDK_IP.equals("127.0.0.1")) {
                     CsjRobot.setIpAndrPort(BuildConfig.SDK_IP, BuildConfig.SDK_PORT);
                 }
+
+                // Person-detection sensors (laser + RGBD + ultrasonic), pre-init like
+                // the demo. PersonDetectPlugin only registers the listener now.
+                CsjRobot.getInstance().setPersonCheckType(true, true, true);
 
                 // Step 7: Init
                 CsjRobot.getInstance().init(TimoApplication.this);

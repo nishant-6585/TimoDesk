@@ -30,9 +30,9 @@ public class PersonDetectPlugin implements EventChannel.StreamHandler {
 
     public void register() {
         try {
-            // Enable all three presence sensors (laser + RGBD + ultrasonic), as the
-            // vendor demo's MyApplication does.
-            CsjRobot.getInstance().setPersonCheckType(true, true, true);
+            // Sensors (laser + RGBD + ultrasonic) are enabled pre-init in
+            // TimoApplication (matching the demo). Here we only register the listener
+            // — calling setPersonCheckType after init raced the AIUI teardown.
             CsjRobot.getInstance().registerDetectPersonListener(new OnDetectPersonListener() {
                 @Override
                 public void response(int state) {

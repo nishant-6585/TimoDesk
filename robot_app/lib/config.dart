@@ -43,6 +43,11 @@ class RobotConfig {
   static String elevenLabsApiKey = defaultElevenLabsApiKey;
   static String elevenLabsAgentId = defaultElevenLabsAgentId;
 
+  // The agent's voice (from the ElevenLabs agent config) — used for dashboard
+  // action-tile TTS so Timo speaks in the SAME voice as the face screen.
+  static const String defaultElevenLabsVoiceId = '6AUOG2nbfr0yFEeI0784';
+  static String elevenLabsVoiceId = defaultElevenLabsVoiceId;
+
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;

@@ -56,6 +56,20 @@ class AudioBridge {
     } catch (_) {}
   }
 
+  /// Speak a phrase aloud via the CSJBot built-in TTS (synthesis works even though
+  /// mic INPUT is vendor-blocked). No-op off the robot.
+  Future<void> speak(String text) async {
+    try {
+      await _method.invokeMethod('speak', {'text': text});
+    } catch (_) {}
+  }
+
+  Future<void> stopSpeak() async {
+    try {
+      await _method.invokeMethod('stopSpeak');
+    } catch (_) {}
+  }
+
   /// Playback amplitude (0..1) of each chunk AS IT PLAYS through the speaker —
   /// drives lip-sync in sync with what's actually heard. Emits -1 when playback
   /// drains (speech finished), so the face can return to listening on time.
