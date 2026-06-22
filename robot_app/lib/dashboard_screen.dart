@@ -84,10 +84,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   bool _toastVisible = false;
   Timer? _toastTimer;
 
-  // Transient chassis-direction hint → drives the badge so staff get feedback.
-  String? _chassisHint;
-  Timer? _chassisHintTimer;
-
   // Speed 30–80 (% of max), mirrors the provider's 0.3–0.8.
   double _speed = 50;
 
@@ -120,7 +116,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _seq?.cancel();
     _intro?.cancel();
     _toastTimer?.cancel();
-    _chassisHintTimer?.cancel();
     _voiceSub?.cancel();
     _playbackSub?.cancel();
     _repaint.dispose();
@@ -690,17 +685,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  // NOTE: the providers expose no directional drive/nudge (head: reset only;
-  // chassis: start/stop/setSpeed/e-stop). Directional pad buttons give visual
-  // feedback (badge + face) like the prototype; real driving needs native drive
-  // methods on the Chassis/Head plugins — a follow-up. CTR/STOP/Speed/Wave/Reset/
-  // E-Stop are wired to the real services control_screen.dart uses.
+  // All controls are wired to real SDK calls: Head ▲▼◀▶ → nudge (TimoActionCustomerCtrl),
+  // CTR → resetHead; Chassis ▲▼◀▶ → hold-to-drive (moveForward/moveBySerial + moveSerial
+  // heartbeat), STOP/E-Stop → emergencyStop; Speed → setSpeed; Arm Wave/Reset → wave/reset.
+  // Badges reflect real motor/arm state (providers update from the plugin event channels).
 
   Widget _headBlock() {
     return Consumer(builder: (_, ref, __) {
       final h = ref.watch(headProvider);
       final n = ref.read(headProvider.notifier);
-      void nudge() {
+      void onNudge(String dir) {
+        n.nudge(dir); // real head pan/tilt (TimoActionCustomerCtrl)
         _setKind(FaceStateKind.attentive);
         _revert?.cancel();
         _revert = Timer(const Duration(milliseconds: 600), () {
@@ -712,11 +707,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         'Head',
         h.isRunning ? _Badge.active('ACTIVE') : _Badge.idle('IDLE'),
         _dpad([
-          null, _DpadBtn(Icons.keyboard_arrow_up_rounded, onTap: nudge), null,
-          _DpadBtn(Icons.keyboard_arrow_left_rounded, onTap: nudge),
-          _DpadBtn.center('CTR', onTap: () { n.resetHead(); nudge(); }),
-          _DpadBtn(Icons.keyboard_arrow_right_rounded, onTap: nudge),
-          null, _DpadBtn(Icons.keyboard_arrow_down_rounded, onTap: nudge), null,
+          null, _DpadBtn(Icons.keyboard_arrow_up_rounded, onTap: () => onNudge('up')), null,
+          _DpadBtn(Icons.keyboard_arrow_left_rounded, onTap: () => onNudge('left')),
+          _DpadBtn.center('CTR', onTap: n.resetHead),
+          _DpadBtn(Icons.keyboard_arrow_right_rounded, onTap: () => onNudge('right')),
+          null, _DpadBtn(Icons.keyboard_arrow_down_rounded, onTap: () => onNudge('down')), null,
         ]),
       );
     });
@@ -726,27 +721,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return Consumer(builder: (_, ref, __) {
       final c = ref.watch(chassisProvider);
       final n = ref.read(chassisProvider.notifier);
-      final movingDir = _chassisHint ?? (c.isMoving ? c.direction : null);
+      // Badge reflects real motor state (provider updates from the plugin's events).
+      final movingDir = c.isMoving ? c.direction : null;
 
-      void drive(String dir) {
+      void onDrive(String dir) {
+        n.drive(dir); // real hold-to-drive (heartbeat moveSerial until stopMove)
         _setKind(FaceStateKind.attentive);
-        setState(() => _chassisHint = dir);
-        _chassisHintTimer?.cancel();
-        _chassisHintTimer = Timer(const Duration(milliseconds: 1400), () {
-          if (mounted) setState(() => _chassisHint = null);
-        });
       }
 
       return _ctrlBlock(
         'Chassis',
-        movingDir != null ? _Badge.active('MOVING · ${movingDir.toUpperCase()}') : _Badge.idle('STOPPED'),
+        movingDir != null && movingDir != 'none'
+            ? _Badge.active('MOVING · ${movingDir.toUpperCase()}')
+            : _Badge.idle('STOPPED'),
         Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           _dpad([
-            null, _DpadBtn(Icons.keyboard_arrow_up_rounded, onTap: () => drive('forward')), null,
-            _DpadBtn(Icons.keyboard_arrow_left_rounded, onTap: () => drive('left')),
-            _DpadBtn.stop(onTap: () { n.emergencyStop(); setState(() => _chassisHint = null); }),
-            _DpadBtn(Icons.keyboard_arrow_right_rounded, onTap: () => drive('right')),
-            null, _DpadBtn(Icons.keyboard_arrow_down_rounded, onTap: () => drive('back')), null,
+            null,
+            _DpadBtn(Icons.keyboard_arrow_up_rounded,
+                onPressStart: () => onDrive('forward'), onPressEnd: n.stopMove),
+            null,
+            _DpadBtn(Icons.keyboard_arrow_left_rounded,
+                onPressStart: () => onDrive('left'), onPressEnd: n.stopMove),
+            _DpadBtn.stop(onTap: n.emergencyStop),
+            _DpadBtn(Icons.keyboard_arrow_right_rounded,
+                onPressStart: () => onDrive('right'), onPressEnd: n.stopMove),
+            null,
+            _DpadBtn(Icons.keyboard_arrow_down_rounded,
+                onPressStart: () => onDrive('back'), onPressEnd: n.stopMove),
+            null,
           ]),
           const SizedBox(height: 8),
           _speedRow(n),
@@ -836,8 +838,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             n.emergencyStop();
+            n.stopMove();
             ref.read(armProvider.notifier).stopWave();
-            setState(() => _chassisHint = null);
             _setKind(FaceStateKind.attentive);
           },
           child: Container(
@@ -1090,20 +1092,26 @@ class _Badge extends StatelessWidget {
 class _DpadBtn extends StatelessWidget {
   final IconData? icon;
   final String? text;
-  final VoidCallback onTap;
+  final VoidCallback? onTap; // discrete tap (head nudge, CTR, STOP)
+  final VoidCallback? onPressStart; // hold-to-drive (chassis): press
+  final VoidCallback? onPressEnd; // hold-to-drive: release/cancel
   final bool stop;
   final bool center;
-  const _DpadBtn(this.icon, {required this.onTap})
+  const _DpadBtn(this.icon, {this.onTap, this.onPressStart, this.onPressEnd})
       : text = null,
         stop = false,
         center = false;
   const _DpadBtn.center(this.text, {required this.onTap})
       : icon = null,
+        onPressStart = null,
+        onPressEnd = null,
         stop = false,
         center = true;
   const _DpadBtn.stop({required this.onTap})
       : icon = null,
         text = 'STOP',
+        onPressStart = null,
+        onPressEnd = null,
         stop = true,
         center = false;
 
@@ -1112,24 +1120,30 @@ class _DpadBtn extends StatelessWidget {
     final Color border = stop ? const Color(0x40FF5247) : _line2;
     final Color fg = stop ? _red : (center ? _muted2 : _muted);
     final Color bg = stop ? const Color(0x14FF5247) : const Color(0xFF161616);
+    final Widget visual = Container(
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: icon != null
+          ? Icon(icon, size: 18, color: fg)
+          : Text(text!,
+              style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+    );
+    // Hold-to-drive (chassis): drive on press, stop on release/cancel.
+    if (onPressStart != null) {
+      return GestureDetector(
+        onTapDown: (_) => onPressStart!(),
+        onTapUp: (_) => onPressEnd?.call(),
+        onTapCancel: () => onPressEnd?.call(),
+        child: visual,
+      );
+    }
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border.all(color: border),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          alignment: Alignment.center,
-          child: icon != null
-              ? Icon(icon, size: 18, color: fg)
-              : Text(text!,
-                  style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-        ),
-      ),
+      child: InkWell(borderRadius: BorderRadius.circular(10), onTap: onTap, child: visual),
     );
   }
 }

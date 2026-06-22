@@ -60,6 +60,21 @@ public class HeadControlPlugin implements MethodChannel.MethodCallHandler, Event
                 resetHead();
                 result.success(buildStatus());
                 break;
+            case "nudgeHead": {
+                // Discrete head nudge from the on-robot dashboard d-pad: step the
+                // current pan/tilt and re-issue TimoActionCustomerCtrl. headLR/headUD
+                // are 0–100 (50 = center); higher UD = up, higher LR = right.
+                String dir = (String) call.argument("dir");
+                final int step = 12;
+                int lr = currentHeadLR, ud = currentHeadUD;
+                if ("left".equals(dir)) lr -= step;
+                else if ("right".equals(dir)) lr += step;
+                else if ("up".equals(dir)) ud += step;
+                else if ("down".equals(dir)) ud -= step;
+                executeHeadCommand(lr, ud);
+                result.success(buildStatus());
+                break;
+            }
             case "getHeadStatus":
                 result.success(buildStatus());
                 break;

@@ -81,6 +81,17 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 setSpeed(speed);
                 result.success(buildStatus());
                 break;
+            case "drive":
+                // Hold-to-drive from the on-robot dashboard d-pad. Same path the
+                // WebSocket clients use (SLAM moveForward/… when ready, else
+                // moveBySerial). Held by a 30ms moveSerial heartbeat until stopMove.
+                executeMove((String) call.argument("dir"));
+                result.success(buildStatus());
+                break;
+            case "stopMove":
+                cancelMove();
+                result.success(buildStatus());
+                break;
             case "getChassisStatus":
                 result.success(buildStatus());
                 break;

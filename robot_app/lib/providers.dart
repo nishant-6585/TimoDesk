@@ -245,6 +245,14 @@ class HeadNotifier extends StateNotifier<HeadState> {
     } on PlatformException catch (e) { debugPrint('resetHead: $e'); }
   }
 
+  /// Discrete head nudge from the dashboard d-pad: 'up' | 'down' | 'left' | 'right'.
+  Future<void> nudge(String dir) async {
+    try {
+      final res = await _headMethodCh.invokeMethod<Map>('nudgeHead', {'dir': dir});
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('nudgeHead: $e'); }
+  }
+
   void _applyStatus(Map<dynamic, dynamic> m) {
     state = state.copyWith(
       isRunning: m['isRunning'] as bool?,
@@ -307,6 +315,22 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
       final res = await _chassisMethodCh.invokeMethod<Map>('setSpeed', {'speed': speed});
       if (res != null) _applyStatus(res);
     } on PlatformException catch (e) { debugPrint('setSpeed: $e'); }
+  }
+
+  /// Hold-to-drive from the dashboard d-pad: 'forward' | 'back' | 'left' | 'right'.
+  /// Pair each [drive] with a [stopMove] on release.
+  Future<void> drive(String dir) async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('drive', {'dir': dir});
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('drive: $e'); }
+  }
+
+  Future<void> stopMove() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('stopMove');
+      if (res != null) _applyStatus(res);
+    } on PlatformException catch (e) { debugPrint('stopMove: $e'); }
   }
 
   void _applyStatus(Map<dynamic, dynamic> m) {
