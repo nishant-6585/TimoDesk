@@ -46,14 +46,22 @@ class ElevenLabsTts {
         await resp.drain<void>();
         return false;
       }
-      // Stream raw PCM straight to the speaker (AudioTrack buffers it).
-      var played = false;
+      // Collect the full PCM, then feed it to the speaker in EVEN-length chunks.
+      // The HTTP stream splits at arbitrary byte counts; feeding an odd-length
+      // buffer to the 16-bit AudioTrack misaligns every following sample → clicks
+      // / static. Buffering and only writing 2-byte-aligned chunks plays clean.
+      final acc = BytesBuilder(copy: false);
       await for (final chunk in resp) {
-        if (chunk.isEmpty) continue;
-        await audio.playChunk(Uint8List.fromList(chunk));
-        played = true;
+        acc.add(chunk);
       }
-      return played;
+      final pcm = acc.takeBytes();
+      if (pcm.isEmpty) return false;
+      const step = 6400; // 200 ms @ 16 kHz mono 16-bit (even)
+      for (var i = 0; i < pcm.length; i += step) {
+        final end = (i + step < pcm.length) ? i + step : pcm.length;
+        await audio.playChunk(Uint8List.sublistView(pcm, i, end));
+      }
+      return true;
     } catch (e) {
       if (kDebugMode) debugPrint('ElevenLabsTts failed: $e');
       return false;
