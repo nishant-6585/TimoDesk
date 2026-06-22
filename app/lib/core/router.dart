@@ -32,12 +32,19 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
+final _goRouterRefreshStreamProvider = Provider<GoRouterRefreshStream>((ref) {
+  final refreshStream = GoRouterRefreshStream(
+    Supabase.instance.client.auth.onAuthStateChange,
+  );
+  ref.onDispose(refreshStream.dispose);
+  return refreshStream;
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
+  final refreshStream = ref.watch(_goRouterRefreshStreamProvider);
+  
   return GoRouter(
-    // Fix 1: refreshListenable re-evaluates redirect when auth state changes
-    refreshListenable: GoRouterRefreshStream(
-      Supabase.instance.client.auth.onAuthStateChange,
-    ),
+    refreshListenable: refreshStream,
     redirect: (context, state) {
       final isLoggedIn = _isLoggedIn();
       final isGoingToLogin = state.matchedLocation == '/login';
@@ -87,7 +94,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'gallery_detail',
         builder: (context, state) {
           final captureId = state.pathParameters['captureId']!;
-          return GalleryScreen();
+          return GalleryScreen(captureId: captureId);
         },
       ),
       GoRoute(
@@ -115,6 +122,10 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 bool _isLoggedIn() {
-  final session = Supabase.instance.client.auth.currentSession;
-  return session != null && session.accessToken.isNotEmpty;
+  try {
+    final session = Supabase.instance.client.auth.currentSession;
+    return session != null && session.accessToken.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
 }

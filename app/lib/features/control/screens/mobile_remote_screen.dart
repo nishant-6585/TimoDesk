@@ -26,6 +26,7 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   bool _streaming = false;
   String _driveStatus = 'IDLE';
   DateTime _lastDrive = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastHead = DateTime.fromMillisecondsSinceEpoch(0);
 
   // ── Intents (mirror ControlScreen; throttled drive) ────────────────────────
   void _handleDrive(double x, double y, double mag) {
@@ -60,6 +61,11 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   }
 
   void _handleHead(double x, double y, double mag) {
+    // Throttle head intents to joystickThrottleMs (same as drive).
+    final now = DateTime.now();
+    if (now.difference(_lastHead) < joystickThrottleMs) return;
+    _lastHead = now;
+
     final lr = ((x + 1) / 2 * 100).clamp(0, 100).toInt();
     final ud = ((y + 1) / 2 * 100).clamp(0, 100).toInt();
     ref.read(spineProvider.notifier).sendIntent({'intent': 'head', 'lr': lr, 'ud': ud});
@@ -120,6 +126,11 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }
 
