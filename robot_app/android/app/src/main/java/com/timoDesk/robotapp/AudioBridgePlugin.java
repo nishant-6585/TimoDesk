@@ -152,20 +152,19 @@ public class AudioBridgePlugin
                     });
                 }
             });
-            // CRITICAL: actually START the speech/audio pipeline so the vendor
-            // service begins pushing mic audio to us (the demo app does this; just
-            // registering the listener is not enough).
+            // Start the recognition pipeline EXACTLY as the vendor's demo app does
+            // (AsrNlpActivity: startSpeechService() then startIsr()). startIsr()
+            // ("intelligent speech recognition") is the command — confirmed by Alpha
+            // Robotics — that makes the system service stream mic audio to
+            // OnSpeechListener.onAudio (raw PCM) and recognized text to speechInfo().
+            // Our earlier openMicro() was the wrong call, which is why onAudio never
+            // fired.
             try {
                 CsjRobot.getInstance().getSpeech().startSpeechService();
-                // ACQUIRE the mic resource — the missing step. Per the UBTech/Alpha
-                // SDK spec a third-party app must claim the mic after voice init
-                // (speech_SetMIC(true)); CsjRobot's equivalent is openMicro()
-                // (SPEECH_ISR_MICRO_REQ = "manually wake the robot's microphone").
-                // Without this the vendor never routes mic audio to our listener.
-                CsjRobot.getInstance().getSpeech().openMicro();
-                Log.d(TAG, "startSpeechService() + openMicro() called");
+                CsjRobot.getInstance().getSpeech().startIsr();
+                Log.d(TAG, "startSpeechService() + startIsr() called");
             } catch (Throwable t) {
-                Log.w(TAG, "startSpeechService/openMicro failed: " + t.getMessage());
+                Log.w(TAG, "startSpeechService/startIsr failed: " + t.getMessage());
             }
             usingSdkMic = true;
             Log.d(TAG, "mic source = CSJBot CAE (registerSpeechListener)");
@@ -252,9 +251,10 @@ public class AudioBridgePlugin
     private void stopMic() {
         if (usingSdkMic) {
             try {
+                CsjRobot.getInstance().getSpeech().stopIsr();          // counterpart to startIsr()
                 CsjRobot.getInstance().getSpeech().closeSpeechService();
             } catch (Throwable t) {
-                Log.w(TAG, "closeSpeechService failed: " + t.getMessage());
+                Log.w(TAG, "stopIsr/closeSpeechService failed: " + t.getMessage());
             }
         }
         usingSdkMic = false; // stop forwarding CSJBot CAE audio

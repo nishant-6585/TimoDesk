@@ -42,5 +42,10 @@
         <package android:name="com.google.android.tts" />
         <package android:name="com.android.tts" />
         <package android:name="com.csjbot.robotsdk.ten" />
+        <!-- Required on Android 11+ so the SDK can resolve/start the robot speech
+             service by action (matches the vendor demo's manifest). -->
+        <intent>
+            <action android:name="com.csjbot.robotsdkservice.startservice" />
+        </intent>
     </queries>
 </manifest>

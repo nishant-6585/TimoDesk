@@ -29,6 +29,11 @@ public class WakeWordPlugin implements EventChannel.StreamHandler {
 
     private static final String TAG = "TimoDesk.Wake";
 
+    /** On wake word, rotate the robot to face the speaker (sound-source direction),
+     *  matching the vendor demo (AsrNlpActivity). Set false if chassis rotation is
+     *  unwanted at a fixed reception desk. */
+    private static final boolean TURN_TOWARD_SPEAKER = true;
+
     private final Handler main = new Handler(Looper.getMainLooper());
     private EventChannel.EventSink sink;
 
@@ -37,6 +42,17 @@ public class WakeWordPlugin implements EventChannel.StreamHandler {
             CsjRobot.getInstance().registerWakeupListener(new OnWakeupListener() {
                 @Override
                 public void response(int angle) {
+                    Log.d(TAG, "wakeup, sound-source angle=" + angle);
+                    // Turn toward whoever spoke (the demo's signature behavior). The
+                    // angle is 0–360°; take the shortest rotation. Best-effort.
+                    if (TURN_TOWARD_SPEAKER) {
+                        try {
+                            int a = angle > 180 ? -(360 - angle) : angle;
+                            CsjRobot.getInstance().getAction().moveAngle(a, null);
+                        } catch (Throwable t) {
+                            Log.w(TAG, "turn-toward-speaker failed: " + t.getMessage());
+                        }
+                    }
                     // SDK thread → marshal to main for the EventChannel sink.
                     main.post(() -> {
                         if (sink != null) sink.success("wakeup");
