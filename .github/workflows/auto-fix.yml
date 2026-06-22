@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Parse issues
         run: |
@@ -104,7 +104,7 @@ jobs:
 
       - name: Create fix branch and PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           BRANCH="auto-fix/devConsole-$(date +%Y%m%d-%H%M%S)"
           ISSUE_COUNT=$(jq 'length' /tmp/issues.json)
