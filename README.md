@@ -1,8 +1,8 @@
-# TimoDesk
+# Mikee
 
-> Smart reception app for the **Timo robot** (Alpha Robotics / CSJBot platform). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously — greet visitors, recognize staff, notify hosts, and be driven/monitored remotely.
+> Smart reception app for the **Mikee robot** (Alpha Robotics / CSJBot platform). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously — greet visitors, recognize staff, notify hosts, and be driven/monitored remotely.
 
-TimoDesk turns a CSJBot service robot into a reception host: a live camera + drive controls, staff face enrollment & recognition, visitor check-in with host notifications, and an animated personality face on the robot's chest screen.
+Mikee turns a CSJBot service robot into a reception host: a live camera + drive controls, staff face enrollment & recognition, visitor check-in with host notifications, and an animated personality face on the robot's chest screen.
 
 ---
 
@@ -17,7 +17,7 @@ Three layers, with a single safety broker in the middle. **Clients never talk to
 | **Client** | Flutter admin app (web + iOS + Android, with an adaptive phone remote) + browser/mobile camera viewers | `app/` · `viewer_web/` · `viewer_mobile/` |
 
 ```
-robot_app/          Flutter on the Timo chest screen — MJPEG camera (:8080), battery (:8090),
+robot_app/          Flutter on the Mikee chest screen — MJPEG camera (:8080), battery (:8090),
                     motor-control WS receivers (:8081 head / :8082 chassis / :8083 arm),
                     staff enrollment, and the ambient "personality face" shell.
 spine/              ★ TypeScript broker (:4000) — the central safety + routing layer.
@@ -109,7 +109,7 @@ Open the chest-screen dashboard → camera tile → **START STREAM**; a stream U
 
 The mock camera (cycling RGB frames) lives in one place:
 
-**`robot_app/android/app/src/main/java/com/timoDesk/robotapp/CameraStreamPlugin.java`**
+**`robot_app/android/app/src/main/java/com/mikee/robotapp/CameraStreamPlugin.java`**
 
 Find `startCamera()` and the integration comment block:
 
@@ -146,7 +146,7 @@ The MJPEG server, Flutter UI, and viewers stay unchanged. (Sensor/motor bridges 
 | `MISSION_CONTROL_BUILD.md` | Mission Control dashboard build. |
 | `robot_app/docs/CHEST_UX_REDESIGN.md` | Chest-screen ambient-face + dashboard design (#89). |
 | `robot_app/docs/SENSOR_BRIDGE.md` | Native sensor-bridge reference (not yet deployed). |
-| `docs/FIREBASE_SETUP.md` | Push-notification (FCM) setup — project `timodesk`, remaining console steps. |
+| `docs/FIREBASE_SETUP.md` | Push-notification (FCM) setup — project `mikee`, remaining console steps. |
 | `ISSUE_EMAIL_RATE_LIMIT.md` | Known dev blocker (Supabase email rate limit). |
 | `supabase/migrations/` | Schema (8 migrations) — RLS, pgvector, retention. |
 
@@ -160,4 +160,4 @@ The MJPEG server, Flutter UI, and viewers stay unchanged. (Sensor/motor bridges 
 
 ---
 
-*Timo is xboom's first product — a reception-robot MVP. xboom builds land, air, and water robots for enterprise.*
+*Mikee is xboom's first product — a reception-robot MVP. xboom builds land, air, and water robots for enterprise.*

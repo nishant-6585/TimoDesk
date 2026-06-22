@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:timo_admin/services/spine/spine_state.dart';
+import 'package:mikee_admin/services/spine/spine_state.dart';
 
 void main() {
   group('RobotStatus.fromJson', () {

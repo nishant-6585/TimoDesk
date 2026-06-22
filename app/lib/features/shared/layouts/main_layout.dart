@@ -13,7 +13,7 @@ class MainLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.of(context).size.width < 900;
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Column(children: [
         Expanded(
           child: Row(children: [
@@ -37,7 +37,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 220,
-      decoration: BoxDecoration(color: TimoColors.surface, border: const Border(right: BorderSide(color: TimoColors.border))),
+      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
       child: Column(children: [
         Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
           _NavItem('Dashboard', Icons.space_dashboard, active == 'dashboard', () => onNav('dashboard')),
@@ -64,12 +64,12 @@ class _NavItem extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
         child: Row(children: [
-          if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))),
-          Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary),
+          if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
+          Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary),
           const SizedBox(width: 12),
-          Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? TimoColors.primary : TimoColors.textSecondary))),
+          Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary))),
         ]),
       ))),
     );

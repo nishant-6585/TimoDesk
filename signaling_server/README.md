@@ -1,12 +1,12 @@
-# TimoDesk Signaling Server
+# Mikee Signaling Server
 
 Minimal WebSocket signaling server for WebRTC peer connection setup between the
-Timo robot and browser/mobile viewers. Runs on your dev laptop on the same WiFi.
+Mikee robot and browser/mobile viewers. Runs on your dev laptop on the same WiFi.
 
 ## Start
 
 ```bash
-cd timoDesk/signaling_server
+cd mikee/signaling_server
 npm install
 node server.js
 ```

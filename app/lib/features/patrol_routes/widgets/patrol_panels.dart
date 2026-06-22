@@ -25,14 +25,14 @@ class RoutesPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]),
-        border: Border.all(color: TimoColors.border),
+        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ROUTES', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+          Text('ROUTES', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
           const SizedBox(height: 12),
           SizedBox(
             height: 44,
@@ -42,7 +42,7 @@ class RoutesPanel extends StatelessWidget {
               icon: const Icon(Icons.add, size: 18),
               label: Text('Add Route', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: TimoColors.primary,
+                backgroundColor: MikeeColors.primary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
@@ -105,16 +105,16 @@ class _RouteItemState extends State<_RouteItem> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: widget.isSelected ? TimoColors.primary.withOpacity(0.1) : Colors.transparent,
+              color: widget.isSelected ? MikeeColors.primary.withOpacity(0.1) : Colors.transparent,
               border: Border.all(
-                color: widget.isSelected || _hovering ? TimoColors.primary.withOpacity(0.5) : TimoColors.border,
+                color: widget.isSelected || _hovering ? MikeeColors.primary.withOpacity(0.5) : MikeeColors.border,
               ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
                 if (widget.isSelected)
-                  Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))),
+                  Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +128,7 @@ class _RouteItemState extends State<_RouteItem> {
                       const SizedBox(height: 2),
                       Text(
                         '${widget.route.waypoints.length} wp · ${widget.route.activeFrom}–${widget.route.activeTo}',
-                        style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.textSecondary),
+                        style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textSecondary),
                       ),
                     ],
                   ),
@@ -137,7 +137,7 @@ class _RouteItemState extends State<_RouteItem> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: widget.route.enabled ? TimoColors.success.withOpacity(0.1) : TimoColors.textMuted.withOpacity(0.1),
+                    color: widget.route.enabled ? MikeeColors.success.withOpacity(0.1) : MikeeColors.textMuted.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
@@ -148,13 +148,13 @@ class _RouteItemState extends State<_RouteItem> {
                         height: 6,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: widget.route.enabled ? TimoColors.success : TimoColors.textMuted,
+                          color: widget.route.enabled ? MikeeColors.success : MikeeColors.textMuted,
                         ),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         widget.route.enabled ? 'Active' : 'Inactive',
-                        style: GoogleFonts.inter(fontSize: 10, color: widget.route.enabled ? TimoColors.success : TimoColors.textMuted),
+                        style: GoogleFonts.inter(fontSize: 10, color: widget.route.enabled ? MikeeColors.success : MikeeColors.textMuted),
                       ),
                     ],
                   ),
@@ -167,7 +167,7 @@ class _RouteItemState extends State<_RouteItem> {
                       onTap: widget.onDelete,
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.delete_outline, size: 16, color: TimoColors.error),
+                        child: Icon(Icons.delete_outline, size: 16, color: MikeeColors.error),
                       ),
                     ),
                   ),
@@ -235,27 +235,27 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]),
-        border: Border.all(color: TimoColors.border),
+        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ROUTE PROPERTIES', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+          Text('ROUTE PROPERTIES', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
           const SizedBox(height: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Route Name', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary, height: 1.0)),
+              Text('Route Name', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary, height: 1.0)),
               const SizedBox(height: 6),
               TextField(
                 controller: _nameController,
                 style: GoogleFonts.jetBrainsMono(fontSize: 12),
                 decoration: InputDecoration(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: TimoColors.primary.withOpacity(0.6), width: 1.5)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: MikeeColors.primary.withOpacity(0.6), width: 1.5)),
                   filled: true,
                   fillColor: const Color(0xFF141414),
                 ),
@@ -269,7 +269,7 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('From', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: TimoColors.textSecondary, height: 1.0)),
+                    Text('From', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: MikeeColors.textSecondary, height: 1.0)),
                     const SizedBox(height: 6),
                     SizedBox(
                       height: 40,
@@ -284,7 +284,7 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
                         decoration: InputDecoration(
                           hintText: _from,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
                           filled: true,
                           fillColor: const Color(0xFF141414),
                         ),
@@ -299,7 +299,7 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('To', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: TimoColors.textSecondary, height: 1.0)),
+                    Text('To', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: MikeeColors.textSecondary, height: 1.0)),
                     const SizedBox(height: 6),
                     SizedBox(
                       height: 40,
@@ -314,7 +314,7 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
                         decoration: InputDecoration(
                           hintText: _to,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
                           filled: true,
                           fillColor: const Color(0xFF141414),
                         ),
@@ -334,16 +334,16 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
               Switch(
                 value: _enabled,
                 onChanged: (v) => setState(() => _enabled = v),
-                activeColor: TimoColors.primary,
+                activeColor: MikeeColors.primary,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Text('Est. loop time', style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary)),
+          Text('Est. loop time', style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary)),
           const SizedBox(height: 4),
           Text(
             _estimateLoopTime(),
-            style: GoogleFonts.jetBrainsMono(fontSize: 12, color: TimoColors.textMuted),
+            style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textMuted),
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -352,7 +352,7 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
             child: ElevatedButton(
               onPressed: _saveChanges,
               style: ElevatedButton.styleFrom(
-                backgroundColor: TimoColors.primary,
+                backgroundColor: MikeeColors.primary,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               child: Text('Save Route', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)),
@@ -365,10 +365,10 @@ class _RoutePropertiesState extends State<RoutePropertiesPanel> {
             child: OutlinedButton(
               onPressed: widget.onDelete,
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: TimoColors.error),
+                side: const BorderSide(color: MikeeColors.error),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text('Delete Route', style: GoogleFonts.inter(fontSize: 12, color: TimoColors.error)),
+              child: Text('Delete Route', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.error)),
             ),
           ),
         ],
@@ -441,7 +441,7 @@ class _CompassRoseState extends State<CompassRose> {
         height: 116,
         decoration: BoxDecoration(
           color: const Color(0xFF141414),
-          border: Border.all(color: TimoColors.border),
+          border: Border.all(color: MikeeColors.border),
           borderRadius: BorderRadius.circular(12),
         ),
         child: CustomPaint(
@@ -596,8 +596,8 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]),
-        border: Border.all(color: TimoColors.border),
+        gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -608,7 +608,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
               Container(
                 width: 24,
                 height: 24,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.primary),
+                decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.primary),
                 child: Center(
                   child: Text('${widget.waypoint.sequence}', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
@@ -619,7 +619,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
             ],
           ),
           const SizedBox(height: 16),
-          Text('POSITION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary)),
+          Text('POSITION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -635,10 +635,10 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
           if (_isXOutOfBounds() || _isYOutOfBounds())
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('0–10 m (X) · 0–7.5 m (Y)', style: GoogleFonts.inter(fontSize: 10, color: TimoColors.error)),
+              child: Text('0–10 m (X) · 0–7.5 m (Y)', style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.error)),
             ),
           const SizedBox(height: 12),
-          Text('HEADING', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary)),
+          Text('HEADING', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -648,7 +648,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Heading', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: TimoColors.textSecondary, height: 1.0)),
+                    Text('Heading', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: MikeeColors.textSecondary, height: 1.0)),
                     const SizedBox(height: 6),
                     TextField(
                       controller: _headingController,
@@ -657,21 +657,21 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
                       decoration: InputDecoration(
                         suffixText: '°',
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
                         filled: true,
                         fillColor: const Color(0xFF141414),
                       ),
                       style: GoogleFonts.jetBrainsMono(fontSize: 12),
                     ),
                     const SizedBox(height: 4),
-                    Text('0° = North (up)', style: GoogleFonts.inter(fontSize: 9, color: TimoColors.textMuted)),
+                    Text('0° = North (up)', style: GoogleFonts.inter(fontSize: 9, color: MikeeColors.textMuted)),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Text('DWELL TIME', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary)),
+          Text('DWELL TIME', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -681,7 +681,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          Text('NARRATION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary)),
+          Text('NARRATION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
           const SizedBox(height: 8),
           TextField(
             controller: _narrationController,
@@ -689,7 +689,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
             decoration: InputDecoration(
               hintText: 'Spoken line at this stop…',
               contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
               filled: true,
               fillColor: const Color(0xFF141414),
             ),
@@ -706,7 +706,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
                 height: 40,
                 child: IconButton(
                   icon: const Icon(Icons.delete_outline, size: 16),
-                  color: TimoColors.error,
+                  color: MikeeColors.error,
                   onPressed: widget.onDelete,
                 ),
               ),
@@ -722,7 +722,7 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
                 widget.onClose();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: TimoColors.primary,
+                backgroundColor: MikeeColors.primary,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               child: Text('Done', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)),
@@ -737,14 +737,14 @@ class _WaypointEditorPanelState extends State<WaypointEditorPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: TimoColors.textSecondary, height: 1.0)),
+        Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: MikeeColors.textSecondary, height: 1.0)),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: error ? TimoColors.error : TimoColors.border)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: error ? MikeeColors.error : MikeeColors.border)),
             filled: true,
             fillColor: const Color(0xFF141414),
           ),

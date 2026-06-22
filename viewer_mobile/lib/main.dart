@@ -19,7 +19,7 @@ class _App extends StatelessWidget {
   const _App();
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'TimoDesk Viewer',
+    title: 'Mikee Viewer',
     themeMode: ThemeMode.dark,
     darkTheme: ThemeData(
       useMaterial3: true,
@@ -125,7 +125,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('TimoDesk Viewer'),
+        title: const Text('Mikee Viewer'),
         backgroundColor: const Color(0xFF1A1A1A), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(20),

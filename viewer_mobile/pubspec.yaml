@@ -1,5 +1,5 @@
 name: viewer_mobile
-description: TimoDesk — Mobile MJPEG + WebRTC stream viewer.
+description: Mikee — Mobile MJPEG + WebRTC stream viewer.
 publish_to: 'none'
 version: 1.0.0+1
 

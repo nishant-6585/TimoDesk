@@ -31,7 +31,7 @@ class DeviceWebcamView extends StatelessWidget {
               'Use the web app to enroll from a laptop webcam,\n'
               'or use the robot chest screen to enroll here.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(color: TimoColors.textSecondary, fontSize: 12),
+              style: GoogleFonts.inter(color: MikeeColors.textSecondary, fontSize: 12),
             ),
           ],
         ),

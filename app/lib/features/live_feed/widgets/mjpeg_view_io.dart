@@ -95,10 +95,10 @@ class _MjpegStreamState extends State<_MjpegStream> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.videocam_off, size: 40, color: TimoColors.error),
+            const Icon(Icons.videocam_off, size: 40, color: MikeeColors.error),
             const SizedBox(height: 8),
             Text('Camera offline',
-                style: TextStyle(color: TimoColors.textSecondary, fontSize: 12)),
+                style: TextStyle(color: MikeeColors.textSecondary, fontSize: 12)),
           ],
         ),
       );
@@ -108,7 +108,7 @@ class _MjpegStreamState extends State<_MjpegStream> {
         child: SizedBox(
           width: 28,
           height: 28,
-          child: CircularProgressIndicator(strokeWidth: 2, color: TimoColors.primary),
+          child: CircularProgressIndicator(strokeWidth: 2, color: MikeeColors.primary),
         ),
       );
     }

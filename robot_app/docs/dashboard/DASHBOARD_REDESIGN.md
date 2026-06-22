@@ -1,6 +1,6 @@
-# Timo Dashboard — Redesign Spec (Robot app)
+# Mikee Dashboard — Redesign Spec (Robot app)
 
-Implementation reference for porting the approved **`robot_app/docs/dashboard/Timo Dashboard.html`**
+Implementation reference for porting the approved **`robot_app/docs/dashboard/Mikee Dashboard.html`**
 prototype into Flutter (`dashboard_screen.dart`). The HTML file is the source of truth — open it
 and resize the window to see the responsive behaviour; this doc captures the structure, tokens,
 and behaviours so the Flutter build matches.
@@ -8,7 +8,7 @@ and behaviours so the Flutter build matches.
 > Scope: this is the **on-robot dashboard** (opened from the ambient face). It is **face-dominant**
 > with a row of reception **action tiles** (no chat box) and a right-hand **Quick Controls** panel.
 > The face itself reuses the existing shared `FacePainter` / face rig — do **not** fork it. The
-> Beam constants and pose table live in `robot_app/docs/timo_face_poses.md`.
+> Beam constants and pose table live in `robot_app/docs/mikee_face_poses.md`.
 
 ---
 
@@ -19,7 +19,7 @@ fills the rest. Nothing in the dashboard scrolls — every region sizes to the v
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ TOP BAR  (56px)   ← Timo Dashboard · RECEPTION HOST   pills · clock │
+│ TOP BAR  (56px)   ← Mikee Dashboard · RECEPTION HOST   pills · clock │
 ├──────────────┬───────────────────────────────┬────────────────┤
 │  NAV RAIL    │   FACE CARD (fills height)     │ QUICK CONTROLS │
 │  240px       │   ┌─────────────────────────┐  │  320px         │
@@ -40,7 +40,7 @@ fills the rest. Nothing in the dashboard scrolls — every region sizes to the v
 
 ### Top bar
 - Back button (34×34, rounded 10, 1px border `#2F2F2F`) → returns to ambient face.
-- Title: **Timo** (accent) **Dashboard** (ink), 15px/700. Crumb `RECEPTION HOST` 11px, letter-spacing .18em, muted.
+- Title: **Mikee** (accent) **Dashboard** (ink), 15px/700. Crumb `RECEPTION HOST` 11px, letter-spacing .18em, muted.
 - Right side pills (30px tall, rounded 99, border `#2F2F2F`, bg `#171717`):
   `SDK Online` (green dot), `Perception On` (accent dot), `🔋 92%`, then a mono `H:MM` clock.
 
@@ -67,7 +67,7 @@ Accent is used for: active states, focus borders, the face glow, icon strokes, s
 ## 3. Nav rail (left, 240)
 
 - **Brand block:** 38×38 rounded-11 gradient mark “T” (`linear-gradient(150deg, accent, accent-dim)`,
-  soft accent shadow) + “Timo” / `FRONT DESK · BAY 1`.
+  soft accent shadow) + “Mikee” / `FRONT DESK · BAY 1`.
 - **MENU** group: Home (active), Enroll Staff, Robot Status, Manual Control, Settings.
 - **SERVICES** group (dimmed, `SOON` tag, non-interactive): Voice Q&A, Pay, Navigate, Directory.
 - Item: 11px vertical padding, 12 gap, 19px stroke icon + 13.5px label. Active = accent text,

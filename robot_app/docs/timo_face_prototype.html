@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Timo · Robot Face Studio</title>
+<title>Mikee · Robot Face Studio</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -97,7 +97,7 @@
 <div id="panel">
   <div class="ttl">
     <div class="mark">T</div>
-    <div><h1>Timo Face Studio</h1><p>chest-screen expression rig</p></div>
+    <div><h1>Mikee Face Studio</h1><p>chest-screen expression rig</p></div>
   </div>
 
   <div class="sec">
@@ -151,8 +151,8 @@
   const params = { state: "idle", gazeX: 0, gazeY: 0, blink: 0, mouthOpen: 0, expression: "neutral" };
   const ui = { talking: false, follow: false, style: "soft" };
   // restore
-  try { Object.assign(params, JSON.parse(localStorage.getItem("timoFaceParams") || "{}")); } catch(e){}
-  try { Object.assign(ui, JSON.parse(localStorage.getItem("timoFaceUi") || "{}")); } catch(e){}
+  try { Object.assign(params, JSON.parse(localStorage.getItem("mikeeFaceParams") || "{}")); } catch(e){}
+  try { Object.assign(ui, JSON.parse(localStorage.getItem("mikeeFaceUi") || "{}")); } catch(e){}
 
   const STATES = [
     { id: "idle", em: "😌" }, { id: "attentive", em: "👀" }, { id: "greeting", em: "😊" },
@@ -605,8 +605,8 @@
 
   function save() {
     try {
-      localStorage.setItem("timoFaceParams", JSON.stringify(params));
-      localStorage.setItem("timoFaceUi", JSON.stringify(ui));
+      localStorage.setItem("mikeeFaceParams", JSON.stringify(params));
+      localStorage.setItem("mikeeFaceUi", JSON.stringify(ui));
     } catch(e){}
   }
 

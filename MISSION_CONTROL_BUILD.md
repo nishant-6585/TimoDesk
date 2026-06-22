@@ -4,7 +4,7 @@
 
 ## What Was Implemented
 
-A **pixel-perfect Mission Control operator dashboard** for the Timo reception robot, rebuilt in Flutter from the HTML/React prototype design. The design is responsive (desktop + mobile), feature-rich, and production-ready.
+A **pixel-perfect Mission Control operator dashboard** for the Mikee reception robot, rebuilt in Flutter from the HTML/React prototype design. The design is responsive (desktop + mobile), feature-rich, and production-ready.
 
 ### 14 New Widget Files Created
 

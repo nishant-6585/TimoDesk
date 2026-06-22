@@ -31,21 +31,21 @@ void main() async {
 
   runApp(
     const ProviderScope(
-      child: TimoDeskApp(),
+      child: MikeeApp(),
     ),
   );
 }
 
-class TimoDeskApp extends ConsumerWidget {
-  const TimoDeskApp({Key? key}) : super(key: key);
+class MikeeApp extends ConsumerWidget {
+  const MikeeApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'TimoDesk',
-      theme: TimoTheme.dark,
+      title: 'Mikee',
+      theme: MikeeTheme.dark,
       scaffoldMessengerKey: rootMessengerKey,
       routerConfig: router,
       debugShowCheckedModeBanner: false,

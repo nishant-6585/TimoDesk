@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 class PersonDetect {
   PersonDetect._();
 
-  static const EventChannel _channel = EventChannel('com.timoDesk/person_events');
+  static const EventChannel _channel = EventChannel('com.mikee/person_events');
 
   /// Presence stream. The native side forwards the raw sensor state (int);
   /// non-zero is treated as "person present". (Exact state codes to be confirmed

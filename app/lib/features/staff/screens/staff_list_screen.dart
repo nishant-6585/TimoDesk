@@ -13,10 +13,10 @@ class StaffListScreen extends ConsumerWidget {
     final staffAsync = ref.watch(staffListProvider);
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       appBar: AppBar(
         title: const Text('Enrolled Staff'),
-        backgroundColor: TimoColors.surface,
+        backgroundColor: MikeeColors.surface,
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -37,7 +37,7 @@ class StaffListScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 Text('Failed to load staff:\n$e',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(color: TimoColors.textSecondary)),
+                    style: GoogleFonts.inter(color: MikeeColors.textSecondary)),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () => ref.invalidate(staffListProvider),
@@ -51,7 +51,7 @@ class StaffListScreen extends ConsumerWidget {
           if (staff.isEmpty) {
             return Center(
               child: Text('No staff enrolled yet.',
-                  style: GoogleFonts.inter(color: TimoColors.textSecondary)),
+                  style: GoogleFonts.inter(color: MikeeColors.textSecondary)),
             );
           }
           return Center(
@@ -83,19 +83,19 @@ class _StaffCard extends ConsumerWidget {
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [TimoColors.cardTop, TimoColors.cardBottom],
+          colors: [MikeeColors.cardTop, MikeeColors.cardBottom],
         ),
-        border: Border.all(color: TimoColors.border),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundColor: TimoColors.primary.withOpacity(0.15),
+            backgroundColor: MikeeColors.primary.withOpacity(0.15),
             child: Text(
               member.fullName.isNotEmpty ? member.fullName[0].toUpperCase() : '?',
-              style: GoogleFonts.inter(color: TimoColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
+              style: GoogleFonts.inter(color: MikeeColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ),
           const SizedBox(width: 16),
@@ -104,7 +104,7 @@ class _StaffCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(member.fullName,
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: TimoColors.textPrimary)),
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary)),
                 const SizedBox(height: 4),
                 Text(
                   [
@@ -112,14 +112,14 @@ class _StaffCard extends ConsumerWidget {
                     if (member.role != null && member.role!.isNotEmpty) member.role,
                     if (member.phone != null && member.phone!.isNotEmpty) member.phone,
                   ].join(' · '),
-                  style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                  style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
                 ),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: member.embeddingCount > 0
-                        ? TimoColors.success.withOpacity(0.12)
+                        ? MikeeColors.success.withOpacity(0.12)
                         : Colors.orange.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -127,7 +127,7 @@ class _StaffCard extends ConsumerWidget {
                     '${member.embeddingCount} face${member.embeddingCount == 1 ? '' : 's'} enrolled',
                     style: GoogleFonts.inter(
                       fontSize: 11,
-                      color: member.embeddingCount > 0 ? TimoColors.success : Colors.orange,
+                      color: member.embeddingCount > 0 ? MikeeColors.success : Colors.orange,
                     ),
                   ),
                 ),
@@ -160,12 +160,12 @@ class _StaffCard extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: TimoColors.surface,
+        backgroundColor: MikeeColors.surface,
         title: const Text('Delete staff?'),
         content: Text(
           'This permanently deletes ${member.fullName} and erases their '
           '${member.embeddingCount} enrolled face embedding(s). This cannot be undone.',
-          style: GoogleFonts.inter(color: TimoColors.textSecondary),
+          style: GoogleFonts.inter(color: MikeeColors.textSecondary),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -250,7 +250,7 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: TimoColors.surface,
+      backgroundColor: MikeeColors.surface,
       title: const Text('Edit Staff'),
       content: SingleChildScrollView(
         child: Column(

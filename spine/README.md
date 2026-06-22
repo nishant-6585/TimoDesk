@@ -1,6 +1,6 @@
-# Timo Spine — Integration Gateway
+# Mikee Spine — Integration Gateway
 
-**The central broker between admin clients and the Timo reception robot.**
+**The central broker between admin clients and the Mikee reception robot.**
 
 ## What it does
 
@@ -93,7 +93,7 @@ Admin App (web/mobile)
         ├─ MockRobotSDK [fake, emits events]
         └─ RealRobotSDK [forwards to robot ports]
             ↓
-        Timo Robot (192.168.99.101)
+        Mikee Robot (192.168.99.101)
         ├─ port 8081 (head)
         ├─ port 8082 (chassis)
         └─ port 8083 (arm)
@@ -312,4 +312,4 @@ At production, fill in both and the spine persists all events to the `robot_even
 
 ---
 
-**xboom · Timo · Land + Air + Water · Keep the spine small**
+**xboom · Mikee · Land + Air + Water · Keep the spine small**

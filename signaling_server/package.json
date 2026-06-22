@@ -1,7 +1,7 @@
 {
-  "name": "timodesk-signaling",
+  "name": "mikee-signaling",
   "version": "1.0.0",
-  "description": "WebRTC signaling server for TimoDesk robot camera",
+  "description": "WebRTC signaling server for Mikee robot camera",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -31,7 +31,7 @@ class _App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TimoDesk — Robot',
+      title: 'Mikee — Robot',
       themeMode: ThemeMode.dark,
       debugShowCheckedModeBanner: false,
       darkTheme: ThemeData(

@@ -99,13 +99,13 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     final proceed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: TimoColors.surface,
+        backgroundColor: MikeeColors.surface,
         title: const Text('Already enrolled'),
         content: Text(
           'This face looks like ${check.name} is already enrolled'
           '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
           'Stop, or continue enrolling anyway?',
-          style: GoogleFonts.inter(color: TimoColors.textSecondary),
+          style: GoogleFonts.inter(color: MikeeColors.textSecondary),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Stop')),
@@ -134,10 +134,10 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     final url = robotStreamUrl(robotIp);
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       appBar: AppBar(
         title: const Text('Live Feed'),
-        backgroundColor: TimoColors.surface,
+        backgroundColor: MikeeColors.surface,
         actions: [
           TextButton.icon(
             onPressed: () => Navigator.of(context).push(
@@ -165,7 +165,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
           constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
           decoration: BoxDecoration(
             color: Colors.black,
-            border: Border.all(color: TimoColors.border),
+            border: Border.all(color: MikeeColors.border),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Stack(
@@ -189,7 +189,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                 height: 8,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: _streaming ? TimoColors.error : TimoColors.textMuted,
+                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -198,7 +198,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: _streaming ? TimoColors.error : TimoColors.textMuted,
+                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
                                 ),
                               ),
                             ],
@@ -219,7 +219,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                               child: Icon(
                                 _streaming ? Icons.stop_circle : Icons.play_circle,
                                 size: 24,
-                                color: _streaming ? TimoColors.error : TimoColors.primary,
+                                color: _streaming ? MikeeColors.error : MikeeColors.primary,
                               ),
                             ),
                           ),
@@ -277,19 +277,19 @@ class _SourceToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? TimoColors.primary : Colors.transparent,
+            color: active ? MikeeColors.primary : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 14, color: active ? Colors.white : TimoColors.textSecondary),
+              Icon(icon, size: 14, color: active ? Colors.white : MikeeColors.textSecondary),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : TimoColors.textSecondary,
+                  color: active ? Colors.white : MikeeColors.textSecondary,
                 ),
               ),
             ],
@@ -302,7 +302,7 @@ class _SourceToggle extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
-        border: Border.all(color: TimoColors.border),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -659,7 +659,7 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
               style: GoogleFonts.inter(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 10),
           Text(_currentPose.name.toUpperCase(),
-              style: GoogleFonts.inter(color: TimoColors.primary, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1)),
+              style: GoogleFonts.inter(color: MikeeColors.primary, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 1)),
           const SizedBox(height: 14),
           Text(_currentPose.instruction,
               textAlign: TextAlign.center,
@@ -832,7 +832,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
       width: 500,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: TimoColors.surface,
+        color: MikeeColors.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: SingleChildScrollView(
@@ -853,7 +853,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
               // Captured frames preview grid
               Text(
                 'Captured ${widget.capturedFrames.length} poses:',
-                style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
               ),
               const SizedBox(height: 8),
               SizedBox(
@@ -866,7 +866,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
                     child: Container(
                       width: 100,
                       decoration: BoxDecoration(
-                        border: Border.all(color: TimoColors.border),
+                        border: Border.all(color: MikeeColors.border),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Stack(
@@ -972,7 +972,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: TimoColors.cardTop,
+                        backgroundColor: MikeeColors.cardTop,
                       ),
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Cancel'),
@@ -1055,18 +1055,18 @@ class _VisitorCheckInCardState extends ConsumerState<_VisitorCheckInCard> {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       decoration: BoxDecoration(
-        color: TimoColors.surface,
-        border: Border.all(color: TimoColors.border),
+        color: MikeeColors.surface,
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          leading: const Icon(Icons.how_to_reg, color: TimoColors.primary),
+          leading: const Icon(Icons.how_to_reg, color: MikeeColors.primary),
           title: Text('Visitor check-in',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           subtitle: Text('Who are you here to see?',
-              style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary)),
+              style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           children: [
             TextField(
@@ -1120,17 +1120,17 @@ class _VisitorArrivalBanner extends ConsumerWidget {
     final v = ref.watch(visitorArrivedProvider);
     if (v == null) return const SizedBox.shrink();
     return Material(
-      color: TimoColors.primary.withOpacity(0.12),
+      color: MikeeColors.primary.withOpacity(0.12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            const Icon(Icons.how_to_reg, color: TimoColors.primary, size: 20),
+            const Icon(Icons.how_to_reg, color: MikeeColors.primary, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 '👋 ${v.visitorName} is here to see ${v.hostName} · notified via ${v.channel}',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: TimoColors.textPrimary),
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary),
               ),
             ),
             IconButton(

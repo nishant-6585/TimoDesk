@@ -68,7 +68,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Account created! Signing you in...'),
-          backgroundColor: TimoColors.success,
+          backgroundColor: MikeeColors.success,
         ),
       );
 
@@ -129,7 +129,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -143,7 +143,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: TimoColors.primary,
+                    color: MikeeColors.primary,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Icon(
@@ -154,16 +154,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'TimoDesk',
+                  'Mikee',
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    color: TimoColors.textPrimary,
+                    color: MikeeColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Timo Reception Robot Control',
+                  'Mikee Reception Robot Control',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: TimoColors.textSecondary,
+                    color: MikeeColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -174,9 +174,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: TimoColors.surface,
+                          color: MikeeColors.surface,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: TimoColors.border),
+                          border: Border.all(color: MikeeColors.border),
                         ),
                         child: Row(
                           children: [
@@ -188,7 +188,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                     decoration: BoxDecoration(
-                                      color: !_isSignUp ? TimoColors.primary : Colors.transparent,
+                                      color: !_isSignUp ? MikeeColors.primary : Colors.transparent,
                                       borderRadius: const BorderRadius.only(
                                         topLeft: Radius.circular(7),
                                         bottomLeft: Radius.circular(7),
@@ -198,7 +198,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     child: Text(
                                       'Sign In',
                                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        color: !_isSignUp ? Colors.black : TimoColors.textSecondary,
+                                        color: !_isSignUp ? Colors.black : MikeeColors.textSecondary,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -214,7 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                     decoration: BoxDecoration(
-                                      color: _isSignUp ? TimoColors.primary : Colors.transparent,
+                                      color: _isSignUp ? MikeeColors.primary : Colors.transparent,
                                       borderRadius: const BorderRadius.only(
                                         topRight: Radius.circular(7),
                                         bottomRight: Radius.circular(7),
@@ -224,7 +224,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     child: Text(
                                       'Sign Up',
                                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        color: _isSignUp ? Colors.black : TimoColors.textSecondary,
+                                        color: _isSignUp ? Colors.black : MikeeColors.textSecondary,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -245,7 +245,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _emailController,
                   decoration: const InputDecoration(
                     hintText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined, color: TimoColors.textSecondary),
+                    prefixIcon: Icon(Icons.email_outlined, color: MikeeColors.textSecondary),
                   ),
                   keyboardType: TextInputType.emailAddress,
                   enabled: !_isLoading,
@@ -257,11 +257,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _passwordController,
                   decoration: InputDecoration(
                     hintText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outlined, color: TimoColors.textSecondary),
+                    prefixIcon: const Icon(Icons.lock_outlined, color: MikeeColors.textSecondary),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                        color: TimoColors.textSecondary,
+                        color: MikeeColors.textSecondary,
                       ),
                       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
@@ -279,7 +279,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         controller: _confirmPasswordController,
                         decoration: InputDecoration(
                           hintText: 'Confirm Password',
-                          prefixIcon: const Icon(Icons.lock_outlined, color: TimoColors.textSecondary),
+                          prefixIcon: const Icon(Icons.lock_outlined, color: MikeeColors.textSecondary),
                         ),
                         obscureText: _obscurePassword,
                         enabled: !_isLoading,
@@ -309,14 +309,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: TimoColors.error.withOpacity(0.1),
-                      border: Border.all(color: TimoColors.error),
+                      color: MikeeColors.error.withOpacity(0.1),
+                      border: Border.all(color: MikeeColors.error),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       _error!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: TimoColors.error,
+                        color: MikeeColors.error,
                       ),
                     ),
                   ),
@@ -326,7 +326,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Text(
                   'Built by xboom · Land + Air + Water',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: TimoColors.textSecondary,
+                    color: MikeeColors.textSecondary,
                   ),
                 ),
               ],

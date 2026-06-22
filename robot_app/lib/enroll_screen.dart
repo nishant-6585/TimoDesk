@@ -181,7 +181,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
     if (w == null || h == null) return;
 
     // ML Kit reads frame bytes via a temp file — it does NOT open the camera.
-    final tmp = File('${Directory.systemTemp.path}/timo_enroll_frame.jpg');
+    final tmp = File('${Directory.systemTemp.path}/mikee_enroll_frame.jpg');
     await tmp.writeAsBytes(bytes, flush: true);
     final faces = await _detector.processImage(InputImage.fromFilePath(tmp.path));
 

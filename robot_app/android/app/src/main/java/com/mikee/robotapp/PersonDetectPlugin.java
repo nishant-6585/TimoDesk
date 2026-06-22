@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -13,17 +13,17 @@ import io.flutter.plugin.common.EventChannel;
  * On-device person detection (CSJBot laser / RGBD / ultrasonic sensors).
  *
  * Registers the SDK's {@link OnDetectPersonListener} and forwards the presence
- * state to Dart over the "com.timoDesk/person_events" EventChannel. Used as an
+ * state to Dart over the "com.mikee/person_events" EventChannel. Used as an
  * idle→active trigger: someone approaches the robot → it wakes / greets. This is
  * camera/sensor based, so it works WITHOUT the network/cloud and WITHOUT the
  * microphone (independent of the mic-routing issue).
  *
  * Like the other CSJBot bridges, every SDK touch is wrapped in try/catch and
- * degrades to a silent no-op off the real Timo hardware (emulator).
+ * degrades to a silent no-op off the real Mikee hardware (emulator).
  */
 public class PersonDetectPlugin implements EventChannel.StreamHandler {
 
-    private static final String TAG = "TimoDesk.Person";
+    private static final String TAG = "Mikee.Person";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private EventChannel.EventSink sink;
@@ -31,7 +31,7 @@ public class PersonDetectPlugin implements EventChannel.StreamHandler {
     public void register() {
         try {
             // Sensors (laser + RGBD + ultrasonic) are enabled pre-init in
-            // TimoApplication (matching the demo). Here we only register the listener
+            // MikeeApplication (matching the demo). Here we only register the listener
             // — calling setPersonCheckType after init raced the AIUI teardown.
             CsjRobot.getInstance().registerDetectPersonListener(new OnDetectPersonListener() {
                 @Override

@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.content.Context;
 import android.os.BatteryManager;
@@ -29,7 +29,7 @@ import io.flutter.plugin.common.MethodChannel;
  * Forwards to Flutter over an EventChannel; Dart calls BatteryService.setBattery().
  */
 public class BatteryPlugin implements EventChannel.StreamHandler, MethodChannel.MethodCallHandler {
-    private static final String TAG = "TimoDesk.Battery";
+    private static final String TAG = "Mikee.Battery";
 
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());

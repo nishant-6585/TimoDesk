@@ -1,11 +1,11 @@
-# Timo Reception Robot — Project Status & Problem Description
+# Mikee Reception Robot — Project Status & Problem Description
 
 ## 1. WHAT WE'RE BUILDING
 
-**Timo** — An in-office autonomous reception, concierge, and security robot for xboom.
+**Mikee** — An in-office autonomous reception, concierge, and security robot for xboom.
 
 **Three architectural layers:**
-- **Layer 1 (Edge):** Alpha Robotics Timo SDK (on robot hardware)
+- **Layer 1 (Edge):** Alpha Robotics Mikee SDK (on robot hardware)
 - **Layer 2 (Cloud):** xboom backend (Supabase + Node.js spine + Claude RAG)
 - **Layer 3 (Client):** Flutter admin app (web + iOS + Android)
 
@@ -99,7 +99,7 @@
 
 **Symptom:** RealRobotSDK can't connect to actual robot
 
-**Root Cause:** Alpha Robotics Timo hardware not yet available for integration
+**Root Cause:** Alpha Robotics Mikee hardware not yet available for integration
 
 **Impact:** Can only test with MockRobotSDK (fake robot)
 
@@ -278,7 +278,7 @@
 **xboom Context**
 - Building: Land + Air + Water robots
 - Market: Enterprise (JSW, Tata, Reliance)
-- First product: Timo reception robot (MVP)
+- First product: Mikee reception robot (MVP)
 - Traction goal: Gate Zero clearance, MVP demo, productization V1
 
 ---
@@ -393,7 +393,7 @@ viewer_web/
 
 ---
 
-**Next big milestone:** Real robot hardware arrives → swap ROBOT_MODE=real → control actual Timo
+**Next big milestone:** Real robot hardware arrives → swap ROBOT_MODE=real → control actual Mikee
 
 ---
 

@@ -47,8 +47,8 @@ class FaceState {
 }
 
 /// Beam / OLED face painter (#82). Renders a smoothed [LiveState] — a faithful
-/// port of robot_app/docs/timo_face_prototype.html (Beam style only), per the
-/// constants in robot_app/docs/timo_face_poses.md.
+/// port of robot_app/docs/mikee_face_prototype.html (Beam style only), per the
+/// constants in robot_app/docs/mikee_face_poses.md.
 ///
 /// Glow is two-pass: a blurred bloom copy (accent, MaskFilter) THEN the sharp
 /// shape — canvas2d's shadowBlur has no 1:1 Flutter equivalent.
@@ -57,7 +57,7 @@ class FacePainter extends CustomPainter {
   double get t => live.t; // animation phase (ring/dots/scanline/breath)
   const FacePainter(this.live, {Listenable? repaint}) : super(repaint: repaint);
 
-  // ── Color tokens (timo_face_poses.md §A) ──────────────────────────────────
+  // ── Color tokens (mikee_face_poses.md §A) ──────────────────────────────────
   static const Color _bg = Color(0xFF0F0F0F);
   static const Color _eye = Color(0xFFFFE3CE); // warm off-white
   static const Color _accent = Color(0xFFFF6B35);

@@ -170,7 +170,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     // the render CPU on the RK3576 with no visible loss for a face.
     _paintAccum += dt;
     if (_paintAccum < 0.033) return;
-    // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Timo stays
+    // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Mikee stays
     // engaged with whoever's at the desk (the ambient face is a separate rig).
     _rig.tick(_face, _paintAccum.clamp(0.0, 0.05), followGx: 0, followGy: 0.04);
     _paintAccum = 0;
@@ -431,7 +431,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     }
   }
 
-  /// Speak a phrase aloud in Timo's real voice — ElevenLabs TTS (same voice as the
+  /// Speak a phrase aloud in Mikee's real voice — ElevenLabs TTS (same voice as the
   /// face screen), streamed through the shared speaker. Falls back to the on-device
   /// Google TTS only if ElevenLabs is unreachable.
   Future<void> _say(String text) async {
@@ -503,7 +503,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           children: [
             Text.rich(TextSpan(children: [
               TextSpan(
-                  text: 'Timo ',
+                  text: 'Mikee ',
                   style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
               TextSpan(
                   text: 'Dashboard',
@@ -610,7 +610,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Timo', style: TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w700)),
+                  Text('Mikee', style: TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w700)),
                   SizedBox(height: 2),
                   Text('FRONT DESK · BAY 1',
                       style: TextStyle(
@@ -922,7 +922,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  // All controls are wired to real SDK calls: Head ▲▼◀▶ → nudge (TimoActionCustomerCtrl),
+  // All controls are wired to real SDK calls: Head ▲▼◀▶ → nudge (MikeeActionCustomerCtrl),
   // CTR → resetHead; Chassis ▲▼◀▶ → hold-to-drive (moveForward/moveBySerial + moveSerial
   // heartbeat), STOP/E-Stop → emergencyStop; Speed → setSpeed; Arm Wave/Reset → wave/reset.
   // Badges reflect real motor/arm state (providers update from the plugin event channels).
@@ -932,7 +932,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       final h = ref.watch(headProvider);
       final n = ref.read(headProvider.notifier);
       void onNudge(String dir) {
-        n.nudge(dir); // real head pan/tilt (TimoActionCustomerCtrl)
+        n.nudge(dir); // real head pan/tilt (MikeeActionCustomerCtrl)
         _setKind(FaceStateKind.attentive);
         _revert?.cancel();
         _revert = Timer(const Duration(milliseconds: 600), () {

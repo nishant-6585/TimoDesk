@@ -4,7 +4,7 @@
 - [ ] Background: #121212 with 80% opacity + blur
 - [ ] Border bottom: #2A2A2A 1px
 - [ ] Left: Logo (36×36) with gradient + "xboom" text
-- [ ] Center: "Timo — Reception Robot" (desktop only, 13px #9CA3AF)
+- [ ] Center: "Mikee — Reception Robot" (desktop only, 13px #9CA3AF)
 - [ ] Right: Battery pill (40×6px progress) + Status pill + Avatar (28px circle)
 - [ ] All text: Inter font, correct spacing
 

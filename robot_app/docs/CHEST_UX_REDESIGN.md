@@ -106,7 +106,7 @@ Extends #82's avatar states with presence/identity/dashboard. Drives the Rive `s
        │ speaking                    │
        └────────────────────────────┘
 
-   ANY state ──(tap / "Hey Timo, open dashboard")──► DASHBOARD ──(idle 30s / back)──► ambient-idle
+   ANY state ──(tap / "Hey Mikee, open dashboard")──► DASHBOARD ──(idle 30s / back)──► ambient-idle
 ```
 
 Transitions:

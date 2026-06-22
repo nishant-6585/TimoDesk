@@ -23,7 +23,7 @@ class ArmSliderWidget extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: disabled ? TimoColors.textSecondary : TimoColors.textPrimary,
+            color: disabled ? MikeeColors.textSecondary : MikeeColors.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
@@ -32,10 +32,10 @@ class ArmSliderWidget extends StatelessWidget {
             Expanded(
               child: SliderTheme(
                 data: SliderThemeData(
-                  activeTrackColor: disabled ? TimoColors.textSecondary : TimoColors.primary,
-                  inactiveTrackColor: TimoColors.border,
-                  thumbColor: disabled ? TimoColors.textSecondary : TimoColors.primary,
-                  overlayColor: (disabled ? TimoColors.textSecondary : TimoColors.primary).withOpacity(0.2),
+                  activeTrackColor: disabled ? MikeeColors.textSecondary : MikeeColors.primary,
+                  inactiveTrackColor: MikeeColors.border,
+                  thumbColor: disabled ? MikeeColors.textSecondary : MikeeColors.primary,
+                  overlayColor: (disabled ? MikeeColors.textSecondary : MikeeColors.primary).withOpacity(0.2),
                   trackHeight: 4,
                   thumbShape: RoundSliderThumbShape(
                     elevation: 0,
@@ -57,7 +57,7 @@ class ArmSliderWidget extends StatelessWidget {
               child: Text(
                 '${value.toInt()}',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: TimoColors.textSecondary,
+                  color: MikeeColors.textSecondary,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
                 textAlign: TextAlign.right,

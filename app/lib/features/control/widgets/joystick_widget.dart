@@ -93,7 +93,7 @@ class _JoystickWidgetState extends State<JoystickWidget> {
             child: Text(
               widget.label!,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: widget.disabled ? TimoColors.textSecondary : TimoColors.textPrimary,
+                color: widget.disabled ? MikeeColors.textSecondary : MikeeColors.textPrimary,
               ),
             ),
           ),
@@ -107,11 +107,11 @@ class _JoystickWidgetState extends State<JoystickWidget> {
               height: joystickRadius * 2 + 10,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: widget.disabled ? TimoColors.textSecondary : TimoColors.primary,
+                  color: widget.disabled ? MikeeColors.textSecondary : MikeeColors.primary,
                   width: 2,
                 ),
                 shape: BoxShape.circle,
-                color: TimoColors.surface.withOpacity(0.5),
+                color: MikeeColors.surface.withOpacity(0.5),
               ),
               child: Center(
                 child: Transform.translate(
@@ -120,11 +120,11 @@ class _JoystickWidgetState extends State<JoystickWidget> {
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: widget.disabled ? TimoColors.textSecondary : TimoColors.primary,
+                      color: widget.disabled ? MikeeColors.textSecondary : MikeeColors.primary,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: TimoColors.primary.withOpacity(0.5),
+                          color: MikeeColors.primary.withOpacity(0.5),
                           blurRadius: 8,
                         ),
                       ],

@@ -8,15 +8,15 @@ import 'battery_service.dart';
 
 const kOrange = Color(0xFFFF6B35);
 
-const _methodCh = MethodChannel('com.timoDesk/camera_stream');
-const _eventCh  = EventChannel('com.timoDesk/camera_events');
-const _batteryEventCh = EventChannel('com.timoDesk/battery_events');
-const _headMethodCh = MethodChannel('com.timoDesk/head_control');
-const _headEventCh  = EventChannel('com.timoDesk/head_events');
-const _chassisMethodCh = MethodChannel('com.timoDesk/chassis_control');
-const _chassisEventCh  = EventChannel('com.timoDesk/chassis_events');
-const _armMethodCh = MethodChannel('com.timoDesk/arm_control');
-const _armEventCh  = EventChannel('com.timoDesk/arm_events');
+const _methodCh = MethodChannel('com.mikee/camera_stream');
+const _eventCh  = EventChannel('com.mikee/camera_events');
+const _batteryEventCh = EventChannel('com.mikee/battery_events');
+const _headMethodCh = MethodChannel('com.mikee/head_control');
+const _headEventCh  = EventChannel('com.mikee/head_events');
+const _chassisMethodCh = MethodChannel('com.mikee/chassis_control');
+const _chassisEventCh  = EventChannel('com.mikee/chassis_events');
+const _armMethodCh = MethodChannel('com.mikee/arm_control');
+const _armEventCh  = EventChannel('com.mikee/arm_events');
 
 // ── MJPEG state ───────────────────────────────────────────────────────────────
 

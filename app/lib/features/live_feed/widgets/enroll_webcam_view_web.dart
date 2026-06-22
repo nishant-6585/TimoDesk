@@ -110,7 +110,7 @@ class _DeviceWebcamViewState extends State<DeviceWebcamView> {
                 'Allow camera permission in your browser to enroll from this device,\n'
                 'or switch the source to the robot camera.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(color: TimoColors.textSecondary, fontSize: 12),
+                style: GoogleFonts.inter(color: MikeeColors.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(

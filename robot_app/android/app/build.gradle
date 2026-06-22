@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace "com.timoDesk.robotapp"
+    namespace "com.mikee.robotapp"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.timoDesk.robotapp"
+        applicationId = "com.mikee.robotapp"
         minSdk = 25
         targetSdk = 34
         versionCode = flutter.versionCode
@@ -36,13 +36,13 @@ android {
             dimension "env"
             buildConfigField "String", "SDK_IP",   '"127.0.0.1"'
             buildConfigField "int",    "SDK_PORT",  '60002'
-            resValue "string", "app_name", "TimoDesk Robot"
+            resValue "string", "app_name", "Mikee Robot"
         }
         remote {
             dimension "env"
             buildConfigField "String", "SDK_IP",   '"192.168.99.101"'
             buildConfigField "int",    "SDK_PORT",  '60002'
-            resValue "string", "app_name", "TimoDesk Remote"
+            resValue "string", "app_name", "Mikee Remote"
         }
     }
 

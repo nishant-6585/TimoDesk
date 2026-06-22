@@ -1,5 +1,5 @@
 name: robot_app
-description: TimoDesk — Robot camera streaming app (runs on Timo / CSJBot chest screen).
+description: Mikee — Robot camera streaming app (runs on Mikee / CSJBot chest screen).
 publish_to: 'none'
 version: 1.0.0+1
 

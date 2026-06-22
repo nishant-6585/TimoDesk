@@ -44,7 +44,7 @@ class RobotConfig {
   static String elevenLabsAgentId = defaultElevenLabsAgentId;
 
   // The agent's voice (from the ElevenLabs agent config) — used for dashboard
-  // action-tile TTS so Timo speaks in the SAME voice as the face screen.
+  // action-tile TTS so Mikee speaks in the SAME voice as the face screen.
   static const String defaultElevenLabsVoiceId = '6AUOG2nbfr0yFEeI0784';
   static String elevenLabsVoiceId = defaultElevenLabsVoiceId;
 

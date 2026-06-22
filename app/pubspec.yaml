@@ -1,5 +1,5 @@
-name: timo_admin
-description: Timo reception robot admin control app - Flutter web + iOS + Android
+name: mikee_admin
+description: Mikee reception robot admin control app - Flutter web + iOS + Android
 publish_to: 'none'
 
 version: 0.1.0+1

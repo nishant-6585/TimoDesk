@@ -102,8 +102,8 @@ jobs:
           ISSUE_LIST=$(jq -r '.[] | "- [" + .severity + "] " + (.file_path // "unknown") + ":" + (.line_number | tostring) + " — " + .message' /tmp/issues.json)
           ISSUE_LIST_MD=$(jq -r '.[] | "- **[" + (.severity | ascii_upcase) + "]** `" + (.file_path // "unknown") + ":" + (.line_number | tostring) + "` — " + .message' /tmp/issues.json)
 
-          git config user.name "TimoDesk Bot"
-          git config user.email "bot@timoDesk.ai"
+          git config user.name "Mikee Bot"
+          git config user.email "bot@mikee.ai"
           git checkout -b "$BRANCH"
           git add -A
 

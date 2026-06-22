@@ -1,5 +1,5 @@
 -- 002_core_tables.sql
--- Core tables for Timo reception robot
+-- Core tables for Mikee reception robot
 -- Privacy-first design: no visitor biometric, staff embeddings isolated,
 -- retention windows on all personal data
 

@@ -82,25 +82,25 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
     });
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Stack(
         children: [
           Column(
             children: [
               Container(
                 height: 64,
-                decoration: BoxDecoration(color: TimoColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: TimoColors.border))),
+                decoration: BoxDecoration(color: MikeeColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: MikeeColors.border))),
                 padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
                 child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
                   Row(children: [
-                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [TimoColors.primary, TimoColors.primaryDark]), boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
-                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0))])]
+                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [MikeeColors.primary, MikeeColors.primaryDark]), boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
+                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0))])]
                   ]),
-                  if (!compact) Text('Event Log', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                  if (!compact) Text('Event Log', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
                   Row(children: [
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: TimoColors.success.withOpacity(0.08), border: Border.all(color: TimoColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: TimoColors.success))])),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.08), border: Border.all(color: MikeeColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: MikeeColors.success))])),
                     const SizedBox(width: 12),
-                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
+                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
                   ]),
                 ]),
               ),
@@ -120,9 +120,9 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
                             child: Column(children: [
                               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Row(children: [Icon(Icons.receipt_long, size: 28, color: TimoColors.primary), const SizedBox(width: 12), Text('Event Log', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+                                  Row(children: [Icon(Icons.receipt_long, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Event Log', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
                                   const SizedBox(height: 4),
-                                  Text('Full system + command audit trail', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                                  Text('Full system + command audit trail', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
                                 ]),
                               ]),
                               const SizedBox(height: 24),
@@ -138,22 +138,22 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
                                   const SizedBox(width: 8),
                                   _FilterChip('system', _filter == 'system', () => setState(() => _filter = 'system')),
                                 ]),
-                                Text('${_events.length} of ${_events.length} events', style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textMuted)),
+                                Text('${_events.length} of ${_events.length} events', style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
                               ]),
                               const SizedBox(height: 20),
                               Container(
-                                decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+                                decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)),
                                 child: Column(children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                                     child: Row(children: [
-                                      SizedBox(width: 130, child: Text('TIME', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
-                                      SizedBox(width: 210, child: Text('EVENT', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
-                                      Expanded(child: Text('DETAILS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
-                                      SizedBox(width: 150, child: Text('SESSION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textMuted))),
+                                      SizedBox(width: 130, child: Text('TIME', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textMuted))),
+                                      SizedBox(width: 210, child: Text('EVENT', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textMuted))),
+                                      Expanded(child: Text('DETAILS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textMuted))),
+                                      SizedBox(width: 150, child: Text('SESSION', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textMuted))),
                                     ]),
                                   ),
-                                  Container(height: 1, color: TimoColors.border),
+                                  Container(height: 1, color: MikeeColors.border),
                                   ..._events.asMap().entries.map((e) => _EventRow(e.key, e.value)),
                                 ]),
                               ),
@@ -180,7 +180,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 220,
-      decoration: BoxDecoration(color: TimoColors.surface, border: const Border(right: BorderSide(color: TimoColors.border))),
+      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
       child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
         _NavItem('Dashboard', Icons.space_dashboard, false, () => onNav('dashboard')),
         _NavItem('Control', Icons.sports_esports, false, () => onNav('control')),
@@ -203,8 +203,8 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(padding: const EdgeInsets.only(bottom: 4), child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? TimoColors.primary : TimoColors.textSecondary)))]),
+      decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))]),
     ))));
   }
 }
@@ -216,7 +216,7 @@ class _FilterChip extends StatelessWidget {
   const _FilterChip(this.label, this.active, this.onTap);
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: active ? TimoColors.primary : Colors.transparent, border: Border.all(color: active ? TimoColors.primary : TimoColors.border), borderRadius: BorderRadius.circular(20)), child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: active ? Colors.white : TimoColors.textSecondary)))));
+    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: active ? MikeeColors.primary : Colors.transparent, border: Border.all(color: active ? MikeeColors.primary : MikeeColors.border), borderRadius: BorderRadius.circular(20)), child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: active ? Colors.white : MikeeColors.textSecondary)))));
   }
 }
 
@@ -226,15 +226,15 @@ class _EventRow extends StatelessWidget {
   const _EventRow(this.idx, this.event);
   @override
   Widget build(BuildContext context) {
-    final color = eventColorMap[event['type']] ?? TimoColors.textMuted;
+    final color = eventColorMap[event['type']] ?? MikeeColors.textMuted;
     return Container(
       color: idx % 2 == 1 ? Colors.white.withOpacity(0.012) : Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(children: [
-        SizedBox(width: 130, child: Text(event['time']!, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: TimoColors.textSecondary))),
+        SizedBox(width: 130, child: Text(event['time']!, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary))),
         SizedBox(width: 210, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: color.withOpacity(0.12), border: Border.all(color: color.withOpacity(0.25)), borderRadius: BorderRadius.circular(6)), child: Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: color)), const SizedBox(width: 6), Text(event['type']!, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.w500, color: color))]))),
         Expanded(child: Text(event['details']!, style: GoogleFonts.jetBrainsMono(fontSize: 13, color: Colors.white.withOpacity(0.85)))),
-        SizedBox(width: 150, child: Row(children: [Icon(event['session'] == 'admin' ? Icons.person : Icons.memory, size: 14, color: TimoColors.textSecondary), const SizedBox(width: 6), Text(event['session']!, style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary))])),
+        SizedBox(width: 150, child: Row(children: [Icon(event['session'] == 'admin' ? Icons.person : Icons.memory, size: 14, color: MikeeColors.textSecondary), const SizedBox(width: 6), Text(event['session']!, style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary))])),
       ]),
     );
   }

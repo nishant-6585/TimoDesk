@@ -183,11 +183,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final notifier = ref.read(spineProvider.notifier);
     if (!spine.stopped) {
       notifier.sendIntent({'intent': 'stop'});
-      _pushToast(Icons.stop_circle, TimoColors.error, 'Emergency stop engaged');
+      _pushToast(Icons.stop_circle, MikeeColors.error, 'Emergency stop engaged');
       _addEvent({'type': 'safety_stop', 'details': 'triggered_by: admin', 'session': 'admin'});
     } else {
       notifier.sendIntent({'intent': 'resume'});
-      _pushToast(Icons.check_circle, TimoColors.success, 'Motion re-enabled');
+      _pushToast(Icons.check_circle, MikeeColors.success, 'Motion re-enabled');
     }
   }
 
@@ -196,21 +196,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     switch (id) {
       case 'snapshot':
         notifier.sendIntent({'intent': 'snapshot'});
-        _pushToast(Icons.photo_camera, TimoColors.primary, 'Snapshot saved to gallery');
+        _pushToast(Icons.photo_camera, MikeeColors.primary, 'Snapshot saved to gallery');
         _addEvent({'type': 'snapshot_saved', 'details': 'gallery/img_0428.jpg', 'session': 'admin'});
         break;
       case 'wave':
         notifier.sendIntent({'intent': 'wave'});
-        _pushToast(Icons.waving_hand, TimoColors.primary, 'Timo is waving hello 👋');
+        _pushToast(Icons.waving_hand, MikeeColors.primary, 'Mikee is waving hello 👋');
         _addEvent({'type': 'command_head', 'details': 'gesture: wave', 'session': 'admin'});
         break;
       case 'home':
         notifier.sendIntent({'intent': 'drive', 'dir': 'home_dock'});
-        _pushToast(Icons.home, TimoColors.success, 'Returning to home base');
+        _pushToast(Icons.home, MikeeColors.success, 'Returning to home base');
         _addEvent({'type': 'command_drive', 'details': 'dest: home_dock', 'session': 'admin'});
         break;
       case 'control':
-        _pushToast(Icons.sports_esports, TimoColors.primary, 'Opening control room');
+        _pushToast(Icons.sports_esports, MikeeColors.primary, 'Opening control room');
         break;
     }
   }
@@ -244,7 +244,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildDesktop(BuildContext context, bool online, int? battery, bool stopped) {
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Stack(
         children: [
           Column(
@@ -356,7 +356,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildMobile(BuildContext context, bool online, int? battery, bool stopped) {
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Stack(
         children: [
           Column(
@@ -443,8 +443,8 @@ class _McHeader extends StatelessWidget {
     return Container(
       height: 64,
       decoration: BoxDecoration(
-        color: TimoColors.surface.withOpacity(0.8),
-        border: const Border(bottom: BorderSide(color: TimoColors.border)),
+        color: MikeeColors.surface.withOpacity(0.8),
+        border: const Border(bottom: BorderSide(color: MikeeColors.border)),
       ),
       padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
       child: Row(
@@ -461,49 +461,49 @@ class _McHeader extends StatelessWidget {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [TimoColors.primary, TimoColors.primaryDark],
+                  colors: [MikeeColors.primary, MikeeColors.primaryDark],
                 ),
-                boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)],
+                boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)],
               ),
               child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
             ),
             if (!compact) ...[
               const SizedBox(width: 12),
               Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)),
-                Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0)),
+                Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
+                Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0)),
               ]),
             ]
           ]),
           // Center: Subtitle (desktop only)
           if (!compact)
             Text(
-              'Timo — Reception Robot',
-              style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
+              'Mikee — Reception Robot',
+              style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
             ),
           // Right: Status pills and avatar
           Row(children: [
             if (!compact) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: TimoColors.cardTop, border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: MikeeColors.cardTop, border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(8)),
                 child: Row(children: [
                   Icon(battery == null ? Icons.battery_unknown : Icons.battery_charging_full, size: 16,
-                      color: battery == null ? TimoColors.textMuted : TimoColors.success),
+                      color: battery == null ? MikeeColors.textMuted : MikeeColors.success),
                   const SizedBox(width: 8),
                   Text(battery == null ? '—' : '$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(width: 8),
                   Container(
                     width: 40,
                     height: 6,
-                    decoration: BoxDecoration(color: TimoColors.border, borderRadius: BorderRadius.circular(999)),
+                    decoration: BoxDecoration(color: MikeeColors.border, borderRadius: BorderRadius.circular(999)),
                     child: Stack(children: [
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
                           width: (40 * (battery ?? 0) / 100).clamp(0, 40),
                           height: 6,
-                          decoration: BoxDecoration(color: TimoColors.success, borderRadius: BorderRadius.circular(999)),
+                          decoration: BoxDecoration(color: MikeeColors.success, borderRadius: BorderRadius.circular(999)),
                         ),
                       )
                     ]),
@@ -515,21 +515,21 @@ class _McHeader extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.08),
-                border: Border.all(color: (online ? TimoColors.success : TimoColors.error).withOpacity(0.3)),
+                color: (online ? MikeeColors.success : MikeeColors.error).withOpacity(0.08),
+                border: Border.all(color: (online ? MikeeColors.success : MikeeColors.error).withOpacity(0.3)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(children: [
-                Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
+                Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? MikeeColors.success : MikeeColors.error)),
                 const SizedBox(width: 8),
-                Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? TimoColors.success : TimoColors.error)),
+                Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? MikeeColors.success : MikeeColors.error)),
               ]),
             ),
             const SizedBox(width: 12),
             Container(
               width: 28,
               height: 28,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)),
               child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
             ),
           ]),
@@ -550,8 +550,8 @@ class _McSidebar extends StatelessWidget {
     return Container(
       width: 220,
       decoration: BoxDecoration(
-        color: TimoColors.surface,
-        border: const Border(right: BorderSide(color: TimoColors.border)),
+        color: MikeeColors.surface,
+        border: const Border(right: BorderSide(color: MikeeColors.border)),
       ),
       child: Column(children: [
         Expanded(
@@ -570,9 +570,9 @@ class _McSidebar extends StatelessWidget {
         ),
         Container(
           padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(border: Border(top: BorderSide(color: TimoColors.border))),
+          decoration: const BoxDecoration(border: Border(top: BorderSide(color: MikeeColors.border))),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('v0.1.0', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textMuted)),
+            Text('v0.1.0', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
             const SizedBox(height: 4),
             Text('xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF4A4A4A))),
           ]),
@@ -602,15 +602,15 @@ class _NavItem extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent,
+              color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(children: [
-              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))),
-              Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary),
+              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
+              Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: active ? TimoColors.primary : TimoColors.textSecondary)),
+                child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: active ? MikeeColors.primary : MikeeColors.textSecondary)),
               ),
             ]),
           ),
@@ -631,20 +631,20 @@ class _RobotStatusCard extends StatelessWidget {
     return _McCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('ROBOT STATUS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+          Text('ROBOT STATUS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
           Icon(Icons.smart_toy, size: 18, color: const Color(0xFF3A3A3A)),
         ]),
         const SizedBox(height: 12),
         Row(children: [
-          Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? TimoColors.success : TimoColors.error)),
+          Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? MikeeColors.success : MikeeColors.error)),
           const SizedBox(width: 12),
-          Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: online ? TimoColors.success : TimoColors.error)),
+          Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: online ? MikeeColors.success : MikeeColors.error)),
         ]),
         const SizedBox(height: 12),
         Text.rich(
           TextSpan(
             text: online ? 'Connected · ' : 'Link lost — retrying…',
-            style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
+            style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
             children: online
                 ? [
                     TextSpan(
@@ -653,19 +653,19 @@ class _RobotStatusCard extends StatelessWidget {
                     ),
                     TextSpan(
                       text: ' latency',
-                      style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary),
+                      style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
                     ),
                   ]
                 : null,
           ),
         ),
         const SizedBox(height: 8),
-        Divider(color: TimoColors.border, height: 1),
+        Divider(color: MikeeColors.border, height: 1),
         const SizedBox(height: 8),
         Text.rich(TextSpan(
           text: 'Last seen ',
-          style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textMuted),
-          children: [TextSpan(text: 'just now', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: TimoColors.textMuted))],
+          style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted),
+          children: [TextSpan(text: 'just now', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted))],
         )),
       ]),
     );
@@ -725,8 +725,8 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
-          Icon(widget.charging ? Icons.bolt : Icons.battery_full, size: 18, color: TimoColors.primary),
+          Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+          Icon(widget.charging ? Icons.bolt : Icons.battery_full, size: 18, color: MikeeColors.primary),
         ]),
         const SizedBox(height: 10),
         Center(

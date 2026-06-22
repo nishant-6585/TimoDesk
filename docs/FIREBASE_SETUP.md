@@ -1,7 +1,7 @@
 # Firebase Setup — Push Notifications (FCM)
 
-> Setup guide for the TimoDesk **mobile admin push notifications** (#90 Part B).
-> Project: **`timodesk`** · project number **`362219956591`**.
+> Setup guide for the Mikee **mobile admin push notifications** (#90 Part B).
+> Project: **`mikee`** · project number **`362219956591`**.
 > Push: visitor-arrived → host, battery-low → admins, obstacle-blocked → admins.
 
 **Architecture:** the Flutter admin app registers an FCM device token (stored in Supabase
@@ -14,8 +14,8 @@ key. Client = `app/lib/.../push_service.dart`; sender = `spine/src/services/push
 
 | Step | State |
 |---|---|
-| Firebase project `timodesk` created | ✅ |
-| Apps registered (Android `com.example.timo_admin`, iOS `com.example.timoAdmin`, web) via `flutterfire configure` | ✅ |
+| Firebase project `mikee` created | ✅ |
+| Apps registered (Android `com.example.mikee_admin`, iOS `com.example.mikeeAdmin`, web) via `flutterfire configure` | ✅ |
 | `firebase_options.dart` generated + committed; `main.dart` inits with `DefaultFirebaseOptions.currentPlatform` | ✅ |
 | Android `google-services` Gradle plugin wired (Kotlin DSL, v4.3.10); APK build proven | ✅ |
 | `google-services.json` + `GoogleService-Info.plist` committed (client config, not secrets) | ✅ |
@@ -47,13 +47,13 @@ mismatches `applicationId`).
 ## TODO 1 — Spine service-account key (lets spine SEND) ← do this to activate push
 
 1. Firebase Console → ⚙ **Project settings** → **Service accounts** → **Generate new private key**
-   → downloads e.g. `timodesk-firebase-adminsdk-xxxxx.json`.
+   → downloads e.g. `mikee-firebase-adminsdk-xxxxx.json`.
 2. Put it where spine can read it, **OUTSIDE git** — e.g. `spine/secrets/firebase-service-account.json`.
    Confirm it's gitignored. **NEVER commit this file** (it has `private_key` + `client_email`).
 3. In `spine/.env`:
    ```
    FCM_SERVICE_ACCOUNT=/absolute/path/to/spine/secrets/firebase-service-account.json
-   FCM_PROJECT_ID=timodesk        # optional — spine also reads project_id from the JSON
+   FCM_PROJECT_ID=mikee        # optional — spine also reads project_id from the JSON
    ```
    (`FCM_SERVICE_ACCOUNT` accepts a file path **or** inline JSON.)
 4. Restart spine. On boot it should NOT log `[push] FCM not configured`.
@@ -86,8 +86,8 @@ server key.
 
 ## Gotchas
 
-- **`com.example.timo_admin` is a placeholder package.** Fine for testing; for a real Play/App
-  Store release switch to a real reverse-domain id (e.g. `in.xboom.timo`) — but that means
+- **`com.example.mikee_admin` is a placeholder package.** Fine for testing; for a real Play/App
+  Store release switch to a real reverse-domain id (e.g. `in.xboom.mikee`) — but that means
   re-registering the apps in Firebase, so decide before going to stores.
 - **Host-specific targeting is TODO** in `push.ts` — pushes currently go to all admins with the
   host named in the body, because there's no `staff ↔ auth.users` link yet.

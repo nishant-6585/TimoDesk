@@ -1,6 +1,6 @@
-# TimoDesk — Project Context for Claude Code
+# Mikee — Project Context for Claude Code
 
-> Smart reception app for the **Timo robot platform** (Alpha Robotics / CSJBot). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously.
+> Smart reception app for the **Mikee robot platform** (Alpha Robotics / CSJBot). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously.
 
 > **⚡ Read [`HANDOFF.md`](./HANDOFF.md) FIRST.** It's the live session state — what shipped last, what's pending, what's blocking, what to start with on this machine. This `CLAUDE.md` is the durable architectural reference; `HANDOFF.md` is the per-session pulse.
 
@@ -12,7 +12,7 @@
 
 | Layer | What | Where |
 |---|---|---|
-| **Edge** | Alpha Robotics Timo SDK (Java/Kotlin) on the robot's Android 7.1.2 chest screen | `robot_app/` |
+| **Edge** | Alpha Robotics Mikee SDK (Java/Kotlin) on the robot's Android 7.1.2 chest screen | `robot_app/` |
 | **Cloud** | Node.js TypeScript broker (port 4000) + Supabase (Postgres + RLS + pgvector) | `spine/` · `supabase/` |
 | **Client** | Flutter admin app (web + iOS + Android) + browser viewer + mobile viewer | `app/` · `viewer_web/` · `viewer_mobile/` |
 
@@ -21,7 +21,7 @@
 ## Component map
 
 ```
-robot_app/          Flutter on Timo chest screen — MJPEG server + (future) native SDK bridge for sensors
+robot_app/          Flutter on Mikee chest screen — MJPEG server + (future) native SDK bridge for sensors
 viewer_web/         Single-file HTML control UI — WebSocket to spine
 viewer_mobile/      Flutter mobile camera viewer
 signaling_server/   Node.js WebRTC signaling + serves viewer_web
@@ -105,15 +105,15 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 
 These persist across Claude sessions on this machine. Read for deeper architectural reasoning, decision history, and LIDAR research:
 
-- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\timodesk-overview.md` — full architectural snapshot, component status, conventions
-- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\timodesk-lidar-integration.md` — CSJBot SDK LIDAR research, exposed events, implementation plan
+- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\mikee-overview.md` — full architectural snapshot, component status, conventions
+- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\mikee-lidar-integration.md` — CSJBot SDK LIDAR research, exposed events, implementation plan
 - `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\MEMORY.md` — index of all memory files
 
 ## Active work (June 2026)
 
 **Current focus:** Wire CSJBot SDK obstacle / sensor / localization events into spine state and Flutter admin UI. Target MockRobotSDK only — real hardware unavailable.
 
-**Key finding from SDK research:** CSJBot does NOT expose raw LIDAR point cloud. It surfaces high-level obstacle events (`NAVI_ROBOT_BLOCKED_NTF`, `NAVI_ROBOT_WAITSHORT_NTF`, `LQ_LOW_NTF`, etc.) which are sufficient for reception robot use case. Full research in `timodesk-lidar-integration.md`.
+**Key finding from SDK research:** CSJBot does NOT expose raw LIDAR point cloud. It surfaces high-level obstacle events (`NAVI_ROBOT_BLOCKED_NTF`, `NAVI_ROBOT_WAITSHORT_NTF`, `LQ_LOW_NTF`, etc.) which are sufficient for reception robot use case. Full research in `mikee-lidar-integration.md`.
 
 **Native bridge code (when real hardware arrives):** documented in `robot_app/docs/SENSOR_BRIDGE.md` (to be created during Phase 1 work). Don't deploy until hardware is plugged in.
 
@@ -130,4 +130,4 @@ These persist across Claude sessions on this machine. Read for deeper architectu
 **Nishant** — solo engineer, Flutter-strong, newer to backend/robotics. This repo is his.
 **Vishal** — founder, owns hardware relationship + DPDP/legal + KB content.
 
-xboom is building land + air + water robots for enterprise (JSW, Tata, Reliance, Indian Army). Timo is the first product — reception robot MVP.
+xboom is building land + air + water robots for enterprise (JSW, Tata, Reliance, Indian Army). Mikee is the first product — reception robot MVP.

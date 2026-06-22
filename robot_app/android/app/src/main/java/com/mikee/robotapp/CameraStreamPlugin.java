@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.Manifest;
 import android.content.Context;
@@ -56,7 +56,7 @@ import io.flutter.plugin.common.MethodChannel;
 public class CameraStreamPlugin
         implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
-    private static final String TAG = "TimoDesk";
+    private static final String TAG = "Mikee";
 
     // Set true to run the color-cycling mock instead of the real camera.
     private static final boolean IS_MOCK = false;
@@ -202,7 +202,7 @@ public class CameraStreamPlugin
 
         p.setTextSize(26f);
         p.setColor(Color.argb(180, 255, 255, 255));
-        canvas.drawText("TimoDesk  •  640×480  •  ~30 fps", 20, 156, p);
+        canvas.drawText("Mikee  •  640×480  •  ~30 fps", 20, 156, p);
         return bmp;
     }
 
@@ -521,13 +521,13 @@ public class CameraStreamPlugin
         String ip   = wifiIp();
         String body = "<!DOCTYPE html><html><head>"
                 + "<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                + "<title>TimoDesk Camera</title>"
+                + "<title>Mikee Camera</title>"
                 + "<style>body{background:#0f0f0f;color:#fff;font-family:sans-serif;"
                 + "display:flex;flex-direction:column;align-items:center;justify-content:center;"
                 + "min-height:100vh;margin:0;padding:16px;box-sizing:border-box}"
                 + "h2{color:#FF6B35}img{max-width:100%;border-radius:8px}a{color:#FF6B35}"
                 + "</style></head><body>"
-                + "<h2>TimoDesk Camera</h2>"
+                + "<h2>Mikee Camera</h2>"
                 + "<img src='/stream' alt='MJPEG stream'/>"
                 + "<p>Stream: <a href='http://" + ip + ":" + PORT + "/stream'>"
                 + "http://" + ip + ":" + PORT + "/stream</a></p>"

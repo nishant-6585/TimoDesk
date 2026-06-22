@@ -34,8 +34,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _testConnection() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(children: [Icon(Icons.check_circle, color: TimoColors.success, size: 20), const SizedBox(width: 12), Text('Connection successful', style: GoogleFonts.inter(fontSize: 13))]),
-        backgroundColor: TimoColors.cardTop,
+        content: Row(children: [Icon(Icons.check_circle, color: MikeeColors.success, size: 20), const SizedBox(width: 12), Text('Connection successful', style: GoogleFonts.inter(fontSize: 13))]),
+        backgroundColor: MikeeColors.cardTop,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -46,25 +46,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final compact = MediaQuery.of(context).size.width < 900;
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Stack(
         children: [
           Column(
             children: [
               Container(
                 height: 64,
-                decoration: BoxDecoration(color: TimoColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: TimoColors.border))),
+                decoration: BoxDecoration(color: MikeeColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: MikeeColors.border))),
                 padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
                 child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
                   Row(children: [
-                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [TimoColors.primary, TimoColors.primaryDark]), boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
-                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0))])]
+                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [MikeeColors.primary, MikeeColors.primaryDark]), boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
+                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0))])]
                   ]),
-                  if (!compact) Text('Settings', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                  if (!compact) Text('Settings', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
                   Row(children: [
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: TimoColors.success.withOpacity(0.08), border: Border.all(color: TimoColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: TimoColors.success))])),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.08), border: Border.all(color: MikeeColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: MikeeColors.success))])),
                     const SizedBox(width: 12),
-                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
+                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
                   ]),
                 ]),
               ),
@@ -83,9 +83,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             constraints: const BoxConstraints(maxWidth: 760),
                             child: Column(children: [
                               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Row(children: [Icon(Icons.settings, size: 28, color: TimoColors.primary), const SizedBox(width: 12), Text('Settings', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+                                Row(children: [Icon(Icons.settings, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Settings', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
                                 const SizedBox(height: 4),
-                                Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+                                Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
                               ]),
                               const SizedBox(height: 24),
                               _SettingCard('NETWORK', [
@@ -96,7 +96,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 _SettingField('Port', _port, (v) => setState(() => _port = v)),
                                 _SettingField('Signaling Server', _signalingServer, (v) => setState(() => _signalingServer = v)),
                                 _SettingField('Reconnect timeout', _reconnectTimeout, (v) => setState(() => _reconnectTimeout = v)),
-                              ], const SizedBox(height: 16), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: _testConnection, icon: const Icon(Icons.wifi, size: 16), label: Text('Test connection', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: TimoColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))),
+                              ], const SizedBox(height: 16), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: _testConnection, icon: const Icon(Icons.wifi, size: 16), label: Text('Test connection', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))),
                               const SizedBox(height: 20),
                               _SafetyCard(
                                 collisionSafety: _collisionSafety,
@@ -133,7 +133,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 220,
-      decoration: BoxDecoration(color: TimoColors.surface, border: const Border(right: BorderSide(color: TimoColors.border))),
+      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
       child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
         _NavItem('Dashboard', Icons.space_dashboard, false, () => onNav('dashboard')),
         _NavItem('Control', Icons.sports_esports, false, () => onNav('control')),
@@ -156,8 +156,8 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(padding: const EdgeInsets.only(bottom: 4), child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? TimoColors.primary : TimoColors.textSecondary)))]),
+      decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))]),
     ))));
   }
 }
@@ -172,9 +172,9 @@ class _SettingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        Text(title, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
         const SizedBox(height: 12),
         GridView.count(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), childAspectRatio: 3, children: fields),
         spacing,
@@ -203,7 +203,7 @@ class _SettingFieldState extends State<_SettingField> {
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(widget.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: TimoColors.textSecondary, height: 1.0)),
+      Text(widget.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary, height: 1.0)),
       const SizedBox(height: 4),
       TextField(
         controller: _controller,
@@ -211,8 +211,8 @@ class _SettingFieldState extends State<_SettingField> {
         style: GoogleFonts.jetBrainsMono(fontSize: 12),
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TimoColors.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: TimoColors.primary.withOpacity(0.6), width: 1.5)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: MikeeColors.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: MikeeColors.primary.withOpacity(0.6), width: 1.5)),
           filled: true,
           fillColor: const Color(0xFF141414),
         ),
@@ -242,9 +242,9 @@ class _SafetyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('SAFETY & BEHAVIOR', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        Text('SAFETY & BEHAVIOR', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
         const SizedBox(height: 16),
         _SettingRow('Collision safety stop', collisionSafety, (v) => onCollisionChange(v)),
         _SettingRow('Auto-snapshot on face detect', autoSnapshot, (v) => onSnapshotChange(v)),
@@ -266,7 +266,7 @@ class _SettingRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text(label, style: GoogleFonts.inter(fontSize: 12)),
-        Switch(value: value, onChanged: onChanged, activeColor: TimoColors.primary),
+        Switch(value: value, onChanged: onChanged, activeColor: MikeeColors.primary),
       ]),
     );
   }
@@ -279,7 +279,7 @@ class _SpeedChip extends StatelessWidget {
   const _SpeedChip(this.label, this.active, this.onTap);
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: active ? TimoColors.primary : TimoColors.inset, border: Border.all(color: active ? TimoColors.primary : TimoColors.border), borderRadius: BorderRadius.circular(6)), child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: active ? Colors.white : TimoColors.textSecondary)))));
+    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: active ? MikeeColors.primary : MikeeColors.inset, border: Border.all(color: active ? MikeeColors.primary : MikeeColors.border), borderRadius: BorderRadius.circular(6)), child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: active ? Colors.white : MikeeColors.textSecondary)))));
   }
 }
 
@@ -288,15 +288,15 @@ class _AccountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]), border: Border.all(color: TimoColors.border), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('ACCOUNT', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: TimoColors.textSecondary)),
+        Text('ACCOUNT', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
         const SizedBox(height: 16),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nishant K.', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('admin · NK · last login just now', style: GoogleFonts.inter(fontSize: 10, color: TimoColors.textSecondary))]), TextButton(onPressed: () {}, child: Text('Sign out', style: GoogleFonts.inter(fontSize: 12)))]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nishant K.', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('admin · NK · last login just now', style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textSecondary))]), TextButton(onPressed: () {}, child: Text('Sign out', style: GoogleFonts.inter(fontSize: 12)))]),
         const SizedBox(height: 16),
-        Divider(color: TimoColors.border, height: 1),
+        Divider(color: MikeeColors.border, height: 1),
         const SizedBox(height: 16),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('v2.4.1 · xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 10, color: TimoColors.textSecondary))]), Text('build 2406', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: TimoColors.textMuted))]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('v2.4.1 · xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textSecondary))]), Text('build 2406', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textMuted))]),
       ]),
     );
   }

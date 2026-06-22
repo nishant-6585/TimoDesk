@@ -1,7 +1,7 @@
 {
-  "name": "@timodesk/spine",
+  "name": "@mikee/spine",
   "version": "0.1.0",
-  "description": "Timo Reception Robot — Integration Spine (WebSocket gateway, SDK interface, safety interlocks)",
+  "description": "Mikee Reception Robot — Integration Spine (WebSocket gateway, SDK interface, safety interlocks)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -35,7 +35,7 @@
     "vitest": "^1.0.4"
   },
   "keywords": [
-    "timo",
+    "mikee",
     "robot",
     "spine",
     "websocket",

@@ -10,7 +10,7 @@ import 'face_painter.dart' show FaceState, FaceStateKind;
 /// dim, ring, dots, breathing, lip-sync) are DERIVED here — they are NOT public
 /// fields, so the contract the rest of the app drives stays unchanged.
 ///
-/// Ported 1:1 from robot_app/docs/timo_face_prototype.html (`live`, `poseFor`,
+/// Ported 1:1 from robot_app/docs/mikee_face_prototype.html (`live`, `poseFor`,
 /// `exprMod`, `update`). Eases are frame-rate independent: v += (target−v)·(1−e^(−dt·k)).
 
 /// Smoothed render values — mirrors the prototype's `live` object exactly.

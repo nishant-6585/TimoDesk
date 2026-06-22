@@ -1,6 +1,6 @@
-# Timo Admin App
+# Mikee Admin App
 
-**Flutter admin control surface for the Timo reception robot.**
+**Flutter admin control surface for the Mikee reception robot.**
 
 Targets: iOS, Android, Web (single codebase). Control the robot, view live feed, manage captures, and monitor events in real-time.
 
@@ -246,7 +246,7 @@ Check robot IP in Settings. Confirm robot is on the network and responding at `h
 
 - **Embeddings**: Once voice pipeline runs, kb_chunk will have embeddings for semantic search
 - **Auth integration**: Link Supabase auth users to xboom staff table
-- **Custom TTS voice**: Pick a consistent ElevenLabs voice persona for Timo
+- **Custom TTS voice**: Pick a consistent ElevenLabs voice persona for Mikee
 - **WebRTC**: Replace MJPEG with WebRTC for lower-latency video (Phase 2)
 - **Mobile optimizations**: Responsive layout for small screens
 

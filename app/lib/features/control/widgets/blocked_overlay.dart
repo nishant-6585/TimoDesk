@@ -39,7 +39,7 @@ class BlockedOverlay extends StatelessWidget {
               'Robot halted by obstacle',
               style: GoogleFonts.inter(
                 fontSize: 13,
-                color: TimoColors.textSecondary,
+                color: MikeeColors.textSecondary,
               ),
             ),
             const SizedBox(height: 16),
@@ -47,7 +47,7 @@ class BlockedOverlay extends StatelessWidget {
               'Obstacle detected ahead. Robot will navigate around it.',
               style: GoogleFonts.inter(
                 fontSize: 12,
-                color: TimoColors.textMuted,
+                color: MikeeColors.textMuted,
               ),
               textAlign: TextAlign.center,
             ),

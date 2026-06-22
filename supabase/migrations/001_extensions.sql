@@ -1,5 +1,5 @@
 -- 001_extensions.sql
--- Enable required PostgreSQL extensions for Timo
+-- Enable required PostgreSQL extensions for Mikee
 -- Run this first before any tables are created
 
 create extension if not exists "uuid-ossp";

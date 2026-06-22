@@ -167,8 +167,8 @@ export async function maybeNotifyBatteryLow(
   if (low && !_batteryWasLow) {
     _batteryWasLow = true;
     await sendPush(supabase, 'all', {
-      title: 'Timo battery low',
-      body: `🔋 Battery at ${battery}% — please dock Timo soon.`,
+      title: 'Mikee battery low',
+      body: `🔋 Battery at ${battery}% — please dock Mikee soon.`,
       data: { type: 'battery_low', battery: String(battery) },
     });
   } else if (!low && battery > BATTERY_LOW_THRESHOLD + 5) {
@@ -177,7 +177,7 @@ export async function maybeNotifyBatteryLow(
 }
 
 let _obstacleWasBlocked = false;
-/** Obstacle state → push admins once when Timo becomes blocked. */
+/** Obstacle state → push admins once when Mikee becomes blocked. */
 export async function maybeNotifyObstacleBlocked(
   supabase: SupabaseClient,
   obstacleState: string
@@ -186,8 +186,8 @@ export async function maybeNotifyObstacleBlocked(
   if (blocked && !_obstacleWasBlocked) {
     _obstacleWasBlocked = true;
     await sendPush(supabase, 'all', {
-      title: 'Timo is blocked',
-      body: '🚧 Timo is blocked by an obstacle and stopped moving.',
+      title: 'Mikee is blocked',
+      body: '🚧 Mikee is blocked by an obstacle and stopped moving.',
       data: { type: 'obstacle_blocked' },
     });
   } else if (!blocked) {

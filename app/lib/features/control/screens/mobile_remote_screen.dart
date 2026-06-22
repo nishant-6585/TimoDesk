@@ -103,7 +103,7 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     );
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -149,26 +149,26 @@ class _StatusStrip extends StatelessWidget {
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: const BoxDecoration(
-        color: TimoColors.surface,
-        border: Border(bottom: BorderSide(color: TimoColors.border)),
+        color: MikeeColors.surface,
+        border: Border(bottom: BorderSide(color: MikeeColors.border)),
       ),
       child: Row(children: [
         _Pill(
-          color: spine.connected ? TimoColors.success : TimoColors.error,
+          color: spine.connected ? MikeeColors.success : MikeeColors.error,
           label: spine.connected ? 'LINKED' : 'NO LINK',
         ),
         const SizedBox(width: 8),
-        _Pill(color: online ? TimoColors.success : TimoColors.textMuted, label: online ? 'SDK' : 'SDK?'),
+        _Pill(color: online ? MikeeColors.success : MikeeColors.textMuted, label: online ? 'SDK' : 'SDK?'),
         const SizedBox(width: 8),
         Icon(Icons.battery_full, size: 16, color: _batteryColor(s?.battery ?? 0)),
         Text(' ${s?.battery ?? '--'}%',
-            style: GoogleFonts.jetBrainsMono(fontSize: 12, color: TimoColors.textSecondary)),
+            style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary)),
         const Spacer(),
-        if (blocked) const _Pill(color: TimoColors.error, label: 'BLOCKED'),
+        if (blocked) const _Pill(color: MikeeColors.error, label: 'BLOCKED'),
         // TODO(#90): richer sensor state — SensorStatusCard (lidar/rgbd/sonar) is
         // available on main; the compact strip shows obstacle/battery for now.
         IconButton(
-          icon: const Icon(Icons.settings, size: 18, color: TimoColors.textSecondary),
+          icon: const Icon(Icons.settings, size: 18, color: MikeeColors.textSecondary),
           onPressed: onSettings,
           tooltip: 'Settings',
         ),
@@ -177,7 +177,7 @@ class _StatusStrip extends StatelessWidget {
   }
 
   Color _batteryColor(int b) =>
-      b <= 15 ? TimoColors.error : (b <= 35 ? TimoColors.warning : TimoColors.success);
+      b <= 15 ? MikeeColors.error : (b <= 35 ? MikeeColors.warning : MikeeColors.success);
 }
 
 class _Pill extends StatelessWidget {
@@ -237,7 +237,7 @@ class _CameraPanel extends StatelessWidget {
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
               child: Icon(streaming ? Icons.stop_circle_outlined : Icons.play_circle_outline,
-                  size: 22, color: streaming ? TimoColors.error : TimoColors.primary),
+                  size: 22, color: streaming ? MikeeColors.error : MikeeColors.primary),
             ),
           ),
         ),
@@ -267,7 +267,7 @@ class _ControlsPanel extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: TimoColors.primary, onChange: onDrive, disabled: stopped)),
+          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: MikeeColors.primary, onChange: onDrive, disabled: stopped)),
           _Labeled('HEAD', Joystick(size: 150, knobColor: const Color(0xFF3B82F6), onChange: onHead, disabled: stopped)),
         ]),
         const SizedBox(height: 16),
@@ -292,7 +292,7 @@ class _Labeled extends StatelessWidget {
     return Column(children: [
       child,
       const SizedBox(height: 6),
-      Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: TimoColors.textMuted, letterSpacing: 0.1)),
+      Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: MikeeColors.textMuted, letterSpacing: 0.1)),
     ]);
   }
 }
@@ -307,14 +307,14 @@ class _ActionButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onTap,
       style: ElevatedButton.styleFrom(
-        backgroundColor: TimoColors.cardTop,
-        foregroundColor: TimoColors.textPrimary,
-        side: const BorderSide(color: TimoColors.border),
+        backgroundColor: MikeeColors.cardTop,
+        foregroundColor: MikeeColors.textPrimary,
+        side: const BorderSide(color: MikeeColors.border),
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 20, color: onTap == null ? TimoColors.textMuted : TimoColors.primary),
+        Icon(icon, size: 20, color: onTap == null ? MikeeColors.textMuted : MikeeColors.primary),
         const SizedBox(height: 4),
         Text(label, style: GoogleFonts.inter(fontSize: 11)),
       ]),
@@ -337,7 +337,7 @@ class _StopResumeBar extends StatelessWidget {
         child: ElevatedButton(
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
-            backgroundColor: stopped ? TimoColors.success : TimoColors.error,
+            backgroundColor: stopped ? MikeeColors.success : MikeeColors.error,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           child: Text(stopped ? 'RESUME' : 'EMERGENCY STOP',

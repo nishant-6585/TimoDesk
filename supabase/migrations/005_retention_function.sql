@@ -46,7 +46,7 @@ comment on function purge_expired_data() is
 --
 -- To enable the nightly purge, run this in Supabase Dashboard → SQL Editor:
 --
---   select cron.schedule('nightly-purge-timo', '0 2 * * *', 'select purge_expired_data();');
+--   select cron.schedule('nightly-purge-mikee', '0 2 * * *', 'select purge_expired_data();');
 --
 -- This runs at 2:00 AM every day.
 -- To verify it's scheduled:
@@ -55,7 +55,7 @@ comment on function purge_expired_data() is
 --
 -- To remove:
 --
---   select cron.unschedule('nightly-purge-timo');
+--   select cron.unschedule('nightly-purge-mikee');
 --
 -- =============================================================================
 

@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.content.Context;
 import android.os.Handler;
@@ -14,10 +14,10 @@ import io.flutter.plugin.common.EventChannel;
  * #80 Phase B — CSJBot wake word.
  *
  * Registers the SDK's {@link OnWakeupListener} and forwards a "wakeup" string to
- * Dart over the "com.timoDesk/wake_events" EventChannel; the face screen starts a
+ * Dart over the "com.mikee/wake_events" EventChannel; the face screen starts a
  * voice session on wakeup.
  *
- * The CSJBot SDK only functions on the real Timo chest hardware — on an emulator
+ * The CSJBot SDK only functions on the real Mikee chest hardware — on an emulator
  * the wake engine never fires (and the SDK may be unavailable), so every SDK touch
  * is wrapped in try/catch(Throwable) and degrades to a silent no-op.
  *
@@ -27,7 +27,7 @@ import io.flutter.plugin.common.EventChannel;
  */
 public class WakeWordPlugin implements EventChannel.StreamHandler {
 
-    private static final String TAG = "TimoDesk.Wake";
+    private static final String TAG = "Mikee.Wake";
 
     /** On wake word, rotate the robot to face the speaker (sound-source direction),
      *  matching the vendor demo (AsrNlpActivity). Set false if chassis rotation is

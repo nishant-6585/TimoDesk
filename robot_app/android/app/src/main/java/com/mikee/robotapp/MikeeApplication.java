@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.util.Log;
 
@@ -7,9 +7,9 @@ import androidx.multidex.MultiDexApplication;
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnAuthenticationListener;
 
-public class TimoApplication extends MultiDexApplication {
+public class MikeeApplication extends MultiDexApplication {
 
-    private static final String TAG = "TimoDesk";
+    private static final String TAG = "Mikee";
 
     @Override
     public void onCreate() {
@@ -55,7 +55,7 @@ public class TimoApplication extends MultiDexApplication {
                 CsjRobot.getInstance().setPersonCheckType(true, true, true);
 
                 // Step 7: Init
-                CsjRobot.getInstance().init(TimoApplication.this);
+                CsjRobot.getInstance().init(MikeeApplication.this);
 
                 Log.d(TAG, "SDK initialized — flavor=" + BuildConfig.FLAVOR
                         + "  ip=" + BuildConfig.SDK_IP);

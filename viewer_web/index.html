@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TimoDesk Live Feed</title>
+  <title>Mikee Live Feed</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -224,7 +224,7 @@
 </div>
 
 <header>
-  <span class="logo">TimoDesk Live Feed</span>
+  <span class="logo">Mikee Live Feed</span>
   <button onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
 </header>
 
@@ -380,7 +380,7 @@ let isStopped = false;
 let dpadLongPress = null;
 let joystickActive = false;
 let chassisJoystickActive = false;
-let showedKeyboardTip = localStorage.getItem('timodesk_tip_shown');
+let showedKeyboardTip = localStorage.getItem('mikee_tip_shown');
 let wasdPressed = { w: false, a: false, s: false, d: false };
 let wasdInterval = null;
 
@@ -581,7 +581,7 @@ function toggle() {
   if (!showedKeyboardTip) {
     keyboardTip.style.display = 'block';
     setTimeout(() => { keyboardTip.style.display = 'none'; }, 4000);
-    localStorage.setItem('timodesk_tip_shown', 'true');
+    localStorage.setItem('mikee_tip_shown', 'true');
   }
 }
 

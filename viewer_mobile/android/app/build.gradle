@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace "com.timoDesk.viewermobile"
+    namespace "com.mikee.viewermobile"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.timoDesk.viewermobile"
+        applicationId = "com.mikee.viewermobile"
         minSdkVersion = flutter.minSdkVersion
         targetSdk = 34
         versionCode = flutter.versionCode

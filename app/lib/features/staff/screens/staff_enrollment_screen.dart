@@ -66,7 +66,7 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: TimoColors.surface,
+      backgroundColor: MikeeColors.surface,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom + 20,
@@ -156,7 +156,7 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: TimoColors.cardTop,
+                        backgroundColor: MikeeColors.cardTop,
                       ),
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Cancel'),
@@ -226,7 +226,7 @@ class _StaffEnrollmentScreenState extends ConsumerState<StaffEnrollmentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       appBar: AppBar(
         title: const Text('Enroll Staff'),
       ),

@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -31,7 +31,7 @@ import java.util.concurrent.Executors;
 import com.csjbot.coshandler.core.CsjRobot;
 
 public class HeadControlPlugin implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
-    private static final String TAG = "TimoDesk.HeadControl";
+    private static final String TAG = "Mikee.HeadControl";
     private static final int PORT = 8081;
     private static final int RATE_LIMIT_MS = 50;
 

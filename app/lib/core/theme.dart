@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-class TimoColors {
+class MikeeColors {
   // Layout & backgrounds
   static const Color background = Color(0xFF0F0F0F); // App bg
   static const Color surface = Color(0xFF121212); // Header, sidebar
@@ -30,64 +30,64 @@ class TimoColors {
   static const Color textMuted = Color(0xFF6B7280); // Darker grey
 }
 
-class TimoTheme {
+class MikeeTheme {
   static ThemeData get dark {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: TimoColors.background,
-      canvasColor: TimoColors.surface,
+      scaffoldBackgroundColor: MikeeColors.background,
+      canvasColor: MikeeColors.surface,
       colorScheme: ColorScheme.dark(
-        primary: TimoColors.primary,
-        surface: TimoColors.surface,
-        error: TimoColors.error,
+        primary: MikeeColors.primary,
+        surface: MikeeColors.surface,
+        error: MikeeColors.error,
         onPrimary: Colors.black,
-        onSurface: TimoColors.textPrimary,
+        onSurface: MikeeColors.textPrimary,
       ),
       textTheme: GoogleFonts.interTextTheme(
         ThemeData(brightness: Brightness.dark).textTheme.copyWith(
           headlineLarge: GoogleFonts.inter(
             fontSize: 32,
             fontWeight: FontWeight.bold,
-            color: TimoColors.textPrimary,
+            color: MikeeColors.textPrimary,
           ),
           titleLarge: GoogleFonts.inter(
             fontSize: 20,
             fontWeight: FontWeight.w600,
-            color: TimoColors.textPrimary,
+            color: MikeeColors.textPrimary,
           ),
           bodyMedium: GoogleFonts.inter(
             fontSize: 14,
-            color: TimoColors.textPrimary,
+            color: MikeeColors.textPrimary,
           ),
           labelSmall: GoogleFonts.inter(
             fontSize: 12,
-            color: TimoColors.textSecondary,
+            color: MikeeColors.textSecondary,
           ),
         ),
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: TimoColors.surface,
+        backgroundColor: MikeeColors.surface,
         elevation: 1,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         titleTextStyle: GoogleFonts.inter(
           fontSize: 20,
           fontWeight: FontWeight.bold,
-          color: TimoColors.textPrimary,
+          color: MikeeColors.textPrimary,
         ),
       ),
       cardTheme: CardThemeData(
-        color: TimoColors.surface,
+        color: MikeeColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: TimoColors.border, width: 1),
+          side: const BorderSide(color: MikeeColors.border, width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: TimoColors.primary,
+          backgroundColor: MikeeColors.primary,
           foregroundColor: Colors.black,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -96,36 +96,36 @@ class TimoTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: TimoColors.surface,
-          foregroundColor: TimoColors.textPrimary,
+          backgroundColor: MikeeColors.surface,
+          foregroundColor: MikeeColors.textPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: TimoColors.surface,
+        fillColor: MikeeColors.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: TimoColors.border),
+          borderSide: const BorderSide(color: MikeeColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: TimoColors.border),
+          borderSide: const BorderSide(color: MikeeColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: TimoColors.primary, width: 2),
+          borderSide: const BorderSide(color: MikeeColors.primary, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        hintStyle: const TextStyle(color: TimoColors.textSecondary),
+        hintStyle: const TextStyle(color: MikeeColors.textSecondary),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: TimoColors.surface,
-        labelStyle: GoogleFonts.inter(color: TimoColors.textPrimary),
+        backgroundColor: MikeeColors.surface,
+        labelStyle: GoogleFonts.inter(color: MikeeColors.textPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: TimoColors.border),
+          side: const BorderSide(color: MikeeColors.border),
         ),
       ),
     );

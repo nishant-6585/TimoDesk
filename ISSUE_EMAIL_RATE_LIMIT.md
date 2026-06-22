@@ -15,7 +15,7 @@ This prevents account creation and blocks the entire app from being tested.
 
 ### What Happens
 
-1. **User opens TimoDesk Flutter app** → Lands on Login/SignUp screen
+1. **User opens Mikee Flutter app** → Lands on Login/SignUp screen
 2. **User clicks "Sign Up" tab**
 3. **User fills in:**
    - Email: `nishant.k@xboom.in` (or any @xboom.in email)
@@ -113,7 +113,7 @@ setState() → error displayed
 ### Current Workaround Status
 
 **Workaround 1: Use Different Email Provider** ✅ **WORKS**
-- Try: `test.timo@gmail.com`
+- Try: `test.mikee@gmail.com`
 - Try: `admin@yahoo.com`
 - Why: Gmail/Yahoo are trusted by Supabase, no domain-level rate limiting
 - Limitation: Can't share @xboom.in credentials
@@ -177,7 +177,7 @@ try {
 1. Refresh the app (or clear form)
 2. Click "Sign Up" tab
 3. Enter:
-   - Email: `test.timo.2024@gmail.com` (or any gmail)
+   - Email: `test.mikee.2024@gmail.com` (or any gmail)
    - Password: `Test123!`
    - Confirm: `Test123!`
 4. Click "Create Account"
@@ -269,7 +269,7 @@ try {
 ### For Testing NOW (Next 5 minutes)
 1. **Use Solution 1** → Sign up with Gmail
    ```
-   Email: test.timo.2024@gmail.com
+   Email: test.mikee.2024@gmail.com
    Password: Test123!
    ```
 2. Click "Create Account" → Should succeed

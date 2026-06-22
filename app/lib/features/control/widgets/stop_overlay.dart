@@ -23,21 +23,21 @@ class StopOverlay extends StatelessWidget {
           children: [
             const Icon(
               Icons.stop_circle,
-              color: TimoColors.error,
+              color: MikeeColors.error,
               size: 64,
             ),
             const SizedBox(height: 24),
             Text(
               'SYSTEM STOPPED',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: TimoColors.error,
+                color: MikeeColors.error,
               ),
             ),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: onResume,
               style: ElevatedButton.styleFrom(
-                backgroundColor: TimoColors.success,
+                backgroundColor: MikeeColors.success,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               ),

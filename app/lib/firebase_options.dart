@@ -50,25 +50,25 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyB1alJu89hi4Dp0sFu-RebryRLjCSDuKhg',
     appId: '1:362219956591:web:4ecafa9cafa0086616609a',
     messagingSenderId: '362219956591',
-    projectId: 'timodesk',
-    authDomain: 'timodesk.firebaseapp.com',
-    storageBucket: 'timodesk.firebasestorage.app',
+    projectId: 'mikee',
+    authDomain: 'mikee.firebaseapp.com',
+    storageBucket: 'mikee.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDBOS3OIPpxFCO1GN_xNfC9RPxpzNkCtpM',
     appId: '1:362219956591:android:cebb21a5ab1d5e6916609a',
     messagingSenderId: '362219956591',
-    projectId: 'timodesk',
-    storageBucket: 'timodesk.firebasestorage.app',
+    projectId: 'mikee',
+    storageBucket: 'mikee.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDplQw9P6Jyky547VPEYwu_XlGlok0kdUU',
     appId: '1:362219956591:ios:c4a317fb7e869c7c16609a',
     messagingSenderId: '362219956591',
-    projectId: 'timodesk',
-    storageBucket: 'timodesk.firebasestorage.app',
-    iosBundleId: 'com.example.timoAdmin',
+    projectId: 'mikee',
+    storageBucket: 'mikee.firebasestorage.app',
+    iosBundleId: 'com.example.mikeeAdmin',
   );
 }

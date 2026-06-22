@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 3 * * 0"   # Every Sunday at 3am UTC (8:30am IST)
   workflow_dispatch:       # Manual trigger from GitHub UI
+    inputs:
+      commit_range:
+        description: "Optional git range to review (e.g. 'HEAD~3 HEAD' or '<sha1> <sha2>'). Blank = latest commit on manual runs."
+        required: false
+        default: ""
 
 jobs:
   review:
@@ -37,7 +42,7 @@ jobs:
         run: |
           # Write system prompt header using printf (no heredoc — avoids YAML << conflict)
           printf '%s\n' \
-            "You are a senior Flutter/Android engineer reviewing the TimoDesk project — a smart reception robot app on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase." \
+            "You are a senior Flutter/Android engineer reviewing the Mikee project — a smart reception robot app on Mikee (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase." \
             "" \
             "IMPORTANT: Your entire response must be a single raw JSON object. No markdown, no code fences, no text outside the JSON. Start with { and end with }." \
             "" \
@@ -119,7 +124,7 @@ jobs:
 
           # Build payload safely with jq
           jq -n \
-            --arg repo "TimoDesk" \
+            --arg repo "Mikee" \
             --arg branch "$BRANCH" \
             --arg sha "$COMMIT_SHA" \
             --arg range "$COMMIT_RANGE" \

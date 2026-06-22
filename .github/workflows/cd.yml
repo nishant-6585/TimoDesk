@@ -51,12 +51,12 @@ jobs:
       - name: Decode keystore
         if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/timoDesk-release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/mikee-release.keystore
           cat > android/key.properties <<EOF
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=timoDesk-release.keystore
+          storeFile=mikee-release.keystore
           EOF
 
       - name: Build release APK (signed if keystore present)
@@ -72,23 +72,23 @@ jobs:
         run: |
           mkdir -p ../dist
           cp build/app/outputs/flutter-apk/app-robot-release.apk \
-             ../dist/timoDesk-v${{ env.VERSION }}-robot.apk
+             ../dist/mikee-v${{ env.VERSION }}-robot.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', env.VERSION) || github.ref_name }}
-          name: "TimoDesk v${{ env.VERSION }}"
+          name: "Mikee v${{ env.VERSION }}"
           body: |
-            ## TimoDesk v${{ env.VERSION }}
+            ## Mikee v${{ env.VERSION }}
 
             ### Installation
-            1. Download `timoDesk-v${{ env.VERSION }}-robot.apk`
-            2. Transfer to Timo robot: `adb install -r timoDesk-v${{ env.VERSION }}-robot.apk`
+            1. Download `mikee-v${{ env.VERSION }}-robot.apk`
+            2. Transfer to Mikee robot: `adb install -r mikee-v${{ env.VERSION }}-robot.apk`
             3. Or side-load via the robot's browser
 
             **Commit:** ${{ github.sha }}
             **Build number:** ${{ github.run_number }}
-          files: dist/timoDesk-v${{ env.VERSION }}-robot.apk
+          files: dist/mikee-v${{ env.VERSION }}-robot.apk
           draft: false
           prerelease: false

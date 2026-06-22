@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -35,7 +35,7 @@ import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnMapStateListener;
 
 public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
-    private static final String TAG = "TimoDesk.ChassisControl";
+    private static final String TAG = "Mikee.ChassisControl";
     private static final int PORT = 8082;
     private static final int RATE_LIMIT_MS = 80;
     private static final int STOP_DELAY_MS = 300;

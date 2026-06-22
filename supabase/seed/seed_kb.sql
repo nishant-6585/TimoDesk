@@ -11,13 +11,13 @@ insert into kb_chunk (topic, content, is_faq, source) values
   ),
   (
     'products',
-    'xboom builds agricultural drones for precision farming, inspection ROVs for confined spaces like pipelines and tanks, and service robots for reception and hospitality. Our Timo robot is designed to greet visitors, answer questions, and perform security patrols.',
+    'xboom builds agricultural drones for precision farming, inspection ROVs for confined spaces like pipelines and tanks, and service robots for reception and hospitality. Our Mikee robot is designed to greet visitors, answer questions, and perform security patrols.',
     true,
     'manual'
   ),
   (
-    'timo',
-    'I am Timo, the reception robot at xboom. I can greet visitors by name (if enrolled), answer questions about our products and services, capture visitor information, and guide you to the right team member. I am available to assist during office hours.',
+    'mikee',
+    'I am Mikee, the reception robot at xboom. I can greet visitors by name (if enrolled), answer questions about our products and services, capture visitor information, and guide you to the right team member. I am available to assist during office hours.',
     true,
     'manual'
   ),

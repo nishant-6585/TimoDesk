@@ -1,9 +1,9 @@
 // Smoke tests for core helpers. (Replaces the stale `flutter create` counter
 // test, which referenced a non-existent `MyApp` and never compiled against this
-// project — the root widget is `TimoDeskApp`.)
+// project — the root widget is `MikeeApp`.)
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:timo_admin/core/constants.dart';
+import 'package:mikee_admin/core/constants.dart';
 
 void main() {
   group('robotStreamUrl', () {

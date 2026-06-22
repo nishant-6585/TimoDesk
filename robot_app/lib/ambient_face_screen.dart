@@ -111,7 +111,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (!_voiceAgent.isActive) _startVoice();
     });
     // On-device barge-in: the CSJBot CAE recognizes the USER (echo-cancelled). If
-    // the user starts talking while Timo is speaking, cut Timo off immediately —
+    // the user starts talking while Mikee is speaking, cut Mikee off immediately —
     // don't wait on ElevenLabs to detect the interruption.
     _asrSub = _audioBridge.asrTextStream.listen(_onUserSpeech);
 
@@ -255,17 +255,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
-  // On-device barge-in: the CAE recognized the user. If Timo is mid-sentence,
+  // On-device barge-in: the CAE recognized the user. If Mikee is mid-sentence,
   // cut him off and flip to listening immediately (ElevenLabs also gets the audio
-  // and will take the new turn). Ignored when no session or Timo isn't speaking.
+  // and will take the new turn). Ignored when no session or Mikee isn't speaking.
   void _onUserSpeech(String text) {
-    debugPrint('TimoBargeIn: asr="$text" voiceActive=$_voiceActive state=${_face.state}');
+    debugPrint('MikeeBargeIn: asr="$text" voiceActive=$_voiceActive state=${_face.state}');
     if (!_voiceActive || text.trim().isEmpty) return;
     if (_face.state == FaceStateKind.speaking) {
-      debugPrint('TimoBargeIn: BARGE-IN → stopping Timo, switching to listening');
+      debugPrint('MikeeBargeIn: BARGE-IN → stopping Mikee, switching to listening');
       _audioBridge.stopPlayback();
       // ElevenLabs keeps streaming the rest of the interrupted reply — drop those
-      // chunks until the next turn so Timo actually goes quiet. Safety-cleared after
+      // chunks until the next turn so Mikee actually goes quiet. Safety-cleared after
       // 6s in case no new turn arrives.
       _suppressAgentAudio = true;
       _bargeTimer?.cancel();
@@ -278,7 +278,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _onVoiceEvent(VoiceEvent e) {
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
-        // Open in listening — Timo is waiting for the user (the ring shows).
+        // Open in listening — Mikee is waiting for the user (the ring shows).
         _suppressAgentAudio = false;
         setState(() {
           _voiceActive = true;
@@ -300,14 +300,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       case VoiceEventKind.agentSpeaking:
         // Mute the robot's built-in (Chinese) TTS so only the ElevenLabs voice is
         // heard — the CSJBot AIUI runs in parallel (it gives us the mic) but must
-        // not talk over Timo.
+        // not talk over Mikee.
         _audioBridge.stopSpeak();
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
         // Just QUEUE the chunk for playback. Lip-sync (mouthOpen) + the
         // speaking→listening transition are driven by _onPlaybackLevel, which
-        // tracks the SPEAKER (not network arrival) — so lips move while Timo is
+        // tracks the SPEAKER (not network arrival) — so lips move while Mikee is
         // actually talking and close exactly when playback ends.
         if (_suppressAgentAudio) break; // dropped after a barge-in until next turn
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);

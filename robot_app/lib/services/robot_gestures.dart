@@ -8,12 +8,12 @@ import 'package:flutter/services.dart';
 /// All calls are best-effort and idempotent: off-device (emulator / no CSJBot
 /// SDK present) the channel call throws and we swallow it, so callers never
 /// need to guard. The underlying SDK methods (startWaveHands / stopWaveHands /
-/// TimoActionReset) are documented in the csjbot-sdk-action-api memory.
+/// MikeeActionReset) are documented in the csjbot-sdk-action-api memory.
 class RobotGestures {
   RobotGestures._();
 
-  static const MethodChannel _arm = MethodChannel('com.timoDesk/arm_control');
-  static const MethodChannel _head = MethodChannel('com.timoDesk/head_control');
+  static const MethodChannel _arm = MethodChannel('com.mikee/arm_control');
+  static const MethodChannel _head = MethodChannel('com.mikee/head_control');
 
   /// Absolute head pose (0–100; 50 = center, higher ud = up, higher lr = right).
   /// Best-effort: off-device the channel throws and we swallow it.
@@ -40,7 +40,7 @@ class RobotGestures {
   }
 
   /// Subtle speaking sway driven by TTS amplitude (0..1). Called repeatedly
-  /// while Timo talks; the caller throttles to ~once per 300 ms.
+  /// while Mikee talks; the caller throttles to ~once per 300 ms.
   static Future<void> headSway(double amplitude) async {
     final lr = (50 + amplitude * 12).clamp(35.0, 65.0).round();
     await _setHead(lr, 55);
@@ -52,7 +52,7 @@ class RobotGestures {
   }
 
   /// Perk up to speak — a brief forward lean (approximated on the head ud axis,
-  /// as Timo exposes no separate chest joint), then settle.
+  /// as Mikee exposes no separate chest joint), then settle.
   static Future<void> chestAttention() async {
     await _setHead(50, 40);
     await Future<void>.delayed(const Duration(milliseconds: 300));

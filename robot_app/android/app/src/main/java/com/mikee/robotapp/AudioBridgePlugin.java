@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.Manifest;
 import android.content.Context;
@@ -32,9 +32,9 @@ import io.flutter.plugin.common.MethodChannel;
  * #80 Phase B — audio bridge.
  *
  * Mic IN:  AudioRecord (16 kHz / mono / 16-bit PCM) → EventChannel
- *          "com.timoDesk/audio_mic". Each chunk is forwarded to Dart, which pipes
+ *          "com.mikee/audio_mic". Each chunk is forwarded to Dart, which pipes
  *          it to the ElevenLabs session (voiceAgent.sendAudioChunk).
- * Speaker OUT: MethodChannel "com.timoDesk/audio_control" → AudioTrack
+ * Speaker OUT: MethodChannel "com.mikee/audio_control" → AudioTrack
  *          (MODE_STREAM) writes the PCM chunks ElevenLabs sends back.
  *
  * Uses VOICE_COMMUNICATION as the capture source so the platform AEC suppresses
@@ -44,7 +44,7 @@ import io.flutter.plugin.common.MethodChannel;
 public class AudioBridgePlugin
         implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
-    private static final String TAG = "TimoDesk.Audio";
+    private static final String TAG = "Mikee.Audio";
 
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO;
@@ -54,7 +54,7 @@ public class AudioBridgePlugin
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    // Android built-in TTS (Google engine) — Timo speaks action phrases in English.
+    // Android built-in TTS (Google engine) — Mikee speaks action phrases in English.
     // Independent of the CSJBot AIUI/baker TTS (which needs the disabled speech
     // service and is Chinese). Initialized once; ready by the time the user taps.
     private TextToSpeech tts;
@@ -86,8 +86,8 @@ public class AudioBridgePlugin
     };
 
     // ASR text stream — recognized user speech (CSJBot CAE, echo-cancelled, so it
-    // tracks the USER not Timo's own voice). Drives on-device barge-in: if the user
-    // speaks while Timo is talking, Dart cuts Timo off.
+    // tracks the USER not Mikee's own voice). Drives on-device barge-in: if the user
+    // speaks while Mikee is talking, Dart cuts Mikee off.
     private EventChannel.EventSink asrSink;
     final EventChannel.StreamHandler asrStreamHandler = new EventChannel.StreamHandler() {
         @Override public void onListen(Object args, EventChannel.EventSink sink) { asrSink = sink; }
@@ -137,7 +137,7 @@ public class AudioBridgePlugin
                 try {
                     String text = (String) call.argument("text");
                     if (text != null && !text.isEmpty() && tts != null) {
-                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "timo");
+                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "mikee");
                         Log.d(TAG, "TTS speak: " + text);
                     } else {
                         Log.w(TAG, "TTS not ready (ready=" + ttsReady + ")");
@@ -288,7 +288,7 @@ public class AudioBridgePlugin
                         });
                     }
                 }
-            }, "timo-mic");
+            }, "mikee-mic");
             micThread.start();
             if (result != null) result.success(null);
         } catch (Throwable e) {
@@ -360,7 +360,7 @@ public class AudioBridgePlugin
                             Log.w(TAG, "playback write: " + e.getMessage());
                         }
                     }
-                }, "timo-speaker");
+                }, "mikee-speaker");
                 playThread.start();
             }
         } catch (Throwable e) {

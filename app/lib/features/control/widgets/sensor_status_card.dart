@@ -11,14 +11,14 @@ class SensorStatusCard extends StatelessWidget {
   Color _obstacleStateColor() {
     switch (status.obstacleState) {
       case ObstacleState.running:
-        return TimoColors.success;
+        return MikeeColors.success;
       case ObstacleState.waitShort:
       case ObstacleState.waitLong:
         return const Color(0xFFF59E0B); // warning amber
       case ObstacleState.blocked:
-        return TimoColors.error;
+        return MikeeColors.error;
       case ObstacleState.unknown:
-        return TimoColors.textMuted;
+        return MikeeColors.textMuted;
     }
   }
 
@@ -40,11 +40,11 @@ class SensorStatusCard extends StatelessWidget {
   Color _sensorStateColor(SensorState state) {
     switch (state) {
       case SensorState.ok:
-        return TimoColors.success;
+        return MikeeColors.success;
       case SensorState.warn:
         return const Color(0xFFF59E0B);
       case SensorState.error:
-        return TimoColors.error;
+        return MikeeColors.error;
     }
   }
 
@@ -56,9 +56,9 @@ class SensorStatusCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [TimoColors.cardTop, TimoColors.cardBottom],
+          colors: [MikeeColors.cardTop, MikeeColors.cardBottom],
         ),
-        border: Border.all(color: TimoColors.border),
+        border: Border.all(color: MikeeColors.border),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -70,7 +70,7 @@ class SensorStatusCard extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.12,
-              color: TimoColors.textSecondary,
+              color: MikeeColors.textSecondary,
             ),
           ),
           const SizedBox(height: 16),
@@ -80,7 +80,7 @@ class SensorStatusCard extends StatelessWidget {
             children: [
               Text(
                 'Obstacle',
-                style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -107,7 +107,7 @@ class SensorStatusCard extends StatelessWidget {
             children: [
               Text(
                 'Localization',
-                style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
               ),
               Text(
                 status.localizationQuality == LocalizationQuality.normal
@@ -118,10 +118,10 @@ class SensorStatusCard extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: status.localizationQuality == LocalizationQuality.normal
-                      ? TimoColors.success
+                      ? MikeeColors.success
                       : status.localizationQuality == LocalizationQuality.low
                           ? const Color(0xFFF59E0B)
-                          : TimoColors.textMuted,
+                          : MikeeColors.textMuted,
                 ),
               ),
             ],
@@ -133,20 +133,20 @@ class SensorStatusCard extends StatelessWidget {
             children: [
               Text(
                 'Person',
-                style: GoogleFonts.inter(fontSize: 12, color: TimoColors.textSecondary),
+                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
               ),
               Container(
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: status.personDetected ? TimoColors.success.withOpacity(0.15) : TimoColors.inset,
+                  color: status.personDetected ? MikeeColors.success.withOpacity(0.15) : MikeeColors.inset,
                 ),
                 child: Center(
                   child: Icon(
                     status.personDetected ? Icons.check_circle : Icons.radio_button_unchecked,
                     size: 14,
-                    color: status.personDetected ? TimoColors.success : TimoColors.textMuted,
+                    color: status.personDetected ? MikeeColors.success : MikeeColors.textMuted,
                   ),
                 ),
               ),
@@ -159,7 +159,7 @@ class SensorStatusCard extends StatelessWidget {
               children: [
                 Text(
                   'Health',
-                  style: GoogleFonts.inter(fontSize: 11, color: TimoColors.textSecondary),
+                  style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -187,11 +187,11 @@ class _SensorHealthPill extends StatelessWidget {
   Color get _color {
     switch (state) {
       case SensorState.ok:
-        return TimoColors.success;
+        return MikeeColors.success;
       case SensorState.warn:
         return const Color(0xFFF59E0B);
       case SensorState.error:
-        return TimoColors.error;
+        return MikeeColors.error;
     }
   }
 

@@ -1,4 +1,4 @@
-package com.timoDesk.robotapp;
+package com.mikee.robotapp;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -33,7 +33,7 @@ import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodChannel;
 
 public class ArmControlPlugin {
-    private static final String TAG = "TimoDesk.ArmControl";
+    private static final String TAG = "Mikee.ArmControl";
     private static final int PORT = 8083;
     private static final int MAX_CLIENTS = 3;
     private static final long RATE_LIMIT_MS = 50;
@@ -50,7 +50,7 @@ public class ArmControlPlugin {
     private Handler mainHandler = new Handler(Looper.getMainLooper());
 
     public void setup(FlutterEngine flutterEngine) {
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.timoDesk/arm_control")
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.mikee/arm_control")
                 .setMethodCallHandler((call, result) -> {
                     switch (call.method) {
                         case "startArmControl":
@@ -81,7 +81,7 @@ public class ArmControlPlugin {
                     }
                 });
 
-        new EventChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.timoDesk/arm_events")
+        new EventChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.mikee/arm_events")
                 .setStreamHandler(new EventChannel.StreamHandler() {
                     @Override
                     public void onListen(Object args, EventChannel.EventSink sink) {

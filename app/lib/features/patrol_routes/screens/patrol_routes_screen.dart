@@ -39,7 +39,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Create New Route', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-        backgroundColor: TimoColors.cardTop,
+        backgroundColor: MikeeColors.cardTop,
         content: TextField(
           controller: _newRouteController,
           decoration: InputDecoration(
@@ -51,7 +51,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.inter(color: TimoColors.textSecondary)),
+            child: Text('Cancel', style: GoogleFonts.inter(color: MikeeColors.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -59,7 +59,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
               _newRouteController.clear();
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: TimoColors.primary),
+            style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary),
             child: Text('Create', style: GoogleFonts.inter(fontSize: 12)),
           ),
         ],
@@ -73,7 +73,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
     final state = ref.watch(patrolRouteProvider);
 
     return Scaffold(
-      backgroundColor: TimoColors.background,
+      backgroundColor: MikeeColors.background,
       body: Stack(
         children: [
           Column(
@@ -116,18 +116,18 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
   Widget _buildHeader(BuildContext context) {
     return Container(
       height: 64,
-      decoration: BoxDecoration(color: TimoColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: TimoColors.border))),
+      decoration: BoxDecoration(color: MikeeColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: MikeeColors.border))),
       padding: EdgeInsets.symmetric(horizontal: 24),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
         Row(children: [
-          Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [TimoColors.primary, TimoColors.primaryDark]), boxShadow: [BoxShadow(color: TimoColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
+          Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [MikeeColors.primary, MikeeColors.primaryDark]), boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
           const SizedBox(width: 12),
-          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('TimoDesk', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: TimoColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: TimoColors.textMuted, height: 1.0))])
+          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0))])
         ]),
         Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: TimoColors.success.withOpacity(0.08), border: Border.all(color: TimoColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: TimoColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: TimoColors.success))])),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.08), border: Border.all(color: MikeeColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: MikeeColors.success))])),
           const SizedBox(width: 12),
-          Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: TimoColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
+          Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
         ]),
       ]),
     );
@@ -136,7 +136,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
   Widget _buildSidebar(BuildContext context) {
     return Container(
       width: 220,
-      decoration: BoxDecoration(color: TimoColors.surface, border: const Border(right: BorderSide(color: TimoColors.border))),
+      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
       child: Column(children: [
         Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
           _NavItem('Dashboard', Icons.space_dashboard, false, () => context.go('/')),
@@ -153,9 +153,9 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
 
   Widget _buildPageHeader() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Icon(Icons.route, size: 28, color: TimoColors.primary), const SizedBox(width: 12), Text('Patrol Routes', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+      Row(children: [Icon(Icons.route, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Patrol Routes', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
       const SizedBox(height: 4),
-      Text('Design autonomous patrol paths — place, sequence, and narrate waypoints', style: GoogleFonts.inter(fontSize: 13, color: TimoColors.textSecondary)),
+      Text('Design autonomous patrol paths — place, sequence, and narrate waypoints', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
     ]);
   }
 
@@ -215,7 +215,7 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
                       style: GoogleFonts.inter(fontSize: 12),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: state.isPreviewRunning ? TimoColors.success : TimoColors.primary,
+                      backgroundColor: state.isPreviewRunning ? MikeeColors.success : MikeeColors.primary,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
@@ -246,8 +246,8 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TimoColors.cardTop, TimoColors.cardBottom]),
-              border: Border.all(color: TimoColors.border),
+              gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+              border: Border.all(color: MikeeColors.border),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Center(
@@ -343,12 +343,12 @@ class _NavItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(color: active ? TimoColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
             child: Row(children: [
-              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: TimoColors.primary, borderRadius: BorderRadius.circular(999))),
-              Icon(icon, size: 20, color: active ? TimoColors.primary : TimoColors.textSecondary),
+              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
+              Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary),
               const SizedBox(width: 12),
-              Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? TimoColors.primary : TimoColors.textSecondary)))
+              Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))
             ]),
           ),
         ),

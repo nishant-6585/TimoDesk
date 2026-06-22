@@ -1,14 +1,14 @@
-# Timo Sensor Bridge — Native → Spine wiring (Phase 1B, hardware-gated)
+# Mikee Sensor Bridge — Native → Spine wiring (Phase 1B, hardware-gated)
 
 > **Status: NOT DEPLOYED.** This is the reference implementation for the native
-> Android bridge that forwards the Timo robot's high-level sensor/obstacle
+> Android bridge that forwards the Mikee robot's high-level sensor/obstacle
 > events to `spine`. It runs only on real hardware. Until the physical robot is
 > available, spine's `MockRobotSDK` synthesises these events (see
 > `spine/src/robot/mock.ts`) and `RealRobotSDK.onSensorEvent()` is a no-op.
 
 > ⚠️ **Verify against the real SDK before deploying.** The code below is written
 > against the listener names documented in CSJBot SDK research
-> (`timodesk-lidar-integration.md`), **not** copied from a compiled, tested
+> (`mikee-lidar-integration.md`), **not** copied from a compiled, tested
 > sample. Exact method/parameter signatures (`OnRobotMoveStatusListener`,
 > `setPersonCheckType`, `getSensorHealth`, …) must be confirmed against the
 > actual `English Sdk Document Translation.pdf` / `SdkDemoCsj` sample when
@@ -30,7 +30,7 @@ sufficient for a reception robot. This bridge:
    admin clients, and logs to Supabase.
 
 ```
-CsjBot SDK ─listeners─► TimoSensorBridge.kt ─MethodChannel─► sensor_bridge.dart
+CsjBot SDK ─listeners─► MikeeSensorBridge.kt ─MethodChannel─► sensor_bridge.dart
    ─WebSocket(JSON)─► spine RealRobotSDK.onSensorEvent ─► createSensorPipeline
    ─► broadcast RobotStatus + logEvent(robot_event)
 ```
@@ -63,16 +63,16 @@ The JSON sent to spine must match the `SensorEvent` discriminated union in
 
 ---
 
-## `TimoSensorBridge.kt`
+## `MikeeSensorBridge.kt`
 
-`robot_app/android/app/src/main/kotlin/com/csjbot/timodesk/TimoSensorBridge.kt`
+`robot_app/android/app/src/main/kotlin/com/csjbot/mikee/MikeeSensorBridge.kt`
 
 > Adjust the package to match the robot_app `applicationId`. Import paths for the
 > CsjBot SDK classes (`CsjBotApi`, `OnRobotMoveStatusListener`, …) come from the
 > vendor `.aar` — confirm against `SdkDemoCsj`.
 
 ```kotlin
-package com.csjbot.timodesk
+package com.csjbot.mikee
 
 import android.content.Context
 import io.flutter.plugin.common.MethodChannel
@@ -83,9 +83,9 @@ import org.json.JSONObject
  * Bridges CsjBot high-level sensor/obstacle events to Flutter over a MethodChannel.
  *
  * VERIFY every SDK call below against the real SDK before deploying. Listener
- * names follow timodesk-lidar-integration.md research notes.
+ * names follow mikee-lidar-integration.md research notes.
  */
-class TimoSensorBridge(
+class MikeeSensorBridge(
     private val context: Context,
     private val channel: MethodChannel,
 ) {
@@ -161,23 +161,23 @@ class TimoSensorBridge(
 
 ## `MainActivity.kt` integration
 
-`robot_app/android/app/src/main/kotlin/com/csjbot/timodesk/MainActivity.kt`
+`robot_app/android/app/src/main/kotlin/com/csjbot/mikee/MainActivity.kt`
 
 ```kotlin
-package com.csjbot.timodesk
+package com.csjbot.mikee
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "timodesk/sensors"
-    private var bridge: TimoSensorBridge? = null
+    private val CHANNEL = "mikee/sensors"
+    private var bridge: MikeeSensorBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-        bridge = TimoSensorBridge(applicationContext, channel).also { it.start() }
+        bridge = MikeeSensorBridge(applicationContext, channel).also { it.start() }
     }
 }
 ```
@@ -200,7 +200,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// to spine over the chassis WebSocket. The native payload already matches
 /// spine's SensorEvent shape, so this is a passthrough.
 class SensorBridge {
-  static const _channel = MethodChannel('timodesk/sensors');
+  static const _channel = MethodChannel('mikee/sensors');
   final WebSocketChannel _spine;
 
   SensorBridge(this._spine) {
@@ -209,7 +209,7 @@ class SensorBridge {
 
   Future<void> _onNative(MethodCall call) async {
     if (call.method != 'sensorEvent') return;
-    // call.arguments is the JSON string built in TimoSensorBridge.send().
+    // call.arguments is the JSON string built in MikeeSensorBridge.send().
     final String json = call.arguments as String;
     // Validate before forwarding; spine trusts this shape.
     final Map<String, dynamic> event = jsonDecode(json) as Map<String, dynamic>;

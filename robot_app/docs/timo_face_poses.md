@@ -1,7 +1,7 @@
-# Timo Robot Face — Pose Table & Visual Constants (Beam / OLED style)
+# Mikee Robot Face — Pose Table & Visual Constants (Beam / OLED style)
 
 Design reference for the Flutter `CustomPainter` port. Documents the **Beam (OLED)**
-style — the chosen production style. The prototype (`timo_face_prototype.html`) still ships
+style — the chosen production style. The prototype (`mikee_face_prototype.html`) still ships
 both styles (Soft capsule + Beam) for visual comparison; only Beam is specified here.
 
 The face is driven entirely by this parameter model (1:1 with the implementation state):

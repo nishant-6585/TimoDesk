@@ -9,20 +9,20 @@ import 'package:flutter/services.dart';
 /// NOTE: RECORD_AUDIO is a runtime permission (Android 6+). The native side only
 /// CHECKS it (returns MIC_PERMISSION if missing); granting is a deployment step —
 /// on the kiosk robot, pre-grant it (launcher/MDM or `adb shell pm grant
-/// com.timoDesk.robotapp android.permission.RECORD_AUDIO`). A permission_handler
+/// com.mikee.robotapp android.permission.RECORD_AUDIO`). A permission_handler
 /// flow would be a new dependency, so it's intentionally out of scope here.
 class AudioBridge {
-  static const _method = MethodChannel('com.timoDesk/audio_control');
-  static const _micChannel = EventChannel('com.timoDesk/audio_mic');
-  static const _playbackChannel = EventChannel('com.timoDesk/audio_playback');
-  static const _wakeChannel = EventChannel('com.timoDesk/wake_events');
-  static const _asrChannel = EventChannel('com.timoDesk/asr_events');
+  static const _method = MethodChannel('com.mikee/audio_control');
+  static const _micChannel = EventChannel('com.mikee/audio_mic');
+  static const _playbackChannel = EventChannel('com.mikee/audio_playback');
+  static const _wakeChannel = EventChannel('com.mikee/wake_events');
+  static const _asrChannel = EventChannel('com.mikee/asr_events');
 
   StreamSubscription? _micSub;
 
   /// Recognized user speech (CSJBot CAE, echo-cancelled). Emits the live
   /// transcription string each time the user is detected speaking — used for
-  /// on-device barge-in (cut Timo off when the user starts talking).
+  /// on-device barge-in (cut Mikee off when the user starts talking).
   Stream<String> get asrTextStream =>
       _asrChannel.receiveBroadcastStream().map((e) => e?.toString() ?? '');
 

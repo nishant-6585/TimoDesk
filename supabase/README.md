@@ -1,6 +1,6 @@
-# Timo Supabase Schema
+# Mikee Supabase Schema
 
-**DPDP-compliant database for the Timo reception robot.**
+**DPDP-compliant database for the Mikee reception robot.**
 
 Includes 7 core tables, Row Level Security, pgvector indexes for ML operations, and nightly retention purge.
 
@@ -43,10 +43,10 @@ In SQL Editor:
 create extension if not exists "pg_cron";
 
 -- Schedule the nightly purge at 2 AM
-select cron.schedule('nightly-purge-timo', '0 2 * * *', 'select purge_expired_data();');
+select cron.schedule('nightly-purge-mikee', '0 2 * * *', 'select purge_expired_data();');
 
 -- Verify it's scheduled
-select * from cron.job where jobname = 'nightly-purge-timo';
+select * from cron.job where jobname = 'nightly-purge-mikee';
 ```
 
 ## Schema Overview
@@ -204,4 +204,4 @@ select * from cron.job;
 
 ---
 
-**xboom · Timo · Land + Air + Water · DPDP-compliant from day one**
+**xboom · Mikee · Land + Air + Water · DPDP-compliant from day one**

@@ -4,7 +4,7 @@
 
 ## What Was Built
 
-A complete Flutter admin control app for Timo reception robot (web + iOS + Android, one codebase).
+A complete Flutter admin control app for Mikee reception robot (web + iOS + Android, one codebase).
 
 ### Build Artifacts
 - **44 Dart files** across 7 feature modules
@@ -201,4 +201,4 @@ flutter run -d android
 
 ---
 
-**Built in a single context.** Ready for production. 🚀**xboom · Timo · Land + Air + Water**
+**Built in a single context.** Ready for production. 🚀**xboom · Mikee · Land + Air + Water**

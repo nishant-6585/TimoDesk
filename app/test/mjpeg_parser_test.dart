@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:timo_admin/features/live_feed/widgets/mjpeg_parser.dart';
+import 'package:mikee_admin/features/live_feed/widgets/mjpeg_parser.dart';
 
 void main() {
   group('takeJpegFrames', () {

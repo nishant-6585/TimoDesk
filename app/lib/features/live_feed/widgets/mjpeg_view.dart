@@ -8,7 +8,7 @@ import 'mjpeg_view_stub.dart'
     if (dart.library.io) 'mjpeg_view_io.dart'
     if (dart.library.html) 'mjpeg_view_web.dart';
 
-/// Renders an MJPEG (multipart/x-mixed-replace) stream — e.g. the Timo robot's
+/// Renders an MJPEG (multipart/x-mixed-replace) stream — e.g. the Mikee robot's
 /// camera at `http://<robot-ip>:8080/stream`. The robot_app `CameraStreamPlugin`
 /// serves this; `viewer_web` renders the same URL with a plain <img>.
 class MjpegView extends StatelessWidget {
