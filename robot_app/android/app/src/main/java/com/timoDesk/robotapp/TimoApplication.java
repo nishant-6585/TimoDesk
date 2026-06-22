@@ -38,7 +38,10 @@ public class TimoApplication extends MultiDexApplication {
                 // (libaiui destroyAgent → "pthread_mutex_lock on a destroyed mutex"),
                 // crashing the app on launch. Doing it here, pre-init, matches the demo.
                 CsjRobot.enableAsr(false);
-                CsjRobot.enableFace(false);
+                // Face module ON — required for person detection: the SDK fires
+                // OnDetectPersonListener from FACE_DETECT_PERSON_NEAR_NTF, which the
+                // RGBD/face module produces. (Demo uses enableFace(true) too.)
+                CsjRobot.enableFace(true);
                 CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement
                 CsjRobot.setRobotType(CsjRobot.RobotType.TIMO);
 

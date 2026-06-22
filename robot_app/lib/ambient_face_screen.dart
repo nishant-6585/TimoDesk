@@ -69,9 +69,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   final AudioBridge _audioBridge = AudioBridge();
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
+  StreamSubscription<String>? _asrSub; // recognized user speech → barge-in
   StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
   bool _voiceActive = false; // a session is open (toggles the debug button)
   double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
+  bool _suppressAgentAudio = false; // after a barge-in: drop the rest of the old
+  Timer? _bargeTimer; //   reply's audio until the next turn (ElevenLabs keeps streaming)
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
@@ -107,6 +110,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _wakeSub = _audioBridge.wakeWordStream.listen((_) {
       if (!_voiceAgent.isActive) _startVoice();
     });
+    // On-device barge-in: the CSJBot CAE recognizes the USER (echo-cancelled). If
+    // the user starts talking while Timo is speaking, cut Timo off immediately —
+    // don't wait on ElevenLabs to detect the interruption.
+    _asrSub = _audioBridge.asrTextStream.listen(_onUserSpeech);
 
     // Preserve old behavior: bring up the control WS servers (:8081-3) if the
     // camera is already streaming when we mount.
@@ -127,8 +134,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _ticker.dispose();
     _presenceHold?.cancel();
     _greetTimer?.cancel();
+    _bargeTimer?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
+    _asrSub?.cancel();
     _playbackSub?.cancel();
     _voiceAgent.dispose();
     _audioBridge.dispose();
@@ -246,11 +255,31 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
+  // On-device barge-in: the CAE recognized the user. If Timo is mid-sentence,
+  // cut him off and flip to listening immediately (ElevenLabs also gets the audio
+  // and will take the new turn). Ignored when no session or Timo isn't speaking.
+  void _onUserSpeech(String text) {
+    debugPrint('TimoBargeIn: asr="$text" voiceActive=$_voiceActive state=${_face.state}');
+    if (!_voiceActive || text.trim().isEmpty) return;
+    if (_face.state == FaceStateKind.speaking) {
+      debugPrint('TimoBargeIn: BARGE-IN → stopping Timo, switching to listening');
+      _audioBridge.stopPlayback();
+      // ElevenLabs keeps streaming the rest of the interrupted reply — drop those
+      // chunks until the next turn so Timo actually goes quiet. Safety-cleared after
+      // 6s in case no new turn arrives.
+      _suppressAgentAudio = true;
+      _bargeTimer?.cancel();
+      _bargeTimer = Timer(const Duration(seconds: 6), () => _suppressAgentAudio = false);
+      setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
+    }
+  }
+
   // ── #80 voice: ElevenLabs session drives the face state machine ─────────────
   void _onVoiceEvent(VoiceEvent e) {
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
         // Open in listening — Timo is waiting for the user (the ring shows).
+        _suppressAgentAudio = false;
         setState(() {
           _voiceActive = true;
           _face = _face.copyWith(state: FaceStateKind.listening);
@@ -262,10 +291,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
+        // A new turn is starting → stop dropping audio; the upcoming reply plays.
+        _suppressAgentAudio = false;
+        _bargeTimer?.cancel();
         // Genuine processing gap (STT done, reply not yet streaming).
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
       case VoiceEventKind.agentSpeaking:
+        // Mute the robot's built-in (Chinese) TTS so only the ElevenLabs voice is
+        // heard — the CSJBot AIUI runs in parallel (it gives us the mic) but must
+        // not talk over Timo.
+        _audioBridge.stopSpeak();
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
@@ -273,6 +309,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // speaking→listening transition are driven by _onPlaybackLevel, which
         // tracks the SPEAKER (not network arrival) — so lips move while Timo is
         // actually talking and close exactly when playback ends.
+        if (_suppressAgentAudio) break; // dropped after a barge-in until next turn
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         break;
       case VoiceEventKind.sessionEnded:

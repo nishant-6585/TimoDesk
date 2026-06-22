@@ -16,8 +16,15 @@ class AudioBridge {
   static const _micChannel = EventChannel('com.timoDesk/audio_mic');
   static const _playbackChannel = EventChannel('com.timoDesk/audio_playback');
   static const _wakeChannel = EventChannel('com.timoDesk/wake_events');
+  static const _asrChannel = EventChannel('com.timoDesk/asr_events');
 
   StreamSubscription? _micSub;
+
+  /// Recognized user speech (CSJBot CAE, echo-cancelled). Emits the live
+  /// transcription string each time the user is detected speaking — used for
+  /// on-device barge-in (cut Timo off when the user starts talking).
+  Stream<String> get asrTextStream =>
+      _asrChannel.receiveBroadcastStream().map((e) => e?.toString() ?? '');
 
   /// Start mic capture. Each 16 kHz/mono/16-bit PCM chunk is delivered to
   /// [onChunk] — wire it to voiceAgent.sendAudioChunk. Returns false if the mic

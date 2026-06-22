@@ -37,8 +37,16 @@ class ElevenLabsTts {
       req.headers.contentType = ContentType.json;
       req.add(utf8.encode(jsonEncode({
         'text': text,
-        // Fast, low-latency model for short phrases; voice timbre comes from voiceId.
-        'model_id': 'eleven_flash_v2_5',
+        // Match the conversational agent so the dashboard voice sounds identical to
+        // the face screen: same v3 family (the agent uses eleven_v3_conversational,
+        // which is agent-only; eleven_v3 is the closest TTS-accessible model) + the
+        // agent's exact voice settings (stability 0.5 / similarity 0.8 / speed 1.0).
+        'model_id': 'eleven_v3',
+        'voice_settings': {
+          'stability': 0.5,
+          'similarity_boost': 0.8,
+          'speed': 1.0,
+        },
       })));
       final resp = await req.close();
       if (resp.statusCode != 200) {

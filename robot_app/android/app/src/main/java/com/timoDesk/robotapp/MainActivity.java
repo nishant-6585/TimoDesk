@@ -93,6 +93,10 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 AUDIO_PLAY_EVENT_CH
         ).setStreamHandler(audioPlugin.playbackStreamHandler);
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                "com.timoDesk/asr_events"
+        ).setStreamHandler(audioPlugin.asrStreamHandler);
 
         // CSJBot wake word (silent no-op on emulator — SDK absent).
         WakeWordPlugin wakePlugin = new WakeWordPlugin();

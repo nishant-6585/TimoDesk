@@ -85,6 +85,15 @@ public class AudioBridgePlugin
         @Override public void onCancel(Object args) { playbackSink = null; }
     };
 
+    // ASR text stream — recognized user speech (CSJBot CAE, echo-cancelled, so it
+    // tracks the USER not Timo's own voice). Drives on-device barge-in: if the user
+    // speaks while Timo is talking, Dart cuts Timo off.
+    private EventChannel.EventSink asrSink;
+    final EventChannel.StreamHandler asrStreamHandler = new EventChannel.StreamHandler() {
+        @Override public void onListen(Object args, EventChannel.EventSink sink) { asrSink = sink; }
+        @Override public void onCancel(Object args) { asrSink = null; }
+    };
+
     AudioBridgePlugin(Context context) {
         this.context = context;
         try {
@@ -182,6 +191,12 @@ public class AudioBridgePlugin
                     try { text = new org.json.JSONObject(json).optString("text", ""); }
                     catch (Throwable ignore) {}
                     Log.d(TAG, "ASR speechInfo type=" + type + " text=[" + text + "] raw=" + json);
+                    // Forward "user is speaking" to Dart for barge-in. type 0 =
+                    // SPEECH_ISR_ONLY_RESULT_NTF (live transcription as the user talks).
+                    if (type == 0 && !text.isEmpty()) {
+                        final String t = text;
+                        main.post(() -> { if (asrSink != null) asrSink.success(t); });
+                    }
                 }
 
                 @Override
