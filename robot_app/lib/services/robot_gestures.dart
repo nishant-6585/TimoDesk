@@ -13,6 +13,51 @@ class RobotGestures {
   RobotGestures._();
 
   static const MethodChannel _arm = MethodChannel('com.timoDesk/arm_control');
+  static const MethodChannel _head = MethodChannel('com.timoDesk/head_control');
+
+  /// Absolute head pose (0–100; 50 = center, higher ud = up, higher lr = right).
+  /// Best-effort: off-device the channel throws and we swallow it.
+  static Future<void> _setHead(int lr, int ud) async {
+    try {
+      await _head.invokeMethod('setHead', {'lr': lr, 'ud': ud});
+    } catch (e) {
+      if (kDebugMode) debugPrint('RobotGestures._setHead no-op: $e');
+    }
+  }
+
+  /// Acknowledging nod — dip down, then back to neutral.
+  static Future<void> headNod() async {
+    await _setHead(50, 35);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    await _setHead(50, 55);
+  }
+
+  /// Curious "thinking" tilt to one side, then recenter.
+  static Future<void> headTilt() async {
+    await _setHead(65, 55);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    await _setHead(50, 55);
+  }
+
+  /// Subtle speaking sway driven by TTS amplitude (0..1). Called repeatedly
+  /// while Timo talks; the caller throttles to ~once per 300 ms.
+  static Future<void> headSway(double amplitude) async {
+    final lr = (50 + amplitude * 12).clamp(35.0, 65.0).round();
+    await _setHead(lr, 55);
+  }
+
+  /// Return the head to the neutral conversational pose.
+  static Future<void> headCenter() async {
+    await _setHead(50, 55);
+  }
+
+  /// Perk up to speak — a brief forward lean (approximated on the head ud axis,
+  /// as Timo exposes no separate chest joint), then settle.
+  static Future<void> chestAttention() async {
+    await _setHead(50, 40);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await _setHead(50, 55);
+  }
 
   /// Wave hello, then auto-stop after [hold] so the arms settle. Fire-and-forget;
   /// intended to run alongside the greeting overlay (~3.5s hold).

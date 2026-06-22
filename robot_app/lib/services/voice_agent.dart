@@ -124,13 +124,17 @@ class VoiceAgent {
     }
     switch (msg['type']) {
       case 'user_transcript':
-        // STT finished → the agent is now thinking. Capture the user turn.
+        // STT finished → the agent is now thinking. Capture the user turn AND
+        // surface the recognized text on the event so the dashboard can run
+        // keyword voice-commands against it (the only place the user transcript
+        // crosses out of this client).
         _speaking = false;
         final t = _nested(msg, 'user_transcription_event', 'user_transcript');
-        if (t is String && t.isNotEmpty) {
-          _transcript.add({'role': 'user', 'text': t, 'ts': _nowIso()});
+        final userText = (t is String && t.isNotEmpty) ? t : null;
+        if (userText != null) {
+          _transcript.add({'role': 'user', 'text': userText, 'ts': _nowIso()});
         }
-        _emit(const VoiceEvent(VoiceEventKind.agentThinking));
+        _emit(VoiceEvent(VoiceEventKind.agentThinking, text: userText));
         return;
 
       case 'agent_response':

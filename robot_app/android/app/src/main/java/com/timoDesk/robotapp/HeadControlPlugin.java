@@ -75,6 +75,17 @@ public class HeadControlPlugin implements MethodChannel.MethodCallHandler, Event
                 result.success(buildStatus());
                 break;
             }
+            case "setHead": {
+                // Absolute head pose for conversational gestures (nod/tilt/sway/
+                // center). lr/ud are 0–100 (50 = center; higher UD = up, higher
+                // LR = right). Missing arg keeps the current value.
+                Integer lr = call.argument("lr");
+                Integer ud = call.argument("ud");
+                executeHeadCommand(lr == null ? currentHeadLR : lr,
+                                   ud == null ? currentHeadUD : ud);
+                result.success(buildStatus());
+                break;
+            }
             case "getHeadStatus":
                 result.success(buildStatus());
                 break;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show sin, pi;
 import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import 'face_rig.dart'; // FaceRig
 import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
 import 'services/elevenlabs_tts.dart';
+import 'services/robot_gestures.dart';
+import 'services/voice_command_handler.dart';
 import 'config.dart';
 import 'enroll_screen.dart';
 import 'status_screen.dart';
@@ -31,6 +34,9 @@ const _greenBg = Color(0xFF06200F);
 const _red = Color(0xFFFF5247);
 const _accent = kOrange; // #FF6B35
 const _accentDimColor = Color(0xFFE14B1E);
+// Voice-state glow: LISTENING = blue, SPEAKING = amber (DASHBOARD voice cue).
+const _listenGlow = Color(0xFF3B82F6);
+const _speakGlow = Color(0xFFF59E0B);
 
 /// Face-dominant reception dashboard (opened from the ambient face). Three
 /// columns that fill the viewport and never scroll: nav rail · big face + a
@@ -55,7 +61,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 enum _Act { greet, listen, checkIn, directions, pageStaff, rest }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // Dashboard mini-face (independent rig from the ambient face).
   final FaceRig _rig = FaceRig();
   final _FaceRepaint _repaint = _FaceRepaint();
@@ -74,8 +80,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<double>? _playbackSub;
+  StreamSubscription<String>? _asrSub; // CSJBot recognition → "user speaking" nod
   bool _voiceActive = false;
   bool _perceptionOn = true;
+
+  // Voice-state glow pulse (face card border + state chip + waveform).
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulse;
+
+  // Head/body gestures on voice events — best-effort, non-overlapping.
+  late final VoiceCommandHandler _cmd;
+  bool _gestureInProgress = false;
+  int _lastSwayMs = 0; // throttle speaking sway to ~once / 300ms
+  int _lastNodMs = 0; //  throttle acknowledging nod to ~once / 2.5s
 
   // Speaks action phrases in the agent's real voice (same as the face screen),
   // streamed through the shared speaker; falls back to on-device TTS.
@@ -102,12 +119,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick)..start();
+    _pulseCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200));
+    _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
     _voiceActive = widget.voiceAgent.isActive;
     _updateClock();
     _clock = Timer.periodic(const Duration(seconds: 30), (_) => _updateClock());
     _resetIdle();
     _voiceSub = widget.voiceAgent.events.listen(_onVoiceEvent);
     _playbackSub = widget.audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
+    _asrSub = widget.audioBridge.asrTextStream.listen(_onUserSpeechGesture);
+    _cmd = VoiceCommandHandler(_runVoiceCommand);
     _tts = ElevenLabsTts(
       apiKey: RobotConfig.elevenLabsApiKey,
       voiceId: RobotConfig.elevenLabsVoiceId,
@@ -130,6 +152,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _toastTimer?.cancel();
     _voiceSub?.cancel();
     _playbackSub?.cancel();
+    _asrSub?.cancel();
+    _pulseCtrl.dispose();
     _tts.dispose();
     _repaint.dispose();
     // Do NOT dispose voiceAgent / audioBridge — owned by AmbientFaceScreen.
@@ -155,6 +179,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   void _setKind(FaceStateKind k) {
     if (mounted) setState(() => _face = _face.copyWith(state: k));
+    _syncPulse(k);
+  }
+
+  // Glow accent for a state (null = neutral, no glow).
+  Color? _glowColor(FaceStateKind k) => switch (k) {
+        FaceStateKind.listening => _listenGlow,
+        FaceStateKind.speaking => _speakGlow,
+        _ => null,
+      };
+
+  // Run the border/chip/waveform pulse only while listening or speaking.
+  void _syncPulse(FaceStateKind k) {
+    final glow = k == FaceStateKind.listening || k == FaceStateKind.speaking;
+    if (glow && !_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!glow && _pulseCtrl.isAnimating) {
+      _pulseCtrl
+        ..stop()
+        ..value = 0;
+    }
   }
 
   void _updateClock() {
@@ -176,9 +220,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         break;
       case VoiceEventKind.agentThinking:
         _setKind(FaceStateKind.thinking);
+        _gesture(RobotGestures.headTilt); // curious "thinking" tilt
+        final t = e.text; // ElevenLabs user transcript → keyword commands
+        if (t != null && t.trim().isNotEmpty) _cmd.handle(t);
         break;
       case VoiceEventKind.agentSpeaking:
         _setKind(FaceStateKind.speaking);
+        _gesture(RobotGestures.chestAttention); // perk up to speak (once/turn)
         break;
       case VoiceEventKind.audioChunk:
         break; // playback owned by AmbientFaceScreen
@@ -186,6 +234,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case VoiceEventKind.error:
         setState(() => _voiceActive = false);
         if (!_resting) _setKind(FaceStateKind.attentive);
+        RobotGestures.headCenter(); // reply done → recenter
         break;
     }
   }
@@ -194,10 +243,92 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (!mounted || !_voiceActive) return;
     if (level < 0) {
       setState(() => _face = _face.copyWith(mouthOpen: 0));
+      RobotGestures.headCenter();
     } else {
-      setState(() => _face = _face.copyWith(
-          state: FaceStateKind.speaking, mouthOpen: (level * 3.5).clamp(0.04, 1.0)));
+      final amp = (level * 3.5).clamp(0.04, 1.0);
+      setState(() =>
+          _face = _face.copyWith(state: FaceStateKind.speaking, mouthOpen: amp));
+      // Sway the head with the voice, throttled so we don't flood the SDK.
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (!_gestureInProgress && now - _lastSwayMs > 300) {
+        _lastSwayMs = now;
+        RobotGestures.headSway(amp);
+      }
     }
+  }
+
+  // CSJBot recognized the user speaking → acknowledging nod (throttled). Uses
+  // the on-device ASR stream (fires as the user talks), not the cloud transcript.
+  void _onUserSpeechGesture(String text) {
+    if (!_voiceActive || text.trim().isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastNodMs < 2500) return;
+    _lastNodMs = now;
+    _gesture(RobotGestures.headNod);
+  }
+
+  // Run a multi-step gesture, skipping if one is already in flight (so nod /
+  // tilt / lean don't fight each other). Best-effort; silent off-device.
+  Future<void> _gesture(Future<void> Function() g) async {
+    if (!_voiceActive || _gestureInProgress) return;
+    _gestureInProgress = true;
+    try {
+      await g();
+    } catch (_) {
+      // off-device or SDK busy — ignore
+    } finally {
+      _gestureInProgress = false;
+    }
+  }
+
+  // Dispatch a recognized voice command to the real robot bridges + show a pill.
+  void _runVoiceCommand(VoiceCommand cmd) {
+    _toast('▶ Executing: ${cmd.label}', cmd.icon);
+    final chassis = ref.read(chassisProvider.notifier);
+    switch (cmd.kind) {
+      case VoiceCommandKind.driveForward:
+        _voiceDrive('forward');
+        break;
+      case VoiceCommandKind.driveBack:
+        _voiceDrive('back');
+        break;
+      case VoiceCommandKind.driveLeft:
+        _voiceDrive('left');
+        break;
+      case VoiceCommandKind.driveRight:
+        _voiceDrive('right');
+        break;
+      case VoiceCommandKind.stop:
+        chassis.emergencyStop();
+        break;
+      case VoiceCommandKind.resume:
+        break; // no chassis "resume" — the pill is the only feedback
+      case VoiceCommandKind.wave:
+        ref.read(armProvider.notifier).wave();
+        break;
+      case VoiceCommandKind.snapshot:
+        break; // no snapshot pipeline yet — pill only
+      case VoiceCommandKind.reset:
+        ref.read(headProvider.notifier).resetHead();
+        RobotGestures.resetArms();
+        RobotGestures.headCenter();
+        break;
+      case VoiceCommandKind.sleep:
+        setState(() => _resting = true);
+        _setKind(FaceStateKind.sleepy);
+        break;
+      case VoiceCommandKind.wake:
+        setState(() => _resting = false);
+        _setKind(FaceStateKind.attentive);
+        break;
+    }
+  }
+
+  // One-shot drive nudge: drive, then auto-stop (voice commands aren't held).
+  void _voiceDrive(String dir) {
+    final chassis = ref.read(chassisProvider.notifier);
+    chassis.drive(dir);
+    Timer(const Duration(milliseconds: 1400), chassis.stopMove);
   }
 
   // ── Idle return + navigation ────────────────────────────────────────────────
@@ -554,13 +685,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   Widget _faceCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _line),
-        ),
+    final glow = _glowColor(_face.state);
+    final showWave = _face.state == FaceStateKind.listening ||
+        _face.state == FaceStateKind.speaking;
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (context, child) {
+        final t = glow == null ? 0.0 : (0.4 + 0.6 * _pulse.value); // 0.4..1.0
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: glow == null ? _line : Color.lerp(_line, glow, t)!,
+              width: glow == null ? 1 : 2,
+            ),
+            boxShadow: glow == null
+                ? null
+                : [BoxShadow(color: glow.withValues(alpha: 0.45 * t), blurRadius: 24, spreadRadius: 1)],
+          ),
+          child: child,
+        );
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
         child: Stack(children: [
           Positioned.fill(child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint))),
           const Positioned.fill(
@@ -578,6 +726,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             ),
           ),
           Positioned(top: 12, left: 14, child: _stateChip()),
+          if (showWave)
+            Positioned(right: 16, bottom: 16, child: IgnorePointer(child: _miniWaveform())),
           Positioned(
             left: 0,
             right: 0,
@@ -591,28 +741,82 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   Widget _stateChip() {
     final (name, desc) = _stateLabel(_face.state);
+    final glow = _glowColor(_face.state);
     final active = _face.state != FaceStateKind.idle && _face.state != FaceStateKind.sleepy;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xD10F0F0F),
-        border: Border.all(color: _line2),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-                color: active ? _accent : Colors.white30,
+    final dot = glow ?? (active ? _accent : Colors.white30);
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (context, _) {
+        final p = glow == null ? 1.0 : (0.4 + 0.6 * _pulse.value);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xD10F0F0F),
+            border: Border.all(color: glow == null ? _line2 : glow.withValues(alpha: 0.55 * p)),
+            borderRadius: BorderRadius.circular(99),
+            boxShadow: glow == null
+                ? null
+                : [BoxShadow(color: glow.withValues(alpha: 0.30 * p), blurRadius: 12)],
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: dot.withValues(alpha: glow == null ? 1.0 : p),
                 shape: BoxShape.circle,
-                boxShadow: active ? [BoxShadow(color: _accent.withValues(alpha: 0.7), blurRadius: 6)] : null)),
-        const SizedBox(width: 8),
-        Text(name,
-            style: const TextStyle(color: _accent, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
-        const SizedBox(width: 6),
-        Text(desc, style: const TextStyle(color: _muted, fontSize: 9)),
-      ]),
+                boxShadow: (glow != null || active)
+                    ? [BoxShadow(color: dot.withValues(alpha: 0.7 * (glow == null ? 1.0 : p)), blurRadius: 6)]
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(name,
+                  key: ValueKey(name),
+                  style: TextStyle(
+                      color: glow ?? _accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1)),
+            ),
+            const SizedBox(width: 6),
+            Text(desc, style: const TextStyle(color: _muted, fontSize: 9)),
+          ]),
+        );
+      },
+    );
+  }
+
+  // Three staggered bars (phase offsets ≈ 0/80/160 ms over the pulse period).
+  // Heights ride the TTS amplitude (_face.mouthOpen) while speaking; an idle
+  // shimmer keeps them alive while listening.
+  Widget _miniWaveform() {
+    final speaking = _face.state == FaceStateKind.speaking;
+    final color = _glowColor(_face.state) ?? _accent;
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (context, _) {
+        Widget bar(double phase) {
+          final ph = (_pulseCtrl.value + phase) % 1.0;
+          final wave = 0.5 + 0.5 * sin(ph * 2 * pi);
+          final amp = speaking ? _face.mouthOpen.clamp(0.0, 1.0) : 0.0;
+          final h = 5 + 7 * wave + amp * 20;
+          return Container(
+            width: 3.5,
+            height: h,
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(2)),
+          );
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bar(0.0), const SizedBox(width: 3), bar(0.2), const SizedBox(width: 3), bar(0.4)],
+        );
+      },
     );
   }
 
