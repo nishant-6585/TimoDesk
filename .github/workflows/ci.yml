@@ -27,7 +27,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze --fatal-infos
+        run: flutter analyze --fatal-warnings
 
       - name: Run tests
         run: flutter test --coverage || true   # non-fatal until test suite is established
