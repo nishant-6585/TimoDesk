@@ -35,30 +35,28 @@ jobs:
 
       - name: Build prompt file
         run: |
-          # Write system prompt header to file
-          cat > /tmp/prompt.txt << 'PROMPT_HEADER'
-You are a senior Flutter/Android engineer reviewing code for the TimoDesk project — a smart reception robot app running on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase.
-
-IMPORTANT: Your entire response must be a single raw JSON object. Do NOT use markdown, code fences, or any text outside the JSON. Start with { and end with }.
-
-Return this exact structure:
-{"summary":"one sentence summary","issues":[{"file_path":"path/to/file","line_number":42,"severity":"critical|high|medium|low|info","category":"bug|security|performance|cleanup|architecture|style","message":"description","suggestion":"how to fix","code_snippet":"optional 1-3 line snippet"}]}
-
-Severity: critical=crash/data-loss/security, high=logic-bug/wrong-SDK-usage, medium=missing-null-check/perf, low=code-smell, info=style
-Focus on: Dart/Flutter correctness, Android Java bridge reliability, CsjRobot SDK patterns, ElevenLabs WebSocket lifecycle, Riverpod state, DPDP compliance.
-If no issues found, return: {"summary":"No issues found","issues":[]}
-
-Files to review:
-PROMPT_HEADER
+          # Write system prompt header using printf (no heredoc — avoids YAML << conflict)
+          printf '%s\n' \
+            "You are a senior Flutter/Android engineer reviewing the TimoDesk project — a smart reception robot app on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase." \
+            "" \
+            "IMPORTANT: Your entire response must be a single raw JSON object. No markdown, no code fences, no text outside the JSON. Start with { and end with }." \
+            "" \
+            'Return this exact structure: {"summary":"one sentence summary","issues":[{"file_path":"path/to/file","line_number":42,"severity":"critical|high|medium|low|info","category":"bug|security|performance|cleanup|architecture|style","message":"description","suggestion":"how to fix","code_snippet":"optional 1-3 lines"}]}' \
+            "" \
+            "Severity: critical=crash/data-loss/security, high=logic-bug/wrong-SDK-usage, medium=missing-null-check/perf, low=code-smell, info=style" \
+            "Focus on: Dart/Flutter correctness, Android Java bridge reliability, CsjRobot SDK patterns, ElevenLabs WebSocket lifecycle, Riverpod state, DPDP compliance." \
+            'If no issues found return: {"summary":"No issues found","issues":[]}' \
+            "" \
+            "Files to review:" \
+            > /tmp/prompt.txt
 
           # Append each file's content
           TOTAL_CHARS=0
           MAX_CHARS=50000
 
           while IFS= read -r file; do
-            if [ -f "$file" ] && [ $TOTAL_CHARS -lt $MAX_CHARS ]; then
-              echo "" >> /tmp/prompt.txt
-              echo "=== FILE: $file ===" >> /tmp/prompt.txt
+            if [ -f "$file" ] && [ "$TOTAL_CHARS" -lt "$MAX_CHARS" ]; then
+              printf '\n=== FILE: %s ===\n' "$file" >> /tmp/prompt.txt
               head -250 "$file" >> /tmp/prompt.txt
               CHARS=$(wc -c < "$file")
               TOTAL_CHARS=$((TOTAL_CHARS + CHARS))
@@ -66,6 +64,7 @@ PROMPT_HEADER
           done < /tmp/changed_files.txt
 
           echo "Total prompt chars: $TOTAL_CHARS"
+          echo "Prompt file size: $(wc -c < /tmp/prompt.txt)"
 
       - name: Call Claude API
         env:
