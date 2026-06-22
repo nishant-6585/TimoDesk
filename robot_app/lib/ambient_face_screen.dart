@@ -11,6 +11,7 @@ import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
 import 'services/robot_gestures.dart';
+import 'services/person_detect.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
@@ -49,6 +50,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<GazeResult>? _gazeSub;
   StreamSubscription<FaceDetectedEvent>? _faceSub;
   StreamSubscription<bool>? _presenceSub;
+  StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
+  bool _sdkPersonPresent = false; // rising-edge tracking for greet-on-approach
 
   bool _useLivePerception = true; // toggle in debug card; drives gaze when on
   bool _present = false; // a face box is currently visible
@@ -83,6 +86,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _gazeSub = _gaze.results.listen(_onGaze);
     _faceSub = _spine.faceDetected.listen(_onFaceDetected);
     _presenceSub = _spine.personDetected.listen(_onPersonDetected);
+    // On-device person sensors (laser/RGBD/ultrasonic) → same idle→active logic,
+    // plus a greeting wave on a fresh approach. Works without cloud or mic.
+    _sdkPersonSub = PersonDetect.presence.listen(_onSdkPerson);
     _gaze.start();
     _spine.start();
 
@@ -129,6 +135,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _gazeSub?.cancel();
     _faceSub?.cancel();
     _presenceSub?.cancel();
+    _sdkPersonSub?.cancel();
     _gaze.dispose();
     _spine.dispose();
     _repaint.dispose();
@@ -221,6 +228,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       setState(() => _face =
           _face.copyWith(state: FaceStateKind.attentive, gazeX: 0, gazeY: 0));
     }
+  }
+
+  /// On-device CSJBot person sensors. Reuses the coarse-presence logic
+  /// (idle → attentive) and, on a fresh approach (rising edge), greets with a
+  /// physical wave. Independent of the cloud and the microphone.
+  void _onSdkPerson(bool present) {
+    _onPersonDetected(present);
+    if (present && !_sdkPersonPresent && !_voiceActive) {
+      RobotGestures.waveHello(); // acknowledge the visitor (no-op off-device)
+    }
+    _sdkPersonPresent = present;
   }
 
   void _setStateKind(FaceStateKind k) {

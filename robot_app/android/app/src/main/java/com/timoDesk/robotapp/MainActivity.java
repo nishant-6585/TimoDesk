@@ -21,6 +21,7 @@ public class MainActivity extends FlutterActivity {
     private static final String AUDIO_MIC_EVENT_CH = "com.timoDesk/audio_mic";
     private static final String AUDIO_PLAY_EVENT_CH = "com.timoDesk/audio_playback";
     private static final String WAKE_EVENT_CH      = "com.timoDesk/wake_events";
+    private static final String PERSON_EVENT_CH    = "com.timoDesk/person_events";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -100,5 +101,14 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 WAKE_EVENT_CH
         ).setStreamHandler(wakePlugin);
+
+        // On-device person detection (laser/RGBD/ultrasonic) — idle→active trigger.
+        // Works without cloud or mic; silent no-op on emulator.
+        PersonDetectPlugin personPlugin = new PersonDetectPlugin();
+        personPlugin.register();
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                PERSON_EVENT_CH
+        ).setStreamHandler(personPlugin);
     }
 }
