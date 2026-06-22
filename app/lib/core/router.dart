@@ -14,8 +14,6 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/enroll_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
 
-// Fix 1: GoRouterRefreshStream listens to Supabase auth state changes
-// This ensures the router re-evaluates the redirect condition when auth changes
 class GoRouterRefreshStream extends ChangeNotifier {
   late final StreamSubscription<AuthState> _subscription;
 
@@ -49,17 +47,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = _isLoggedIn();
       final isGoingToLogin = state.matchedLocation == '/login';
 
-      // Rule 1: If NOT logged in and NOT going to /login → redirect to /login
       if (!isLoggedIn && !isGoingToLogin) {
         return '/login';
       }
 
-      // Rule 2: If logged in and trying to access /login → redirect to /
       if (isLoggedIn && isGoingToLogin) {
         return '/';
       }
 
-      // Rule 3: All other cases → allow (logged in at allowed route, or at /login)
       return null;
     },
     routes: [
@@ -71,7 +66,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         name: 'dashboard',
-        // Adaptive: phones get the mobile remote, tablet/web keep the dashboard.
         builder: (context, state) => const AdaptiveHome(),
       ),
       GoRoute(

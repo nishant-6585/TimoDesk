@@ -9,6 +9,10 @@ const int joystickRadius = 90;
 const String defaultSpineUrl = 'ws://localhost:4000';
 const String defaultRobotIp = '192.168.10.23';
 
+// Environment detection for emulator vs real device
+const String emulatorSpineUrl = 'ws://localhost:4000';
+const String emulatorRobotIp = '192.168.10.23';
+
 // Robot camera (MJPEG server in robot_app/CameraStreamPlugin, port 8080)
 const int robotCameraPort = 8080;
 String robotStreamUrl(String robotIp) => 'http://$robotIp:$robotCameraPort/stream';

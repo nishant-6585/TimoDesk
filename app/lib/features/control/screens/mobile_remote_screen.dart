@@ -130,6 +130,10 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
 
   @override
   void dispose() {
+    // Ensure streaming is stopped to close WebSocket connections
+    if (_streaming) {
+      setState(() => _streaming = false);
+    }
     super.dispose();
   }
 }
@@ -203,14 +207,14 @@ class _Pill extends StatelessWidget {
 }
 
 // ── Camera panel (full-bleed MjpegView + start/stop) ──────────────────────────
-class _CameraPanel extends StatelessWidget {
+class _CameraPanel extends ConsumerWidget {
   final bool streaming;
   final String url;
   final VoidCallback onToggle;
   const _CameraPanel({required this.streaming, required this.url, required this.onToggle});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       color: Colors.black,
       child: Stack(fit: StackFit.expand, children: [
@@ -247,7 +251,7 @@ class _CameraPanel extends StatelessWidget {
 }
 
 // ── Controls: drive joystick · head pad · arm/wave ────────────────────────────
-class _ControlsPanel extends StatelessWidget {
+class _ControlsPanel extends ConsumerWidget {
   final String driveStatus;
   final bool stopped;
   final void Function(double, double, double) onDrive;
@@ -262,7 +266,7 @@ class _ControlsPanel extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [

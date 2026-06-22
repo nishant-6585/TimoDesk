@@ -100,6 +100,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void _setupListeners() {
     ref.listenManual<FaceDetection?>(faceDetectionProvider, (prev, next) {
       if (next == null) return;
+      if (!mounted) return;
       _addEvent({
         'type': 'face_detected',
         'details': next.matched
@@ -111,6 +112,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     ref.listenManual<VisitorArrival?>(visitorArrivedProvider, (prev, next) {
       if (next == null) return;
+      if (!mounted) return;
       _addEvent({
         'type': 'visitor_checkin',
         'details': '${next.visitorName} → ${next.hostName} (${next.channel})',
@@ -733,6 +735,4 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
           child: SizedBox(
             width: 104,
             height: 104,
-            child: AnimatedBuilder(
-              animation: _animation,
-              builder
+            
