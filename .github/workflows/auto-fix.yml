@@ -1,0 +1,153 @@
+name: Auto-Fix Issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      issues_json:
+        description: "JSON array of open issues from DevConsole"
+        required: true
+
+jobs:
+  fix:
+    name: Claude Auto-Fix → PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse issues
+        run: |
+          echo '${{ github.event.inputs.issues_json }}' > /tmp/issues.json
+          echo "Issue count: $(jq 'length' /tmp/issues.json)"
+          jq -r '.[] | "[\(.severity)] \(.file_path // "unknown"):\(.line_number // 0) — \(.message)"' /tmp/issues.json
+
+      - name: Build fix prompt per file
+        run: |
+          # Group issues by file
+          jq -r '[.[].file_path] | unique | .[]' /tmp/issues.json | grep -v "null" > /tmp/files_to_fix.txt
+          echo "Files to fix:"
+          cat /tmp/files_to_fix.txt
+
+      - name: Apply fixes with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -p /tmp/fixes
+
+          while IFS= read -r file; do
+            if [ ! -f "$file" ]; then
+              echo "Skipping $file — not found"
+              continue
+            fi
+
+            # Get issues for this file
+            FILE_ISSUES=$(jq --arg f "$file" '[.[] | select(.file_path == $f)]' /tmp/issues.json)
+            ISSUE_COUNT=$(echo "$FILE_ISSUES" | jq 'length')
+            echo "=== Fixing $file ($ISSUE_COUNT issues) ==="
+
+            # Build prompt for this file
+            FILE_CONTENT=$(cat "$file")
+
+            printf '%s\n' \
+              "You are a senior Flutter/Android engineer. Fix the following issues in this file." \
+              "Return ONLY the complete corrected file content — no explanation, no markdown, no code fences." \
+              "Preserve all existing functionality. Make minimal changes to fix only the listed issues." \
+              "" \
+              "Issues to fix:" \
+              > /tmp/fix_prompt.txt
+
+            echo "$FILE_ISSUES" | jq -r '.[] | "- [\(.severity)] Line \(.line_number // "?"): \(.message)\n  Fix: \(.suggestion // "apply best practice")"' >> /tmp/fix_prompt.txt
+
+            printf '\n%s\n' "Current file content ($file):" >> /tmp/fix_prompt.txt
+            echo "$FILE_CONTENT" >> /tmp/fix_prompt.txt
+
+            # Call Claude API
+            jq -n \
+              --rawfile prompt /tmp/fix_prompt.txt \
+              '{
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 8192,
+                messages: [{"role": "user", "content": $prompt}]
+              }' > /tmp/fix_request.json
+
+            curl -s -X POST https://api.anthropic.com/v1/messages \
+              -H "Content-Type: application/json" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -d @/tmp/fix_request.json > /tmp/fix_response.json
+
+            FIXED_CONTENT=$(jq -r '.content[0].text // ""' /tmp/fix_response.json)
+
+            if [ -z "$FIXED_CONTENT" ]; then
+              echo "No response for $file — skipping"
+              jq -r '.error // "unknown error"' /tmp/fix_response.json
+              continue
+            fi
+
+            # Strip markdown fences if present
+            FIXED_CONTENT=$(echo "$FIXED_CONTENT" \
+              | sed 's/^```[a-z]*[[:space:]]*//' \
+              | sed 's/[[:space:]]*```[[:space:]]*$//')
+
+            # Write fixed content
+            echo "$FIXED_CONTENT" > "$file"
+            echo "Fixed: $file"
+
+          done < /tmp/files_to_fix.txt
+
+      - name: Create fix branch and PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="auto-fix/devConsole-$(date +%Y%m%d-%H%M%S)"
+          ISSUE_COUNT=$(jq 'length' /tmp/issues.json)
+
+          git config user.name "TimoDesk Bot"
+          git config user.email "bot@timoDesk.ai"
+
+          git checkout -b "$BRANCH"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit — Claude may have returned identical content"
+            exit 0
+          fi
+
+          git commit -m "fix: auto-fix $ISSUE_COUNT issues from DevConsole
+
+          Issues fixed:
+          $(jq -r '.[] | "- [\(.severity)] \(.file_path // "unknown"):\(.line_number // 0) — \(.message)"' /tmp/issues.json)
+
+          Co-Authored-By: Claude Haiku <noreply@anthropic.com>"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Auto-fix: $ISSUE_COUNT issues from DevConsole" \
+            --body "$(cat <<EOF
+          ## Auto-generated fixes from DevConsole
+
+          This PR was triggered from the XBoom Flow Developer Console.
+
+          ### Issues fixed ($ISSUE_COUNT)
+          $(jq -r '.[] | "- **[\(.severity | ascii_upcase)]** \(.file_path // "unknown"):\(.line_number // "?") — \(.message)"' /tmp/issues.json)
+
+          ### Review checklist
+          - [ ] Verify each fix is correct
+          - [ ] Run \`flutter analyze\` locally
+          - [ ] Test on emulator before merging
+
+          > Generated by Claude Haiku via DevConsole auto-fix
+          EOF
+          )" \
+            --base main \
+            --head "$BRANCH"
+
+          echo "PR created on branch $BRANCH"
