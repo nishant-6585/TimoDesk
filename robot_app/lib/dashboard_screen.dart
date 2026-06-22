@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -14,19 +15,26 @@ import 'status_screen.dart';
 import 'control_screen.dart';
 import 'settings_screen.dart';
 
-// ── Color tokens (match the prototype) ────────────────────────────────────────
+// ── Color & type tokens (DASHBOARD_REDESIGN.md §2) ───────────────────────────
 const _bg = Color(0xFF0F0F0F);
-const _surf = Color(0xFF1A1A1A);
-const _surf2 = Color(0xFF222222);
-const _border = Color(0xFF2A2A2A);
+const _panel = Color(0xFF151515);
+const _panel2 = Color(0xFF1A1A1A);
+const _line = Color(0xFF262626);
+const _line2 = Color(0xFF2F2F2F);
+const _ink = Color(0xFFF4F1EE);
+const _muted = Color(0xFF9A9A9A);
+const _muted2 = Color(0xFF6B6B6B);
 const _green = Color(0xFF4ADE80);
-const _amber = Color(0xFFFBBF24);
-const _red = Color(0xFFEF4444);
+const _greenBg = Color(0xFF06200F);
+const _red = Color(0xFFFF5247);
+const _accent = kOrange; // #FF6B35
+const _accentDimColor = Color(0xFFE14B1E);
 
-/// Feature dashboard (opened from the ambient face) — 3-zone landscape layout:
-/// nav rail · live mini-face + conversation · quick controls.
-/// Reacts to the SAME ElevenLabs session as the ambient face (shared VoiceAgent +
-/// AudioBridge passed in). Auto-returns to the face after 30s idle.
+/// Face-dominant reception dashboard (opened from the ambient face). Three
+/// columns that fill the viewport and never scroll: nav rail · big face + a
+/// single row of reception action tiles · height-distributing Quick Controls.
+/// Reuses the shared FacePainter/FaceRig (unchanged); reacts to the same
+/// ElevenLabs session as the ambient face. Auto-returns to the face after 30s.
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({
     super.key,
@@ -41,39 +49,51 @@ class DashboardScreen extends ConsumerStatefulWidget {
   ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _ChatMsg {
-  final String role; // 'timo' | 'visitor'
-  final String text;
-  const _ChatMsg(this.role, this.text);
-}
-
-// Single canonical product copy: "Timo, xboom's reception host" (lowercase xboom,
-// per company name). NOTE: the ElevenLabs agent's own first message is configured
-// in the dashboard — set it to match ("...xboom's reception host...") for full
-// consistency once a live session replaces this placeholder.
-const _greeting =
-    "Hi! I'm Timo, xboom's reception host. How can I help you today?";
+/// The 6 reception action tiles (§5).
+enum _Act { greet, listen, checkIn, directions, pageStaff, rest }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with SingleTickerProviderStateMixin {
-  // Mini face (independent animator from the ambient face).
+  // Dashboard mini-face (independent rig from the ambient face).
   final FaceRig _rig = FaceRig();
   final _FaceRepaint _repaint = _FaceRepaint();
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
-  FaceState _face = const FaceState();
+  FaceState _face = const FaceState(state: FaceStateKind.greeting);
 
   Timer? _idle;
   Timer? _clock;
+  Timer? _revert; // action → auto-revert to attentive
+  Timer? _seq; // Listen multi-step preview
+  Timer? _intro;
   String _timeStr = '';
   static const _idleReturn = Duration(seconds: 30);
 
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<double>? _playbackSub;
-  List<_ChatMsg> _messages = const [_ChatMsg('timo', _greeting)];
-  final ScrollController _scrollCtrl = ScrollController();
   bool _voiceActive = false;
   bool _perceptionOn = true;
+
+  // Action state
+  _Act? _activeAct; // tile currently lit
+  bool _resting = false;
+
+  // Toast (feedback over the face)
+  String _toastText = '';
+  IconData _toastIcon = Icons.info_outline;
+  bool _toastVisible = false;
+  Timer? _toastTimer;
+
+  // Transient chassis-direction hint → drives the badge so staff get feedback.
+  String? _chassisHint;
+  Timer? _chassisHintTimer;
+
+  // Speed 30–80 (% of max), mirrors the provider's 0.3–0.8.
+  double _speed = 50;
+
+  // Per-frame metrics (clamp(min, …vh, max)) computed in build().
+  double _dockH = 100, _padSq = 120, _armH = 36, _estopH = 50;
+  double _tileLabel = 13, _tileSub = 10;
 
   @override
   void initState() {
@@ -85,7 +105,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _resetIdle();
     _voiceSub = widget.voiceAgent.events.listen(_onVoiceEvent);
     _playbackSub = widget.audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
-    _syncMessages();
+    // Intro: open in greeting, settle to attentive after ~2.8s (§6).
+    _intro = Timer(const Duration(milliseconds: 2800), () {
+      if (mounted && !_resting && _activeAct == null) _setKind(FaceStateKind.attentive);
+    });
   }
 
   @override
@@ -93,12 +116,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _ticker.dispose();
     _idle?.cancel();
     _clock?.cancel();
+    _revert?.cancel();
+    _seq?.cancel();
+    _intro?.cancel();
+    _toastTimer?.cancel();
+    _chassisHintTimer?.cancel();
     _voiceSub?.cancel();
     _playbackSub?.cancel();
     _repaint.dispose();
-    _scrollCtrl.dispose();
     // Do NOT dispose voiceAgent / audioBridge — owned by AmbientFaceScreen.
     super.dispose();
+  }
+
+  // ── Face plumbing ───────────────────────────────────────────────────────────
+  void _onTick(Duration elapsed) {
+    final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
+    _lastTick = elapsed;
+    if (dt <= 0) return;
+    // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Timo stays
+    // engaged with whoever's at the desk (the ambient face is a separate rig).
+    _rig.tick(_face, dt.clamp(0.0, 0.05), followGx: 0, followGy: 0.04);
+    _repaint.ping();
+  }
+
+  void _setKind(FaceStateKind k) {
+    if (mounted) setState(() => _face = _face.copyWith(state: k));
   }
 
   void _updateClock() {
@@ -108,21 +150,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) setState(() => _timeStr = '$h:$m');
   }
 
-  void _onTick(Duration elapsed) {
-    final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
-    _lastTick = elapsed;
-    if (dt <= 0) return;
-    // Dashboard-only: pin gaze forward/centered (no idle wander) so the iris stays
-    // centered in the mini-face. The shared ambient face is unaffected (separate rig).
-    _rig.tick(_face, dt.clamp(0.0, 0.05), followGx: 0, followGy: 0);
-    _repaint.ping();
-  }
-
-  void _setKind(FaceStateKind k) {
-    if (mounted) setState(() => _face = _face.copyWith(state: k));
-  }
-
-  // ── Voice (shared session) ──────────────────────────────────────────────────
+  // ── Voice (shared session drives the face) ──────────────────────────────────
   void _onVoiceEvent(VoiceEvent e) {
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
@@ -134,30 +162,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         break;
       case VoiceEventKind.agentThinking:
         _setKind(FaceStateKind.thinking);
-        _syncMessages();
         break;
       case VoiceEventKind.agentSpeaking:
         _setKind(FaceStateKind.speaking);
-        _syncMessages();
         break;
       case VoiceEventKind.audioChunk:
-        // Playback is owned by AmbientFaceScreen (still alive underneath). Driving
-        // playChunk here too would double-play. Lip-sync comes from the playback
-        // level stream below.
-        break;
+        break; // playback owned by AmbientFaceScreen
       case VoiceEventKind.sessionEnded:
-        setState(() => _voiceActive = false);
-        _setKind(FaceStateKind.idle);
-        _syncMessages();
-        break;
       case VoiceEventKind.error:
         setState(() => _voiceActive = false);
-        _setKind(FaceStateKind.idle);
+        if (!_resting) _setKind(FaceStateKind.attentive);
         break;
     }
   }
 
-  // Speaker amplitude (as it plays) → mini-face lip-sync; -1 = drained.
   void _onPlaybackLevel(double level) {
     if (!mounted || !_voiceActive) return;
     if (level < 0) {
@@ -168,50 +186,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     }
   }
 
-  // Rebuild the transcript panel from the shared agent's accumulated turns.
-  // The static greeting is ONLY shown when there's no real conversation yet —
-  // once a session runs, the agent's own first message replaces it (no duplicate).
-  void _syncMessages() {
-    final t = widget.voiceAgent.transcript;
-    final msgs = <_ChatMsg>[];
-    for (final turn in t) {
-      final role = (turn['role'] == 'user') ? 'visitor' : 'timo';
-      final text = (turn['text'] ?? '').toString();
-      if (text.isNotEmpty) msgs.add(_ChatMsg(role, text));
-    }
-    if (msgs.isEmpty) msgs.add(const _ChatMsg('timo', _greeting));
-    if (mounted) setState(() => _messages = msgs);
-    _scrollToBottom();
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-      }
-    });
-  }
-
-  void _toggleVoice() {
-    if (widget.voiceAgent.isActive) {
-      widget.voiceAgent.endSession();
-      widget.audioBridge.stopMic();
-      widget.audioBridge.stopPlayback();
-    } else {
-      widget.voiceAgent.startSession();
-      widget.audioBridge.startMic((chunk) => widget.voiceAgent.sendAudioChunk(chunk));
-    }
-    setState(() => _voiceActive = widget.voiceAgent.isActive);
-  }
-
-  void _onChip(String label) {
-    setState(() => _messages = [..._messages, _ChatMsg('visitor', label)]);
-    _scrollToBottom();
-    if (!widget.voiceAgent.isActive) _toggleVoice(); // start voice to handle it
-  }
-
-  // ── Idle + navigation ─────────────────────────────────────────────────────
+  // ── Idle return + navigation ────────────────────────────────────────────────
   void _resetIdle() {
     _idle?.cancel();
     _idle = Timer(_idleReturn, () {
@@ -225,6 +200,86 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) _resetIdle();
   }
 
+  // ── Action tiles (§5) ───────────────────────────────────────────────────────
+  void _toast(String text, IconData icon) {
+    setState(() {
+      _toastText = text;
+      _toastIcon = icon;
+      _toastVisible = true;
+    });
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (mounted) setState(() => _toastVisible = false);
+    });
+  }
+
+  void _revertAfter([int ms = 2600]) {
+    _revert?.cancel();
+    _revert = Timer(Duration(milliseconds: ms), () {
+      if (!mounted || _resting) return;
+      setState(() {
+        _activeAct = null;
+        _face = _face.copyWith(state: FaceStateKind.attentive);
+      });
+    });
+  }
+
+  void _runAction(_Act a) {
+    _resetIdle();
+    _seq?.cancel();
+    if (a != _Act.rest && _resting) _resting = false; // any action wakes from rest
+    setState(() => _activeAct = a);
+
+    switch (a) {
+      case _Act.greet:
+        _setKind(FaceStateKind.greeting);
+        ref.read(armProvider.notifier).wave(); // real wave gesture
+        _toast('Greeting visitor', Icons.waving_hand_rounded);
+        _revertAfter(2600);
+        break;
+      case _Act.listen:
+        // Preview: listening → thinking → speaking (real voice flow lands later).
+        _setKind(FaceStateKind.listening);
+        _toast('Listening…', Icons.mic_rounded);
+        _seq = Timer(const Duration(milliseconds: 2200), () {
+          if (!mounted) return;
+          _setKind(FaceStateKind.thinking);
+          _seq = Timer(const Duration(milliseconds: 1100), () {
+            if (!mounted) return;
+            _setKind(FaceStateKind.speaking);
+            _revertAfter(2600);
+          });
+        });
+        break;
+      case _Act.checkIn:
+        _setKind(FaceStateKind.attentive);
+        _toast('Who are you here to see?', Icons.assignment_ind_outlined);
+        _revertAfter(2600);
+        break;
+      case _Act.directions:
+        _setKind(FaceStateKind.speaking);
+        _toast('Giving directions →', Icons.signpost_outlined);
+        _revertAfter(2600);
+        break;
+      case _Act.pageStaff:
+        _setKind(FaceStateKind.speaking);
+        _toast('Paging the front desk…', Icons.campaign_outlined);
+        _revertAfter(2600);
+        break;
+      case _Act.rest:
+        _resting = !_resting;
+        _revert?.cancel();
+        if (_resting) {
+          _setKind(FaceStateKind.sleepy);
+          _toast('Resting', Icons.bedtime_outlined);
+        } else {
+          setState(() => _activeAct = null);
+          _setKind(FaceStateKind.attentive);
+        }
+        break;
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -236,11 +291,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           child: Column(children: [
             _topBar(),
             Expanded(
-              child: Row(children: [
-                _navRail(),
-                Expanded(child: _centerPanel()),
-                _controlsPanel(),
-              ]),
+              child: LayoutBuilder(builder: (context, c) {
+                final w = c.maxWidth;
+                final h = c.maxHeight;
+
+                // Responsive columns (§1, §7).
+                final showNav = w > 980;
+                final tight = w <= 1200;
+                final navW = tight ? 208.0 : 240.0;
+                final ctrlW = tight ? 284.0 : 320.0;
+                final dockCols = w <= 980 ? 3 : 6;
+
+                // clamp(min, …vh, max) sizing from the body height.
+                _dockH = _vh(h, 0.13, 78, 116);
+                _padSq = _vh(h, 0.13, 64, 150);
+                _armH = _vh(h, 0.046, 32, 38);
+                _estopH = _vh(h, 0.06, 44, 52);
+                _tileLabel = _vh(h, 0.0175, 12, 14);
+                _tileSub = _vh(h, 0.0135, 9, 10.5);
+
+                return Row(children: [
+                  if (showNav) _navRail(navW),
+                  Expanded(child: _center(dockCols)),
+                  _controls(ctrlW),
+                ]);
+              }),
             ),
           ]),
         ),
@@ -248,39 +323,48 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  // ── Top bar ─────────────────────────────────────────────────────────────────
+  static double _vh(double h, double frac, double lo, double hi) =>
+      (h * frac).clamp(lo, hi).toDouble();
+
+  // ── Top bar (§1) ────────────────────────────────────────────────────────────
   Widget _topBar() {
     return Container(
-      height: 52,
+      height: 56,
       decoration: const BoxDecoration(
-        color: _surf,
-        border: Border(bottom: BorderSide(color: _border)),
+        color: _panel2,
+        border: Border(bottom: BorderSide(color: _line)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Colors.white60),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        _IconBox(icon: Icons.arrow_back_ios_new_rounded, onTap: () => Navigator.of(context).pop()),
+        const SizedBox(width: 12),
         const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Timo',
-                style: TextStyle(color: kOrange, fontSize: 15, fontWeight: FontWeight.w700)),
+            Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: 'Timo ',
+                  style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
+              TextSpan(
+                  text: 'Dashboard',
+                  style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w700)),
+            ])),
+            SizedBox(height: 1),
             Text('RECEPTION HOST',
                 style: TextStyle(
-                    color: Colors.white38, fontSize: 9, letterSpacing: 2, fontWeight: FontWeight.w600)),
+                    color: _muted2, fontSize: 11, letterSpacing: 1.98, fontWeight: FontWeight.w600)),
           ],
         ),
         const Spacer(),
         Consumer(builder: (_, ref, __) {
           final online = ref.watch(headProvider).isRunning ||
-              ref.watch(chassisProvider).isRunning;
+              ref.watch(chassisProvider).isRunning ||
+              ref.watch(armProvider).isRunning;
           return _pill(online ? _green : Colors.white24, online ? 'SDK Online' : 'SDK Offline');
         }),
         const SizedBox(width: 8),
-        _pill(_perceptionOn ? _amber : Colors.white24,
+        _pill(_perceptionOn ? _accent : Colors.white24,
             _perceptionOn ? 'Perception On' : 'Perception Off'),
         const SizedBox(width: 8),
         Consumer(builder: (_, ref, __) {
@@ -293,47 +377,89 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                       ? Icons.battery_5_bar_rounded
                       : Icons.battery_2_bar_rounded;
           return Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 16, color: Colors.white60),
+            Icon(icon, size: 16, color: _muted),
             const SizedBox(width: 4),
             Text(b == null ? '—' : '$b%',
-                style: const TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w600)),
+                style: const TextStyle(color: _muted, fontSize: 11, fontWeight: FontWeight.w600)),
           ]);
         }),
         const SizedBox(width: 12),
         Text(_timeStr,
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
-        const SizedBox(width: 4),
+            style: const TextStyle(
+                color: _ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()])),
       ]),
     );
   }
 
   Widget _pill(Color dot, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: _surf2,
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFF171717),
+        border: Border.all(color: _line2),
+        borderRadius: BorderRadius.circular(99),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 6, height: 6, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+        Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+                color: dot,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: dot.withValues(alpha: 0.7), blurRadius: 6)])),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600)),
+        Text(label, style: const TextStyle(color: _ink, fontSize: 11, fontWeight: FontWeight.w600)),
       ]),
     );
   }
 
-  // ── Nav rail ──────────────────────────────────────────────────────────────
-  Widget _navRail() {
+  // ── Nav rail (§3) ─────────────────────────────────────────────────────────
+  Widget _navRail(double w) {
     return Container(
-      width: 236,
+      width: w,
       decoration: const BoxDecoration(
-        color: _surf,
-        border: Border(right: BorderSide(color: _border)),
+        color: _panel,
+        border: Border(right: BorderSide(color: _line)),
       ),
       padding: const EdgeInsets.all(10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _navLabel('Main'),
+        // Brand block
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+          child: Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11),
+                gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_accent, _accentDimColor]),
+                boxShadow: [BoxShadow(color: _accent.withValues(alpha: 0.35), blurRadius: 10)],
+              ),
+              alignment: Alignment.center,
+              child: const Text('T',
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(width: 10),
+            const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Timo', style: TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w700)),
+                  SizedBox(height: 2),
+                  Text('FRONT DESK · BAY 1',
+                      style: TextStyle(
+                          color: _muted2, fontSize: 8, letterSpacing: 1.2, fontWeight: FontWeight.w600)),
+                ]),
+          ]),
+        ),
+        _navLabel('Menu'),
         _NavItem(icon: Icons.home_rounded, label: 'Home', active: true, onTap: () {}),
         _NavItem(icon: Icons.person_add_alt_1_rounded, label: 'Enroll Staff',
             onTap: () => _open(const EnrollScreen())),
@@ -345,7 +471,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             onTap: () => _open(const SettingsScreen())),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Divider(height: 1, color: _border),
+          child: Divider(height: 1, color: _line),
         ),
         _navLabel('Services'),
         const _NavItem(icon: Icons.mic_rounded, label: 'Voice Q&A', soon: true),
@@ -353,23 +479,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         const _NavItem(icon: Icons.navigation_rounded, label: 'Navigate', soon: true),
         const _NavItem(icon: Icons.menu_book_rounded, label: 'Directory', soon: true),
         const Spacer(),
+        // Live perception toggle
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: _surf2,
-            border: Border.all(color: _border),
+            color: _panel2,
+            border: Border.all(color: _line),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(children: [
-            const Icon(Icons.visibility_rounded, size: 16, color: Colors.white60),
+            const Icon(Icons.visibility_rounded, size: 16, color: _muted),
             const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Live Perception',
-                  style: TextStyle(color: Colors.white60, fontSize: 11)),
-            ),
+            const Expanded(child: Text('Live Perception', style: TextStyle(color: _muted, fontSize: 11))),
             Switch(
               value: _perceptionOn,
-              activeThumbColor: kOrange,
+              activeThumbColor: Colors.white,
+              activeTrackColor: _accent,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: _line2,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               onChanged: (v) => setState(() => _perceptionOn = v),
             ),
           ]),
@@ -385,35 +513,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 color: Colors.white24, fontSize: 8, fontWeight: FontWeight.w700, letterSpacing: 2.5)),
       );
 
-  // ── Center panel ────────────────────────────────────────────────────────────
-  // Two equal-width cards, full Expanded width, 16 padding all round, 14 gap.
-  Widget _centerPanel() {
+  // ── Center: face card + action dock (§1, §5, §6) ────────────────────────────
+  Widget _center(int dockCols) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(flex: 46, child: _faceCard()),
-        const SizedBox(height: 14),
-        Expanded(flex: 54, child: _convoCard()),
+        Expanded(child: _faceCard()),
+        const SizedBox(height: 12),
+        _actionDock(dockCols),
       ]),
     );
   }
 
-  // Face fills a tall rounded "chest screen" card → big, prominent eyes (the
-  // painter scales to shortestSide, so a taller card = larger face).
   Widget _faceCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
-      child: Container(
-        width: double.infinity,
+      child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFF262626)),
+          border: Border.all(color: _line),
         ),
         child: Stack(children: [
-          Positioned.fill(
-            child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
-          ),
-          // Radial vignette over the face for chest-screen depth.
+          Positioned.fill(child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint))),
           const Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -428,52 +549,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ),
             ),
           ),
-          Positioned(top: 10, left: 12, child: _stateChip()),
+          Positioned(top: 12, left: 14, child: _stateChip()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 14,
+            child: IgnorePointer(child: Center(child: _toastPill())),
+          ),
         ]),
       ),
-    );
-  }
-
-  Widget _convoCard() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: _surf,
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(children: [
-        _convoHeader(),
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-            itemCount: _messages.length,
-            itemBuilder: (_, i) => _bubble(_messages[i]),
-          ),
-        ),
-        if (_messages.length <= 2) _chips(),
-        _inputBar(),
-      ]),
-    );
-  }
-
-  Widget _convoHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _border))),
-      child: Row(children: [
-        const Icon(Icons.forum_rounded, size: 15, color: kOrange),
-        const SizedBox(width: 8),
-        const Text('Conversation',
-            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-        const Spacer(),
-        Container(width: 6, height: 6, decoration: BoxDecoration(
-            color: _voiceActive ? _green : Colors.white24, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(_voiceActive ? 'Live' : 'Idle',
-            style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w600)),
-      ]),
     );
   }
 
@@ -481,249 +565,341 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final (name, desc) = _stateLabel(_face.state);
     final active = _face.state != FaceStateKind.idle && _face.state != FaceStateKind.sleepy;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
         color: const Color(0xD10F0F0F),
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _line2),
+        borderRadius: BorderRadius.circular(99),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-                color: active ? kOrange : Colors.white30, shape: BoxShape.circle)),
+                color: active ? _accent : Colors.white30,
+                shape: BoxShape.circle,
+                boxShadow: active ? [BoxShadow(color: _accent.withValues(alpha: 0.7), blurRadius: 6)] : null)),
         const SizedBox(width: 8),
         Text(name,
-            style: const TextStyle(
-                color: kOrange, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
+            style: const TextStyle(color: _accent, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
         const SizedBox(width: 6),
-        Text(desc, style: const TextStyle(color: Colors.white60, fontSize: 9)),
+        Text(desc, style: const TextStyle(color: _muted, fontSize: 9)),
       ]),
     );
   }
 
   (String, String) _stateLabel(FaceStateKind k) => switch (k) {
         FaceStateKind.idle => ('IDLE', '· relaxed, watching the room'),
-        FaceStateKind.attentive => ('READY', '· someone is nearby'),
-        FaceStateKind.greeting => ('GREETING', '· welcoming a visitor'),
+        FaceStateKind.attentive => ('ATTENTIVE', "· someone's here"),
+        FaceStateKind.greeting => ('GREETING', '· welcome!'),
         FaceStateKind.listening => ('LISTENING', '· hearing you…'),
-        FaceStateKind.thinking => ('THINKING', '· processing…'),
+        FaceStateKind.thinking => ('THINKING', '· one moment…'),
         FaceStateKind.speaking => ('SPEAKING', '· responding'),
-        FaceStateKind.sleepy => ('SLEEPY', '· power saving'),
+        FaceStateKind.sleepy => ('SLEEPY', '· resting'),
       };
 
-  Widget _bubble(_ChatMsg m) {
-    final isTimo = m.role == 'timo';
-    return Align(
-      alignment: isTimo ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.5),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-        decoration: BoxDecoration(
-          color: isTimo ? _surf2 : const Color(0x26FF6B35),
-          border: Border.all(color: isTimo ? _border : const Color(0x4DFF6B35)),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(14),
-            topRight: const Radius.circular(14),
-            bottomLeft: Radius.circular(isTimo ? 4 : 14),
-            bottomRight: Radius.circular(isTimo ? 14 : 4),
+  Widget _toastPill() {
+    return AnimatedSlide(
+      offset: _toastVisible ? Offset.zero : const Offset(0, 0.4),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      child: AnimatedOpacity(
+        opacity: _toastVisible ? 1 : 0,
+        duration: const Duration(milliseconds: 220),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xDB141414),
+            border: Border.all(color: _accent.withValues(alpha: 0.6)),
+            borderRadius: BorderRadius.circular(99),
           ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(_toastIcon, size: 14, color: _accent),
+            const SizedBox(width: 8),
+            Text(_toastText, style: const TextStyle(color: _ink, fontSize: 12, fontWeight: FontWeight.w600)),
+          ]),
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (isTimo)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 3),
-              child: Text('TIMO',
-                  style: TextStyle(
-                      color: kOrange, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
-            ),
-          Text(m.text, style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.45)),
-        ]),
       ),
     );
   }
 
-  Widget _chips() {
-    const labels = ['Meet someone', 'WiFi password', 'About xboom', 'Restroom'];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-      child: Wrap(spacing: 6, runSpacing: 6, children: [
-        for (final l in labels)
-          OutlinedButton(
-            onPressed: () => _onChip(l),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white60,
-              side: const BorderSide(color: _border),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(l, style: const TextStyle(fontSize: 11)),
-          ),
-      ]),
-    );
+  // ── Action dock — 6 tiles, one row (§5) ─────────────────────────────────────
+  Widget _actionDock(int cols) {
+    final tiles = _Act.values;
+    Widget tile(_Act a) => _ActionTile(
+          act: a,
+          active: _activeAct == a,
+          labelSize: _tileLabel,
+          subSize: _tileSub,
+          onTap: () => _runAction(a),
+        );
+
+    if (cols == 6) {
+      return SizedBox(
+        height: _dockH,
+        child: Row(children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: 10),
+            Expanded(child: tile(tiles[i])),
+          ],
+        ]),
+      );
+    }
+    Widget row(int start) => SizedBox(
+          height: _dockH,
+          child: Row(children: [
+            for (var i = start; i < start + 3; i++) ...[
+              if (i > start) const SizedBox(width: 10),
+              Expanded(child: tile(tiles[i])),
+            ],
+          ]),
+        );
+    return Column(children: [row(0), const SizedBox(height: 10), row(3)]);
   }
 
-  Widget _inputBar() {
+  // ── Quick Controls (§4) — height-distributing, fixed E-Stop ─────────────────
+  Widget _controls(double w) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: _border))),
-      child: Row(children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: _surf2,
-              border: Border.all(color: _border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text('Tap 🎤 to speak',
-                style: TextStyle(color: Colors.white38, fontSize: 13)),
-          ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: _toggleVoice,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _voiceActive ? const Color(0x26EF4444) : const Color(0x26FF6B35),
-              border: Border.all(color: _voiceActive ? _red : kOrange),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            // Idle = ready mic (orange). Active = clear STOP affordance (red) —
-            // not a slashed "mic-off" that reads as broken/muted.
-            child: Icon(_voiceActive ? Icons.stop_rounded : Icons.mic_rounded,
-                color: _voiceActive ? _red : kOrange, size: 20),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  // ── Controls panel ──────────────────────────────────────────────────────────
-  Widget _controlsPanel() {
-    return Container(
-      width: 312,
+      width: w,
       decoration: const BoxDecoration(
-        color: _surf,
-        border: Border(left: BorderSide(color: _border)),
+        color: _panel,
+        border: Border(left: BorderSide(color: _line)),
       ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: Column(children: [
-          _ctrlSection('HEAD', Consumer(builder: (_, ref, __) {
-            final h = ref.watch(headProvider);
-            final n = ref.read(headProvider.notifier);
-            return Column(children: [
-              _HeadPositionIndicator(headLR: h.headLR, headUD: h.headUD),
-              const SizedBox(height: 10),
-              _SmallBtn('Reset', Icons.center_focus_strong_rounded, onTap: n.resetHead),
-            ]);
-          })),
-          const SizedBox(height: 10),
-          _ctrlSection('CHASSIS', Consumer(builder: (_, ref, __) {
-            final c = ref.watch(chassisProvider);
-            final n = ref.read(chassisProvider.notifier);
-            return Column(children: [
-              _DirectionIndicator(direction: c.direction, isMoving: c.isMoving),
-              const SizedBox(height: 8),
-              Row(children: [
-                const Text('Speed',
-                    style: TextStyle(fontSize: 9, color: Colors.white38, fontWeight: FontWeight.w700)),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                    ),
-                    child: Slider(
-                      value: c.speed.clamp(0.3, 0.8),
-                      min: 0.3,
-                      max: 0.8,
-                      activeColor: kOrange,
-                      inactiveColor: _border,
-                      onChanged: (v) => n.setSpeed(v),
-                    ),
-                  ),
-                ),
-                Text('${(c.speed * 10).toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 9, color: Colors.white38, fontWeight: FontWeight.w700)),
-              ]),
-            ]);
-          })),
-          const SizedBox(height: 10),
-          _ctrlSection('ARMS', Consumer(builder: (_, ref, __) {
-            final a = ref.watch(armProvider);
-            final n = ref.read(armProvider.notifier);
-            return Row(children: [
-              Expanded(child: _SmallBtn(a.isWaving ? '👋 Waving' : '👋 Wave', null,
-                  onTap: a.isWaving ? n.stopWave : n.wave, highlighted: a.isWaving)),
-              const SizedBox(width: 6),
-              Expanded(child: _SmallBtn('⟲ Reset', null, onTap: n.resetArms)),
-            ]);
-          })),
-          const SizedBox(height: 14),
-          Consumer(builder: (_, ref, __) {
-            final c = ref.watch(chassisProvider);
-            final n = ref.read(chassisProvider.notifier);
-            return GestureDetector(
-              onTap: n.emergencyStop,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: c.isMoving ? const Color(0x33EF4444) : const Color(0x14EF4444),
-                  border: Border.all(
-                      color: c.isMoving ? _red : const Color(0x59EF4444), width: 1.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.emergency_rounded, color: _red, size: 18),
-                  const SizedBox(width: 8),
-                  const Text('Emergency Stop',
-                      style: TextStyle(
-                          color: _red, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1)),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: const Color(0x33EF4444), borderRadius: BorderRadius.circular(4)),
-                    child: Text(c.isMoving ? 'MOVING' : 'IDLE',
-                        style: const TextStyle(
-                            color: _red, fontSize: 8, fontWeight: FontWeight.w700, letterSpacing: 1)),
-                  ),
-                ]),
-              ),
-            );
-          }),
-        ]),
-      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10, left: 2),
+          child: Row(children: const [
+            Icon(Icons.swap_horiz_rounded, size: 16, color: _accent),
+            SizedBox(width: 8),
+            Text('Quick Controls', style: TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w700)),
+          ]),
+        ),
+        Expanded(
+          child: Column(children: [
+            Expanded(child: _headBlock()),
+            const SizedBox(height: 10),
+            Expanded(child: _chassisBlock()),
+            const SizedBox(height: 10),
+            Expanded(child: _armBlock()),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        _estop(),
+      ]),
     );
   }
 
-  Widget _ctrlSection(String label, Widget child) {
+  // NOTE: the providers expose no directional drive/nudge (head: reset only;
+  // chassis: start/stop/setSpeed/e-stop). Directional pad buttons give visual
+  // feedback (badge + face) like the prototype; real driving needs native drive
+  // methods on the Chassis/Head plugins — a follow-up. CTR/STOP/Speed/Wave/Reset/
+  // E-Stop are wired to the real services control_screen.dart uses.
+
+  Widget _headBlock() {
+    return Consumer(builder: (_, ref, __) {
+      final h = ref.watch(headProvider);
+      final n = ref.read(headProvider.notifier);
+      void nudge() {
+        _setKind(FaceStateKind.attentive);
+        _revert?.cancel();
+        _revert = Timer(const Duration(milliseconds: 600), () {
+          if (mounted && !_resting && _activeAct == null) _setKind(FaceStateKind.idle);
+        });
+      }
+
+      return _ctrlBlock(
+        'Head',
+        h.isRunning ? _Badge.active('ACTIVE') : _Badge.idle('IDLE'),
+        _dpad([
+          null, _DpadBtn(Icons.keyboard_arrow_up_rounded, onTap: nudge), null,
+          _DpadBtn(Icons.keyboard_arrow_left_rounded, onTap: nudge),
+          _DpadBtn.center('CTR', onTap: () { n.resetHead(); nudge(); }),
+          _DpadBtn(Icons.keyboard_arrow_right_rounded, onTap: nudge),
+          null, _DpadBtn(Icons.keyboard_arrow_down_rounded, onTap: nudge), null,
+        ]),
+      );
+    });
+  }
+
+  Widget _chassisBlock() {
+    return Consumer(builder: (_, ref, __) {
+      final c = ref.watch(chassisProvider);
+      final n = ref.read(chassisProvider.notifier);
+      final movingDir = _chassisHint ?? (c.isMoving ? c.direction : null);
+
+      void drive(String dir) {
+        _setKind(FaceStateKind.attentive);
+        setState(() => _chassisHint = dir);
+        _chassisHintTimer?.cancel();
+        _chassisHintTimer = Timer(const Duration(milliseconds: 1400), () {
+          if (mounted) setState(() => _chassisHint = null);
+        });
+      }
+
+      return _ctrlBlock(
+        'Chassis',
+        movingDir != null ? _Badge.active('MOVING · ${movingDir.toUpperCase()}') : _Badge.idle('STOPPED'),
+        Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _dpad([
+            null, _DpadBtn(Icons.keyboard_arrow_up_rounded, onTap: () => drive('forward')), null,
+            _DpadBtn(Icons.keyboard_arrow_left_rounded, onTap: () => drive('left')),
+            _DpadBtn.stop(onTap: () { n.emergencyStop(); setState(() => _chassisHint = null); }),
+            _DpadBtn(Icons.keyboard_arrow_right_rounded, onTap: () => drive('right')),
+            null, _DpadBtn(Icons.keyboard_arrow_down_rounded, onTap: () => drive('back')), null,
+          ]),
+          const SizedBox(height: 8),
+          _speedRow(n),
+        ]),
+      );
+    });
+  }
+
+  Widget _speedRow(ChassisNotifier n) {
+    return Row(children: [
+      const Text('Speed',
+          style: TextStyle(fontSize: 9, color: _muted2, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+      Expanded(
+        child: SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 5,
+            activeTrackColor: _accent,
+            inactiveTrackColor: const Color(0xFF2A2A2A),
+            thumbColor: _accent,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.5),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+          ),
+          child: Slider(
+            value: _speed.clamp(30, 80),
+            min: 30,
+            max: 80,
+            divisions: 10,
+            onChanged: (v) {
+              setState(() => _speed = v);
+              n.setSpeed(v / 100); // provider expects 0.3–0.8
+            },
+          ),
+        ),
+      ),
+      SizedBox(
+        width: 34,
+        child: Text('${_speed.round()}%',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 10, color: _accent, fontWeight: FontWeight.w700)),
+      ),
+    ]);
+  }
+
+  Widget _armBlock() {
+    return Consumer(builder: (_, ref, __) {
+      final a = ref.watch(armProvider);
+      final n = ref.read(armProvider.notifier);
+      return _ctrlBlock(
+        'Arm',
+        a.isWaving ? _Badge.active('WAVING') : _Badge.idle('IDLE'),
+        Row(children: [
+          Expanded(
+            child: _ArmBtn(
+              icon: Icons.waving_hand_rounded,
+              label: a.isWaving ? 'Waving' : 'Wave',
+              height: _armH,
+              highlighted: a.isWaving,
+              onTap: () {
+                if (a.isWaving) {
+                  n.stopWave();
+                } else {
+                  n.wave();
+                  _setKind(FaceStateKind.greeting);
+                  _revertAfter(2200);
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _ArmBtn(
+              icon: Icons.refresh_rounded, label: 'Reset', height: _armH, onTap: n.resetArms),
+          ),
+        ]),
+      );
+    });
+  }
+
+  Widget _estop() {
+    return Consumer(builder: (_, ref, __) {
+      final c = ref.watch(chassisProvider);
+      final n = ref.read(chassisProvider.notifier);
+      final stopped = c.isMoving;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            n.emergencyStop();
+            ref.read(armProvider.notifier).stopWave();
+            setState(() => _chassisHint = null);
+            _setKind(FaceStateKind.attentive);
+          },
+          child: Container(
+            height: _estopH,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: stopped ? const Color(0x33FF5247) : const Color(0x14FF5247),
+              border: Border.all(color: stopped ? _red : const Color(0x59FF5247), width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.pan_tool_rounded, color: _red, size: 16),
+              SizedBox(width: 8),
+              Text('EMERGENCY STOP',
+                  style: TextStyle(color: _red, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1)),
+            ]),
+          ),
+        ),
+      );
+    });
+  }
+
+  // Block chrome: header (name + badge) at top, body vertically centered.
+  Widget _ctrlBlock(String name, Widget badge, Widget body) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _surf2,
-        border: Border.all(color: _border),
+        color: _panel,
+        border: Border.all(color: _line),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8, left: 2),
-          child: Text(label,
-              style: const TextStyle(
-                  color: Colors.white38, fontSize: 8, fontWeight: FontWeight.w700, letterSpacing: 2.5)),
-        ),
-        child,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Text(name.toUpperCase(),
+              style: const TextStyle(color: _muted, fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+          const Spacer(),
+          badge,
+        ]),
+        Expanded(child: Center(child: body)),
+      ]),
+    );
+  }
+
+  // 3×3 d-pad, square clamp(64,13vh,150). [cells] is 9 long; null = blank.
+  Widget _dpad(List<Widget?> cells) {
+    return SizedBox(
+      width: _padSq,
+      height: _padSq,
+      child: Column(children: [
+        for (var r = 0; r < 3; r++)
+          Expanded(
+            child: Row(children: [
+              for (var col = 0; col < 3; col++)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: cells[r * 3 + col] ?? const SizedBox.shrink(),
+                  ),
+                ),
+            ]),
+          ),
       ]),
     );
   }
@@ -734,7 +910,34 @@ class _FaceRepaint extends ChangeNotifier {
   void ping() => notifyListeners();
 }
 
-// ── Nav item ──────────────────────────────────────────────────────────────────
+// ── Top-bar icon box ──────────────────────────────────────────────────────────
+class _IconBox extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _IconBox({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            border: Border.all(color: _line2),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 15, color: _muted),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Nav item (§3) ─────────────────────────────────────────────────────────────
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -751,37 +954,37 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? kOrange : Colors.white60;
+    final color = active ? _accent : _muted;
     final item = Container(
       decoration: BoxDecoration(
-        color: active ? const Color(0x26FF6B35) : Colors.transparent,
+        color: active ? const Color(0x21FF6B35) : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        border: Border(
-            left: BorderSide(color: active ? kOrange : Colors.transparent, width: 3)),
+        border: Border.all(color: active ? const Color(0x66FF6B35) : Colors.transparent),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
       child: Row(children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 11),
+        Icon(icon, size: 19, color: color),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(label,
               style: TextStyle(
-                  color: color, fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500)),
+                  color: active ? _accent : _ink,
+                  fontSize: 13.5,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500)),
         ),
         if (soon)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
             decoration: BoxDecoration(
-                border: Border.all(color: _border), borderRadius: BorderRadius.circular(4)),
+                border: Border.all(color: _line2), borderRadius: BorderRadius.circular(4)),
             child: const Text('SOON',
-                style: TextStyle(
-                    color: Colors.white38, fontSize: 7, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                style: TextStyle(color: _muted2, fontSize: 7, fontWeight: FontWeight.w700, letterSpacing: 1)),
           ),
       ]),
     );
     if (soon) return Opacity(opacity: 0.38, child: IgnorePointer(child: item));
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
         color: Colors.transparent,
         child: InkWell(borderRadius: BorderRadius.circular(10), onTap: onTap, child: item),
@@ -790,33 +993,69 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-// ── Small control button ──────────────────────────────────────────────────────
-class _SmallBtn extends StatelessWidget {
-  final String label;
-  final IconData? icon;
+// ── Action tile (§5) ──────────────────────────────────────────────────────────
+class _ActionTile extends StatelessWidget {
+  final _Act act;
+  final bool active;
+  final double labelSize;
+  final double subSize;
   final VoidCallback onTap;
-  final bool highlighted;
-  const _SmallBtn(this.label, this.icon, {required this.onTap, this.highlighted = false});
+  const _ActionTile({
+    required this.act,
+    required this.active,
+    required this.labelSize,
+    required this.subSize,
+    required this.onTap,
+  });
+
+  static const _spec = {
+    _Act.greet: (Icons.waving_hand_rounded, 'Greet', 'Welcome a visitor'),
+    _Act.listen: (Icons.mic_rounded, 'Listen', 'Hear the visitor'),
+    _Act.checkIn: (Icons.assignment_ind_outlined, 'Check In', 'Visitor for a meeting'),
+    _Act.directions: (Icons.signpost_outlined, 'Directions', 'Guide & wayfind'),
+    _Act.pageStaff: (Icons.campaign_outlined, 'Page Staff', 'Notify reception'),
+    _Act.rest: (Icons.bedtime_outlined, 'Rest', 'Low-power / sleep'),
+  };
 
   @override
   Widget build(BuildContext context) {
-    final c = highlighted ? kOrange : Colors.white70;
+    final (icon, label, sub) = _spec[act]!;
     return Material(
-      color: highlighted ? const Color(0x26FF6B35) : _surf,
-      borderRadius: BorderRadius.circular(8),
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
-          height: 34,
-          alignment: Alignment.center,
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            border: Border.all(color: highlighted ? kOrange : _border),
-            borderRadius: BorderRadius.circular(8),
+            gradient: const LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Color(0xFF181818), Color(0xFF141414)]),
+            border: Border.all(color: active ? _accent : _line),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: active ? [BoxShadow(color: _accent.withValues(alpha: 0.18), blurRadius: 12)] : null,
           ),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ...[Icon(icon, size: 14, color: c), const SizedBox(width: 5)],
-            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F0F),
+                border: Border.all(color: active ? _accent : _line2),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 19, color: _accent),
+            ),
+            const Spacer(),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _ink, fontSize: labelSize, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(sub,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _muted, fontSize: subSize)),
           ]),
         ),
       ),
@@ -824,86 +1063,113 @@ class _SmallBtn extends StatelessWidget {
   }
 }
 
-// ── Head position indicator (reimpl — control_screen's is private) ────────────
-class _HeadPositionIndicator extends StatelessWidget {
-  final int headLR;
-  final int headUD;
-  const _HeadPositionIndicator({required this.headLR, required this.headUD});
+// ── Status badge (§4) ─────────────────────────────────────────────────────────
+class _Badge extends StatelessWidget {
+  final String text;
+  final bool on;
+  const _Badge._(this.text, this.on);
+  factory _Badge.active(String t) => _Badge._(t, true);
+  factory _Badge.idle(String t) => _Badge._(t, false);
 
   @override
   Widget build(BuildContext context) {
-    const width = 140.0;
-    const height = 80.0;
-    final dotX = (headLR / 100) * width;
-    final dotY = ((100 - headUD) / 100) * height;
-    return Center(
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: on ? _greenBg : const Color(0xFF242424),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              color: on ? _green : _muted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+    );
+  }
+}
+
+// ── D-pad button ──────────────────────────────────────────────────────────────
+class _DpadBtn extends StatelessWidget {
+  final IconData? icon;
+  final String? text;
+  final VoidCallback onTap;
+  final bool stop;
+  final bool center;
+  const _DpadBtn(this.icon, {required this.onTap})
+      : text = null,
+        stop = false,
+        center = false;
+  const _DpadBtn.center(this.text, {required this.onTap})
+      : icon = null,
+        stop = false,
+        center = true;
+  const _DpadBtn.stop({required this.onTap})
+      : icon = null,
+        text = 'STOP',
+        stop = true,
+        center = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color border = stop ? const Color(0x40FF5247) : _line2;
+    final Color fg = stop ? _red : (center ? _muted2 : _muted);
+    final Color bg = stop ? const Color(0x14FF5247) : const Color(0xFF161616);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border.all(color: border),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child: icon != null
+              ? Icon(icon, size: 18, color: fg)
+              : Text(text!,
+                  style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         ),
-        child: Stack(children: [
-          Center(
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Container(width: 28, height: 1, color: _border),
-              Container(width: 1, height: 28, color: _border),
-            ]),
-          ),
-          Positioned(
-            left: dotX - 6,
-            top: dotY - 6,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
-              width: 12,
-              height: 12,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: kOrange,
-                boxShadow: [BoxShadow(color: kOrange, blurRadius: 4)],
-              ),
-            ),
-          ),
-        ]),
       ),
     );
   }
 }
 
-// ── Direction indicator (reimpl — control_screen's is private) ────────────────
-class _DirectionIndicator extends StatelessWidget {
-  final String direction;
-  final bool isMoving;
-  const _DirectionIndicator({required this.direction, required this.isMoving});
+// ── Arm button ────────────────────────────────────────────────────────────────
+class _ArmBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double height;
+  final bool highlighted;
+  final VoidCallback onTap;
+  const _ArmBtn({
+    required this.icon,
+    required this.label,
+    required this.height,
+    required this.onTap,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const size = 72.0;
-    final color = isMoving ? kOrange : const Color(0xFF6B7280);
-    final symbol = switch (direction) {
-      'forward' => '↑',
-      'back' => '↓',
-      'left' => '←',
-      'right' => '→',
-      _ => '●',
-    };
-    return Center(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: _bg,
-          shape: BoxShape.circle,
-          border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
-        ),
-        child: Center(
-          child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
-            style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: color),
-            child: Text(symbol),
+    final c = highlighted ? _accent : _muted;
+    return Material(
+      color: highlighted ? const Color(0x21FF6B35) : const Color(0xFF161616),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          height: height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: highlighted ? _accent : _line2),
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 14, color: c),
+            const SizedBox(width: 5),
+            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
+          ]),
         ),
       ),
     );
