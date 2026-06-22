@@ -32,10 +32,17 @@ class VoiceEvent {
 /// Uses dart:io WebSocket (no new dependency — same as SpineClient). The
 /// `xi-api-key` header is supported by WebSocket.connect on Android.
 class VoiceAgent {
-  VoiceAgent({required this.agentId, required this.apiKey});
+  VoiceAgent({required this.agentId, required this.apiKey, String languageCode = 'en'})
+      : _languageCode = languageCode;
 
   final String agentId;
   final String apiKey;
+
+  // ElevenLabs language override sent in conversation_config_override.agent.language.
+  // The agent is multilingual (configured in the dashboard); this picks the one
+  // it speaks for a session. Defaults to English; persisted via RobotConfig.
+  String _languageCode;
+  String get languageCode => _languageCode;
 
   static const String _base =
       'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=';
@@ -74,7 +81,7 @@ class VoiceAgent {
         'conversation_config_override': {
           'agent': {
             'prompt': {'prompt': null}, // use the agent's dashboard prompt
-            'language': 'en',
+            'language': _languageCode,
           },
           // Force 16 kHz mono 16-bit PCM out — exactly what AudioTrack playback +
           // _rms() expect. Without this ElevenLabs sends MP3 and the bytes decode
@@ -113,6 +120,23 @@ class VoiceAgent {
     } catch (_) {}
     await _closeSocket();
     _emit(const VoiceEvent(VoiceEventKind.sessionEnded));
+  }
+
+  /// Switch the spoken language. Persisted by the caller (RobotConfig). If a
+  /// session is live, it reconnects in place with the new language: the old
+  /// socket is closed *quietly* (the subscription is cancelled first, so no
+  /// `sessionEnded` fires and the screen keeps the mic running) and a new one is
+  /// opened, which emits `sessionStarted` for the UI to react to. If no session
+  /// is active, this just sets the language for the next one. Any in-flight reply
+  /// is cut off because the socket closes (the screen clears playback on
+  /// `sessionStarted`). No-op if the language is unchanged.
+  Future<void> switchLanguage(String code) async {
+    if (code == _languageCode) return;
+    _languageCode = code;
+    if (_channel != null) {
+      await _closeSocket(); // quiet: _sub cancelled before close → no sessionEnded
+      await startSession(); // reconnect with the new language → emits sessionStarted
+    }
   }
 
   void _onMessage(dynamic raw) {

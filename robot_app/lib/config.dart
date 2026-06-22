@@ -9,6 +9,8 @@ class RobotConfig {
   static const _kKiosk = 'kiosk_token';
   static const _kElevenKey = 'elevenlabs_api_key';
   static const _kElevenAgent = 'elevenlabs_agent_id';
+  static const _kVoiceLangCode = 'voice_language_code';
+  static const _kVoiceLangName = 'voice_language_name';
 
   // Defaults = the values enroll_screen previously hardcoded. (DHCP — editable
   // in Settings; spine host changes between sessions.)
@@ -48,6 +50,12 @@ class RobotConfig {
   static const String defaultElevenLabsVoiceId = '6AUOG2nbfr0yFEeI0784';
   static String elevenLabsVoiceId = defaultElevenLabsVoiceId;
 
+  // Voice language for the ElevenLabs Conversational AI session (the agent is
+  // configured with 8 languages in the dashboard; we override per session). The
+  // UI stays English — only Mikee's spoken language changes. See voice_language.dart.
+  static String voiceLanguageCode = 'en';
+  static String voiceLanguageName = 'English';
+
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
@@ -55,6 +63,17 @@ class RobotConfig {
     kioskToken = p.getString(_kKiosk) ?? '';
     elevenLabsApiKey = p.getString(_kElevenKey) ?? defaultElevenLabsApiKey;
     elevenLabsAgentId = p.getString(_kElevenAgent) ?? defaultElevenLabsAgentId;
+    voiceLanguageCode = p.getString(_kVoiceLangCode) ?? 'en';
+    voiceLanguageName = p.getString(_kVoiceLangName) ?? 'English';
+  }
+
+  /// Persist the selected voice language (code + display name).
+  static Future<void> updateVoiceLanguage(String code, String name) async {
+    voiceLanguageCode = code;
+    voiceLanguageName = name;
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kVoiceLangCode, code);
+    await p.setString(_kVoiceLangName, name);
   }
 
   static Future<void> setSpineBaseUrl(String v) async {

@@ -14,6 +14,7 @@ import 'services/audio_bridge.dart';
 import 'services/elevenlabs_tts.dart';
 import 'services/robot_gestures.dart';
 import 'services/voice_command_handler.dart';
+import 'screens/language_selection_screen.dart';
 import 'config.dart';
 import 'enroll_screen.dart';
 import 'status_screen.dart';
@@ -516,6 +517,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ],
         ),
         const Spacer(),
+        LanguageButton(
+          voiceAgent: widget.voiceAgent,
+          dark: true,
+          onReturned: () { if (mounted) setState(() {}); }, // refresh badge
+        ),
+        const SizedBox(width: 8),
         Consumer(builder: (_, ref, __) {
           final online = ref.watch(headProvider).isRunning ||
               ref.watch(chassisProvider).isRunning ||

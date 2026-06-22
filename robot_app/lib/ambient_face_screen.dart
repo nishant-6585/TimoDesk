@@ -17,6 +17,7 @@ import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
 import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
+import 'screens/language_selection_screen.dart';
 import 'dashboard_screen.dart';
 
 /// The robot's front-of-house home: an ambient animated face (Beam/OLED
@@ -99,6 +100,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _voiceAgent = VoiceAgent(
       agentId: RobotConfig.elevenLabsAgentId,
       apiKey: RobotConfig.elevenLabsApiKey,
+      languageCode: RobotConfig.voiceLanguageCode, // saved language → first session
     );
     _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
     // Speaker amplitude (as it plays) → lip-sync + speaking/listening transition.
@@ -279,7 +281,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
         // Open in listening — Mikee is waiting for the user (the ring shows).
+        // Also clear any stale playback (e.g. a reply cut off by a language
+        // switch reconnect) so we don't talk over the new session.
         _suppressAgentAudio = false;
+        _audioBridge.stopPlayback();
         setState(() {
           _voiceActive = true;
           _face = _face.copyWith(state: FaceStateKind.listening);
@@ -434,6 +439,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
                 ),
               ),
             ),
+          // Language selector, top-left (top-right holds the SDK/battery chip).
+          Positioned(
+            top: 12,
+            left: 16,
+            child: LanguageButton(
+              voiceAgent: _voiceAgent,
+              onReturned: () { if (mounted) setState(() {}); }, // refresh badge
+            ),
+          ),
           // Status chip, top-right.
           Positioned(
             top: 12,
