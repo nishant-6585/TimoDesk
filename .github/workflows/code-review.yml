@@ -14,134 +14,100 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 50   # enough history to diff
+          fetch-depth: 0
 
-      - name: Get changed files
-        id: diff
+      - name: Collect files to review
         run: |
-          # Compare last 2 commits (or all files if only one commit)
-          if git rev-parse HEAD~1 &>/dev/null; then
-            RANGE="HEAD~1..HEAD"
-          else
-            RANGE="HEAD"
-          fi
-          echo "range=$RANGE" >> $GITHUB_OUTPUT
-
-          # Collect Dart, Java, YAML, JSON files changed in the last week
-          SINCE=$(date -d "7 days ago" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -v-7d +%Y-%m-%dT%H:%M:%S)
-          git log --since="$SINCE" --name-only --pretty="" \
-            | grep -E '\.(dart|java|yaml|json|ts|js)$' \
+          # Get Dart + Java files changed in the last 7 days, fall back to top 30 files
+          git log --since="7 days ago" --name-only --pretty="" \
+            | grep -E '\.(dart|java)$' \
             | sort -u \
-            | head -40 > /tmp/changed_files.txt
+            | head -30 > /tmp/changed_files.txt
 
-          echo "Files to review:"
+          # If nothing changed recently, review the most important source files
+          if [ ! -s /tmp/changed_files.txt ]; then
+            find robot_app/lib -name "*.dart" | head -20 >> /tmp/changed_files.txt
+            find robot_app/android/app/src/main/java -name "*.java" | head -10 >> /tmp/changed_files.txt
+          fi
+
+          echo "=== Files selected for review ==="
           cat /tmp/changed_files.txt
-          echo "file_count=$(wc -l < /tmp/changed_files.txt)" >> $GITHUB_OUTPUT
 
-      - name: Build review payload
-        id: payload
+      - name: Build prompt file
         run: |
-          # Collect file contents for review (limit total size)
-          CONTENT=""
+          # Write system prompt header to file
+          cat > /tmp/prompt.txt << 'PROMPT_HEADER'
+You are a senior Flutter/Android engineer reviewing code for the TimoDesk project — a smart reception robot app running on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase.
+
+IMPORTANT: Your entire response must be a single raw JSON object. Do NOT use markdown, code fences, or any text outside the JSON. Start with { and end with }.
+
+Return this exact structure:
+{"summary":"one sentence summary","issues":[{"file_path":"path/to/file","line_number":42,"severity":"critical|high|medium|low|info","category":"bug|security|performance|cleanup|architecture|style","message":"description","suggestion":"how to fix","code_snippet":"optional 1-3 line snippet"}]}
+
+Severity: critical=crash/data-loss/security, high=logic-bug/wrong-SDK-usage, medium=missing-null-check/perf, low=code-smell, info=style
+Focus on: Dart/Flutter correctness, Android Java bridge reliability, CsjRobot SDK patterns, ElevenLabs WebSocket lifecycle, Riverpod state, DPDP compliance.
+If no issues found, return: {"summary":"No issues found","issues":[]}
+
+Files to review:
+PROMPT_HEADER
+
+          # Append each file's content
           TOTAL_CHARS=0
-          MAX_CHARS=60000
+          MAX_CHARS=50000
 
           while IFS= read -r file; do
             if [ -f "$file" ] && [ $TOTAL_CHARS -lt $MAX_CHARS ]; then
-              FILE_CONTENT=$(cat "$file" 2>/dev/null | head -300)
-              CHARS=${#FILE_CONTENT}
-              CONTENT="$CONTENT\n\n### FILE: $file\n\`\`\`\n$FILE_CONTENT\n\`\`\`"
+              echo "" >> /tmp/prompt.txt
+              echo "=== FILE: $file ===" >> /tmp/prompt.txt
+              head -250 "$file" >> /tmp/prompt.txt
+              CHARS=$(wc -c < "$file")
               TOTAL_CHARS=$((TOTAL_CHARS + CHARS))
             fi
           done < /tmp/changed_files.txt
 
-          # Write to temp file (avoid shell escaping issues)
-          printf '%s' "$CONTENT" > /tmp/review_content.txt
-          echo "total_chars=$TOTAL_CHARS" >> $GITHUB_OUTPUT
+          echo "Total prompt chars: $TOTAL_CHARS"
 
-      - name: Run Claude code review
-        id: claude_review
+      - name: Call Claude API
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          CONTENT=$(cat /tmp/review_content.txt)
-          COMMIT_SHA=$(git rev-parse HEAD)
-          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          # Build JSON payload using jq --rawfile to safely handle all special chars
+          jq -n \
+            --rawfile prompt /tmp/prompt.txt \
+            '{
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 4096,
+              messages: [{"role": "user", "content": $prompt}]
+            }' > /tmp/api_request.json
 
-          PROMPT="You are a senior Flutter/Android engineer reviewing code for the TimoDesk project — a smart reception robot app running on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase.
-
-          IMPORTANT: Your entire response must be a single raw JSON object. No markdown, no code fences, no explanation text before or after. Start your response with { and end with }.
-
-          Review the following changed files and return a JSON object in this exact format:
-          {
-            \"summary\": \"one sentence summary of this code batch\",
-            \"issues\": [
-              {
-                \"file_path\": \"path/to/file.dart\",
-                \"line_number\": 42,
-                \"severity\": \"critical|high|medium|low|info\",
-                \"category\": \"bug|security|performance|cleanup|architecture|style\",
-                \"message\": \"clear description of the issue\",
-                \"suggestion\": \"how to fix it\",
-                \"code_snippet\": \"optional: the problematic code snippet (max 3 lines)\"
-              }
-            ]
-          }
-
-          Severity guidelines:
-          - critical: crashes, data loss, security vulnerabilities, memory leaks
-          - high: logic bugs, incorrect SDK usage, missing error handling at boundaries
-          - medium: performance issues, missing null checks, suboptimal patterns
-          - low: code smells, missing comments on non-obvious code, redundant code
-          - info: style suggestions, naming conventions
-
-          Focus on: Flutter/Dart correctness, Android Java bridge reliability, CsjRobot SDK usage patterns, ElevenLabs WebSocket lifecycle, Riverpod state management, and DPDP/privacy compliance.
-
-          If there are no issues, return an empty issues array.
-
-          Files to review:
-          $CONTENT"
-
-          # Call Anthropic API
-          RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+          echo "=== Sending to Claude API ==="
+          curl -s -X POST https://api.anthropic.com/v1/messages \
             -H "Content-Type: application/json" \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
-            -d "$(jq -n \
-              --arg prompt "$PROMPT" \
-              '{
-                model: "claude-haiku-4-5-20251001",
-                max_tokens: 4096,
-                messages: [{"role": "user", "content": $prompt}]
-              }')")
+            -d @/tmp/api_request.json > /tmp/api_response.json
 
-          echo "API response status: $(echo $RESPONSE | jq -r '.type // "unknown"')"
+          echo "=== API Response type: $(jq -r '.type // .error.type // "unknown"' /tmp/api_response.json) ==="
 
-          # Extract text from response
-          RAW_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // ""')
-          echo "Raw response (first 500 chars): ${RAW_TEXT:0:500}"
+          # Extract the text content
+          RAW=$(jq -r '.content[0].text // ""' /tmp/api_response.json)
+          echo "=== Raw response (first 300 chars) ==="
+          echo "${RAW:0:300}"
 
-          # Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
-          REVIEW_JSON=$(echo "$RAW_TEXT" \
-            | sed 's/^```json[[:space:]]*//' \
-            | sed 's/^```[[:space:]]*//' \
-            | sed 's/[[:space:]]*```$//')
+          # Strip markdown fences if present
+          CLEAN=$(echo "$RAW" | sed 's/^```json[[:space:]]*//' | sed 's/^```[[:space:]]*//' | sed 's/[[:space:]]*```[[:space:]]*$//')
 
-          # Try to extract JSON object if there's preamble text
-          if ! echo "$REVIEW_JSON" | jq . > /dev/null 2>&1; then
-            REVIEW_JSON=$(echo "$RAW_TEXT" | grep -o '{.*}' | head -1)
+          # Validate JSON
+          if echo "$CLEAN" | jq . > /dev/null 2>&1; then
+            echo "$CLEAN" > /tmp/review_result.json
+            echo "=== Valid JSON, issue count: $(echo "$CLEAN" | jq '.issues | length') ==="
+          else
+            echo "=== JSON parse failed, full response: ==="
+            cat /tmp/api_response.json
+            echo '{"summary":"Review parsing failed — see workflow logs","issues":[]}' > /tmp/review_result.json
           fi
 
-          # Final fallback
-          if ! echo "$REVIEW_JSON" | jq . > /dev/null 2>&1; then
-            echo "Could not parse JSON, using fallback. Raw: $RAW_TEXT"
-            REVIEW_JSON='{"summary":"Review parsing failed — check workflow logs","issues":[]}'
-          fi
-
-          echo "$REVIEW_JSON" > /tmp/review_result.json
-          echo "Issue count: $(echo $REVIEW_JSON | jq '.issues | length')"
-
-      - name: Post report to DevConsole
+      - name: Post to DevConsole
         env:
           REPORT_URL: ${{ secrets.XBOOM_REPORT_URL }}
           REPORT_SECRET: ${{ secrets.XBOOM_REPORT_SECRET }}
@@ -150,61 +116,45 @@ jobs:
           COMMIT_SHA=$(git rev-parse HEAD)
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           COMMIT_RANGE=$(git log --oneline -1 HEAD)
-
-          SUMMARY=$(echo "$REVIEW" | jq -r '.summary')
-          ISSUES=$(echo "$REVIEW" | jq -c '.issues')
-          TOTAL=$(echo "$ISSUES" | jq 'length')
-          CRITICAL=$(echo "$ISSUES" | jq '[.[] | select(.severity=="critical")] | length')
-          HIGH=$(echo "$ISSUES" | jq '[.[] | select(.severity=="high")] | length')
-          MEDIUM=$(echo "$ISSUES" | jq '[.[] | select(.severity=="medium")] | length')
-          LOW=$(echo "$ISSUES" | jq '[.[] | select(.severity=="low")] | length')
-          INFO=$(echo "$ISSUES" | jq '[.[] | select(.severity=="info")] | length')
           TRIGGER="${{ github.event_name == 'workflow_dispatch' && 'manual' || 'scheduled' }}"
 
-          PAYLOAD=$(jq -n \
+          # Build payload safely with jq
+          jq -n \
             --arg repo "TimoDesk" \
             --arg branch "$BRANCH" \
             --arg sha "$COMMIT_SHA" \
             --arg range "$COMMIT_RANGE" \
-            --arg summary "$SUMMARY" \
-            --argjson total $TOTAL \
-            --argjson critical $CRITICAL \
-            --argjson high $HIGH \
-            --argjson medium $MEDIUM \
-            --argjson low $LOW \
-            --argjson info $INFO \
+            --argjson review "$REVIEW" \
             --arg trigger "$TRIGGER" \
-            --argjson issues "$ISSUES" \
             '{
               repo: $repo,
               branch: $branch,
               commit_sha: $sha,
               commit_range: $range,
-              summary: $summary,
-              total_issues: $total,
-              critical_count: $critical,
-              high_count: $high,
-              medium_count: $medium,
-              low_count: $low,
-              info_count: $info,
+              summary: $review.summary,
+              total_issues: ($review.issues | length),
+              critical_count: ($review.issues | map(select(.severity=="critical")) | length),
+              high_count: ($review.issues | map(select(.severity=="high")) | length),
+              medium_count: ($review.issues | map(select(.severity=="medium")) | length),
+              low_count: ($review.issues | map(select(.severity=="low")) | length),
+              info_count: ($review.issues | map(select(.severity=="info")) | length),
               trigger_type: $trigger,
-              issues: $issues
-            }')
+              issues: $review.issues
+            }' > /tmp/payload.json
 
+          echo "=== Posting to DevConsole ==="
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$REPORT_URL" \
             -H "Content-Type: application/json" \
             -H "x-report-secret: $REPORT_SECRET" \
-            -d "$PAYLOAD")
+            -d @/tmp/payload.json)
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
-
           echo "Response: $BODY (HTTP $HTTP_CODE)"
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "Failed to post report (HTTP $HTTP_CODE)"
+            echo "Failed to post (HTTP $HTTP_CODE)"
             exit 1
           fi
 
-          echo "Posted $TOTAL issues to DevConsole"
-          echo "View at: https://xboom.in/admin/dev-console"
+          echo "Done — view at https://xboom.in/admin/dev-console"
