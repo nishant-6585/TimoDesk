@@ -70,7 +70,9 @@ jobs:
 
           PROMPT="You are a senior Flutter/Android engineer reviewing code for the TimoDesk project — a smart reception robot app running on Timo (Alpha Robotics), using Flutter + Android Java bridges (CsjRobot SDK), ElevenLabs conversational AI, and Supabase.
 
-          Review the following changed files and return a JSON object ONLY (no markdown, no explanation) in this exact format:
+          IMPORTANT: Your entire response must be a single raw JSON object. No markdown, no code fences, no explanation text before or after. Start your response with { and end with }.
+
+          Review the following changed files and return a JSON object in this exact format:
           {
             \"summary\": \"one sentence summary of this code batch\",
             \"issues\": [
@@ -115,13 +117,25 @@ jobs:
 
           echo "API response status: $(echo $RESPONSE | jq -r '.type // "unknown"')"
 
-          # Extract JSON from response
-          REVIEW_JSON=$(echo "$RESPONSE" | jq -r '.content[0].text // "{\"summary\":\"Review failed\",\"issues\":[]}"')
+          # Extract text from response
+          RAW_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // ""')
+          echo "Raw response (first 500 chars): ${RAW_TEXT:0:500}"
 
-          # Validate it's valid JSON
+          # Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+          REVIEW_JSON=$(echo "$RAW_TEXT" \
+            | sed 's/^```json[[:space:]]*//' \
+            | sed 's/^```[[:space:]]*//' \
+            | sed 's/[[:space:]]*```$//')
+
+          # Try to extract JSON object if there's preamble text
           if ! echo "$REVIEW_JSON" | jq . > /dev/null 2>&1; then
-            echo "Invalid JSON response, using fallback"
-            REVIEW_JSON='{"summary":"Review parsing failed","issues":[]}'
+            REVIEW_JSON=$(echo "$RAW_TEXT" | grep -o '{.*}' | head -1)
+          fi
+
+          # Final fallback
+          if ! echo "$REVIEW_JSON" | jq . > /dev/null 2>&1; then
+            echo "Could not parse JSON, using fallback. Raw: $RAW_TEXT"
+            REVIEW_JSON='{"summary":"Review parsing failed — check workflow logs","issues":[]}'
           fi
 
           echo "$REVIEW_JSON" > /tmp/review_result.json
