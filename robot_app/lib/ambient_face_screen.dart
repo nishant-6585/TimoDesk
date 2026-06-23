@@ -74,6 +74,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
   bool _voiceActive = false; // a session is open (toggles the debug button)
   double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
+  bool _serviceAlertVisible = false; // ElevenLabs-unavailable dialog is showing
   bool _suppressAgentAudio = false; // after a barge-in: drop the rest of the old
   Timer? _bargeTimer; //   reply's audio until the next turn (ElevenLabs keeps streaming)
 
@@ -329,6 +330,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         break;
       case VoiceEventKind.error:
         _audioBridge.stopMic();
+        if (e.serviceUnavailable) _showServiceAlert(e.text);
         setState(() {
           _voiceActive = false;
           _micLevel = 0;
@@ -350,6 +352,40 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   void _endVoice() => _voiceAgent.endSession();
+
+  // Mikee's voice backend (ElevenLabs) is unreachable — most often an expired
+  // subscription / out of credits / disabled key. Tell the operator plainly so
+  // it isn't mistaken for an app bug. Shown above any pushed screen; guarded so
+  // it never stacks.
+  void _showServiceAlert(String? detail) {
+    if (!mounted || _serviceAlertVisible) return;
+    _serviceAlertVisible = true;
+    showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Row(children: [
+          Icon(Icons.error_outline_rounded, color: Color(0xFFFF6B35)),
+          SizedBox(width: 10),
+          Text('Voice unavailable', style: TextStyle(color: Colors.white)),
+        ]),
+        content: Text(
+          "Mikee's voice service (ElevenLabs) closed the connection. The "
+          "subscription has likely expired or run out of credits.\n\n"
+          "Please renew / recharge the ElevenLabs account, then tap the mic again."
+          "${detail != null && detail.isNotEmpty ? '\n\n$detail' : ''}",
+          style: const TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK', style: TextStyle(color: Color(0xFFFF6B35))),
+          ),
+        ],
+      ),
+    ).whenComplete(() => _serviceAlertVisible = false);
+  }
 
   // Smoothed mic RMS → drives the "Listening / Hearing you" meter. If this never
   // moves while you talk, the mic isn't capturing (vs. a downstream problem).

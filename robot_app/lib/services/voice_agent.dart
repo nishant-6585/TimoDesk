@@ -20,7 +20,13 @@ class VoiceEvent {
   final String? text; // agent response text (for logging)
   final Uint8List? audioChunk; // raw PCM chunk for playback (Phase B)
   final double? amplitude; // 0..1 energy of the chunk (drives mouthOpen)
-  const VoiceEvent(this.kind, {this.text, this.audioChunk, this.amplitude});
+  // True on an error/sessionEnded that looks like ElevenLabs being unavailable —
+  // a failed connect or the server dropping us right after connecting (the
+  // signature of an expired subscription / out of credits / disabled key). The UI
+  // shows an alert so it's not mistaken for an app bug.
+  final bool serviceUnavailable;
+  const VoiceEvent(this.kind,
+      {this.text, this.audioChunk, this.amplitude, this.serviceUnavailable = false});
 }
 
 /// Manages ONE ElevenLabs Conversational AI WebSocket session (#80, Phase A).
@@ -53,7 +59,13 @@ class VoiceAgent {
   WebSocket? _channel;
   StreamSubscription? _sub;
   bool _speaking = false; // emit agentSpeaking once per turn, not per audio chunk
+  int _connectedAtMs = 0; // when the WS connected — to spot early server drops
   bool get isActive => _channel != null;
+
+  // A server-initiated close within this window of connecting is treated as an
+  // ElevenLabs availability problem (expired subscription / no credits / bad key),
+  // not a normal end-of-conversation.
+  static const int _earlyDropMs = 20000;
 
   // Accumulated turns for /voice/log. Public getter — callers must NOT reach into
   // a private field across files.
@@ -68,12 +80,14 @@ class VoiceAgent {
     }
     _transcript.clear();
     _speaking = false;
+    _connectedAtMs = 0;
     try {
       final ws = await WebSocket.connect(
         '$_base$agentId',
         headers: {'xi-api-key': apiKey},
       ).timeout(const Duration(seconds: 8));
       _channel = ws;
+      _connectedAtMs = DateTime.now().millisecondsSinceEpoch;
 
       // Per the ElevenLabs API: initiate the conversation.
       ws.add(jsonEncode({
@@ -98,7 +112,10 @@ class VoiceAgent {
       _emit(const VoiceEvent(VoiceEventKind.sessionStarted));
     } catch (e) {
       _channel = null;
-      _emit(VoiceEvent(VoiceEventKind.error, text: e.toString()));
+      // Couldn't even open the socket — network down, or ElevenLabs rejected the
+      // key (disabled / unpaid). Surface as a service-unavailable alert.
+      _emit(VoiceEvent(VoiceEventKind.error,
+          text: 'Could not connect to ElevenLabs ($e).', serviceUnavailable: true));
     }
   }
 
@@ -216,8 +233,26 @@ class VoiceAgent {
   }
 
   void _onDone() {
+    // Reaches here only on a SERVER-initiated close (endSession/switchLanguage
+    // cancel the subscription before closing, so this callback doesn't fire for
+    // our own closes). If it happens right after connecting, it's almost always
+    // ElevenLabs out of credits / subscription expired / key disabled — flag it.
+    final code = _channel?.closeCode;
+    final reason = _channel?.closeReason;
+    final elapsed = _connectedAtMs == 0
+        ? 1 << 30
+        : DateTime.now().millisecondsSinceEpoch - _connectedAtMs;
+    final likelyUnavailable = elapsed < _earlyDropMs;
     _closeSocket();
-    if (!_events.isClosed) _emit(const VoiceEvent(VoiceEventKind.sessionEnded));
+    if (_events.isClosed) return;
+    if (likelyUnavailable) {
+      _emit(VoiceEvent(VoiceEventKind.error,
+          text: 'ElevenLabs closed the connection'
+              '${code != null ? ' (code $code'
+                  '${reason != null && reason.isNotEmpty ? ', $reason' : ''})' : ''}.',
+          serviceUnavailable: true));
+    }
+    _emit(const VoiceEvent(VoiceEventKind.sessionEnded));
   }
 
   Future<void> _closeSocket() async {
