@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +27,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   double _maxSpeed = 0.5;
   String _driveStatus = 'IDLE';
   int _throttle = 0;
+  Timer? _headThrottleTimer;
+
+  @override
+  void dispose() {
+    _headThrottleTimer?.cancel();
+    super.dispose();
+  }
 
   void _handleDriveJoystick(double x, double y, double mag) {
     // Update UI state
@@ -45,13 +54,23 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
-    final notifier = ref.read(spineProvider.notifier);
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
 
-    // Send drive command ONLY if joystick is not in deadzone
+    // Send drive command ONLY if joystick is not in deadzone and robot is online
     if (_driveStatus != 'IDLE') {
+      if (!isOnline) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+          );
+        }
+        return;
+      }
       final dir = _driveStatus == 'FORWARD' ? 'forward' :
                   _driveStatus == 'REVERSE' ? 'back' :
                   _driveStatus == 'RIGHT' ? 'right' : 'left';
+      final notifier = ref.read(spineProvider.notifier);
       notifier.sendIntent({'intent': 'drive', 'dir': dir});
     }
     // Do NOT send any command when idle - let robot coast
@@ -63,42 +82,78 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _headY = ((y + 1) / 2 * 100).clamp(0, 100);
     });
 
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
+
+    if (!isOnline) {
+      return;
+    }
+
+    // Throttle head commands to prevent flooding WebSocket
+    _headThrottleTimer?.cancel();
+    _headThrottleTimer = Timer(const Duration(milliseconds: joystickThrottleMs), () {
+      if (mounted) {
+        final notifier = ref.read(spineProvider.notifier);
+        notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+      }
+    });
   }
 
   void _resetHead() {
-    print('[ControlScreen] _resetHead called');
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
+
     setState(() {
       _headX = 50;
       _headY = 50;
     });
+
+    if (!isOnline) {
+      return;
+    }
+
     final notifier = ref.read(spineProvider.notifier);
-    print('[ControlScreen] Sending head reset intent: {intent: head, lr: 50, ud: 50}');
     notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
   }
 
   void _sendGesture(String gesture) {
-    print('[ControlScreen] _sendGesture called with gesture: $gesture');
     final spineState = ref.read(spineProvider);
-    print('[ControlScreen] Current stopped state: ${spineState.stopped}');
+    final isOnline = spineState.status?.online ?? false;
+
     if (spineState.stopped) {
-      print('[ControlScreen] Robot is stopped, cannot send gesture $gesture');
       return;
     }
+
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
+      return;
+    }
+
     final notifier = ref.read(spineProvider.notifier);
-    print('[ControlScreen] Sending gesture intent: {intent: $gesture}');
     notifier.sendIntent({'intent': gesture});
   }
 
   void _handleStopResume() {
     final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
+
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
+      return;
+    }
+
     final notifier = ref.read(spineProvider.notifier);
     if (spineState.stopped) {
-      print('[ControlScreen] Sending resume intent');
       notifier.sendIntent({'intent': 'resume'});
     } else {
-      print('[ControlScreen] Sending stop intent');
       notifier.sendIntent({'intent': 'stop'});
     }
   }
@@ -107,6 +162,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Widget build(BuildContext context) {
     final spine = ref.watch(spineProvider);
     final stopped = spine.stopped;
+    final isOnline = spine.status?.online ?? false;
+    final isBlocked = spine.status?.obstacleState == ObstacleState.blocked;
     final compact = MediaQuery.of(context).size.width < 900;
 
     return Scaffold(
@@ -151,14 +208,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: (spine.status?.online ?? false ? MikeeColors.success : MikeeColors.error).withOpacity(0.08),
-                          border: Border.all(color: (spine.status?.online ?? false ? MikeeColors.success : MikeeColors.error).withOpacity(0.3)),
+                          color: (isOnline ? MikeeColors.success : MikeeColors.error).withOpacity(0.08),
+                          border: Border.all(color: (isOnline ? MikeeColors.success : MikeeColors.error).withOpacity(0.3)),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(children: [
-                          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: spine.status?.online ?? false ? MikeeColors.success : MikeeColors.error)),
+                          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: isOnline ? MikeeColors.success : MikeeColors.error)),
                           const SizedBox(width: 8),
-                          Text(spine.status?.online ?? false ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: spine.status?.online ?? false ? MikeeColors.success : MikeeColors.error)),
+                          Text(isOnline ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: isOnline ? MikeeColors.success : MikeeColors.error)),
                         ]),
                       ),
                       const SizedBox(width: 12),
@@ -206,7 +263,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             ],
           ),
           // Blocked overlay (obstacle detected)
-          BlockedOverlay(visible: spine.status?.obstacleState == ObstacleState.blocked),
+          BlockedOverlay(visible: isBlocked),
         ],
       ),
     );
@@ -322,16 +379,7 @@ class _ControlContent extends StatelessWidget {
       ]),
       const SizedBox(height: 24),
       SizedBox(width: double.infinity, height: 56, child: ElevatedButton(
-        onPressed: () {
-          if (stopped) {
-            print('[ControlScreen] RESUME button pressed');
-            print('[ControlScreen] Sending resume intent: {intent: resume}');
-          } else {
-            print('[ControlScreen] EMERGENCY STOP button pressed');
-            print('[ControlScreen] Sending stop intent: {intent: stop}');
-          }
-          onStopResume();
-        },
+        onPressed: onStopResume,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFEF4444),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
@@ -467,28 +515,4 @@ class _GestureButton extends StatelessWidget {
   const _GestureButton(this.label, this.icon, this.onTap);
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(decoration: BoxDecoration(color: MikeeColors.inset, border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 24, color: MikeeColors.primary), const SizedBox(height: 4), Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500))]))));
-  }
-}
-
-class _McSlider extends StatefulWidget {
-  final double value, min, max;
-  final Function(double) onChanged;
-  const _McSlider({required this.value, required this.min, required this.max, required this.onChanged});
-  @override
-  State<_McSlider> createState() => _McSliderState();
-}
-
-class _McSliderState extends State<_McSlider> {
-  late double _value;
-  @override
-  void initState() {
-    super.initState();
-    _value = widget.value;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: SliderTheme(data: SliderThemeData(trackHeight: 5, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8), overlayShape: const RoundSliderOverlayShape(overlayRadius: 12)), child: Slider(value: _value, min: widget.min, max: widget.max, activeColor: MikeeColors.primary, inactiveColor: MikeeColors.border, onChanged: (v) {setState(() => _value = v); widget.onChanged(v);})));
-  }
-}
+    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(decoration: BoxDecoration(color: MikeeColors.inset, border: Border.all
