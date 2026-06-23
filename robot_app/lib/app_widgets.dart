@@ -1,7 +1,6 @@
 // Shared atom widgets used across the chest-screen UI (status chip, badges,
 // labels). Extracted from main.dart; renamed to public for cross-file use.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'providers.dart';
 
 class BatteryIndicator extends StatelessWidget {

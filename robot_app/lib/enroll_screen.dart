@@ -394,7 +394,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
-          value: _personType,
+          initialValue: _personType,
           dropdownColor: const Color(0xFF1A1A1A),
           decoration: _dec('Person type'),
           items: const [
