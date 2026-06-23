@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:http/http.dart' as http;
 
@@ -82,11 +83,16 @@ class GazeTracker {
     try {
       final bytes = await _fetchSnapshot();
       if (bytes == null) {
+        if (kDebugMode) debugPrint('GazeDiag: snapshot=null (${RobotConfig.cameraBaseUrl}/snapshot — server/camera down?)');
         _emit(GazeResult.none);
         return;
       }
       if (_imgW == null) await _decodeDims(bytes);
       final res = await _detect(bytes);
+      if (kDebugMode) {
+        debugPrint('GazeDiag: snap=${bytes.length}B ${_imgW}x${_imgH} '
+            'facePresent=${res.facePresent} gaze=(${res.gazeX.toStringAsFixed(2)},${res.gazeY.toStringAsFixed(2)})');
+      }
       _emit(res);
     } catch (_) {
       // transient frame/detection error → treat as no face this cycle

@@ -84,14 +84,13 @@ public class PersonDetectPlugin implements EventChannel.StreamHandler {
                 }
             });
 
-            // enableFace(true) only flags the capability at init — it does NOT
-            // start the RGBD camera. Start the face-detect service + video stream
-            // so the module actually runs and emits FACE_DETECT_PERSON_NEAR_NTF.
-            // openVideo() is headless (no preview window, unlike openPreView).
-            try { robot.getFace().startFaceService(); } catch (Throwable t) { Log.w(TAG, "startFaceService: " + t.getMessage()); }
-            try { robot.getFace().openVideo(); } catch (Throwable t) { Log.w(TAG, "openVideo: " + t.getMessage()); }
-
-            Log.d(TAG, "person-detect listeners registered (post-init): device + face; face service+video started");
+            // NOTE: we do NOT start the CSJBot face video here. On this unit it
+            // emits no FACE_DETECT_PERSON_NEAR_NTF, and openVideo() can hold the
+            // camera that our MJPEG stream + ML Kit gaze pipeline needs. Presence
+            // is driven by the on-device ML Kit face detector over /snapshot
+            // instead (see GazeTracker). These listeners stay registered as a
+            // best-effort fallback if the vendor enables the NTF later.
+            Log.d(TAG, "person-detect listeners registered (post-init): device + face");
         } catch (Throwable e) {
             // SDK absent (emulator) or not ready — silent: detection won't fire.
             Log.w(TAG, "registerWithSdk failed: " + e.getMessage());

@@ -10,8 +10,9 @@ import 'providers.dart';
 import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
-import 'services/robot_gestures.dart';
+import 'services/elevenlabs_tts.dart';
 import 'services/person_detect.dart';
+import 'waving_hand_overlay.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
@@ -59,11 +60,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   double _liveGazeX = 0, _liveGazeY = 0;
   Timer? _presenceHold;
 
-  // Greeting overlay (Wire 2).
-  String? _greetName;
+  // Greeting overlay — text shown in WavingHandOverlay + debounce map.
+  String _greetText = '';
   bool _greetVisible = false;
   Timer? _greetTimer;
   final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
+
+  // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
+  late final ElevenLabsTts _tts;
 
   // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
   late final VoiceAgent _voiceAgent;
@@ -78,8 +82,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   bool _suppressAgentAudio = false; // after a barge-in: drop the rest of the old
   Timer? _bargeTimer; //   reply's audio until the next turn (ElevenLabs keeps streaming)
 
+  // Auto-listen UX: after a greeting, open the mic automatically so a visitor can
+  // just start talking (no tap). _pendingAutoListen waits for the greeting audio
+  // to finish (drain signal) before opening the session — so the mic never hears
+  // Mikee's own greeting. _autoSession marks a session that should auto-close
+  // after _engageWindow of silence; manual (button) sessions stay open.
+  bool _pendingAutoListen = false;
+  Timer? _autoListenFallback;
+  bool _autoSession = false;
+  Timer? _engageTimer;
+
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
+  static const Duration _engageWindow = Duration(seconds: 10);
 
   @override
   void initState() {
@@ -96,6 +111,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _sdkPersonSub = PersonDetect.presence.listen(_onSdkPerson);
     _gaze.start();
     _spine.start();
+
+    _tts = ElevenLabsTts(
+      apiKey: RobotConfig.elevenLabsApiKey,
+      voiceId: RobotConfig.elevenLabsVoiceId,
+      audio: _audioBridge,
+    );
 
     // Voice (#80) — session is opened on demand (debug overlay / Phase B wake word).
     _voiceAgent = VoiceAgent(
@@ -118,10 +139,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // don't wait on ElevenLabs to detect the interruption.
     _asrSub = _audioBridge.asrTextStream.listen(_onUserSpeech);
 
-    // Preserve old behavior: bring up the control WS servers (:8081-3) if the
-    // camera is already streaming when we mount.
+    // Start the camera stream so /snapshot serves frames to the on-device face
+    // detector (GazeTracker → ML Kit) — that's what drives idle→attentive presence
+    // (the CSJBot person-near NTF is silent on this unit). If it's already
+    // streaming, just bring up the control WS servers; when streaming flips on the
+    // build()'s ref.listen wires the control servers.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && ref.read(streamProvider).isStreaming) _startControlServers();
+      if (!mounted) return;
+      if (ref.read(streamProvider).isStreaming) {
+        _startControlServers();
+      } else {
+        ref.read(streamProvider.notifier).startStream();
+      }
     });
   }
 
@@ -138,11 +167,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _presenceHold?.cancel();
     _greetTimer?.cancel();
     _bargeTimer?.cancel();
+    _autoListenFallback?.cancel();
+    _engageTimer?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
     _asrSub?.cancel();
     _playbackSub?.cancel();
     _voiceAgent.dispose();
+    _tts.dispose();
     _audioBridge.dispose();
     _gazeSub?.cancel();
     _faceSub?.cancel();
@@ -182,6 +214,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // ── Wire 1: local gaze + presence ───────────────────────────────────────────
   void _onGaze(GazeResult r) {
     if (r.facePresent) {
+      final fresh = !_present; // rising edge → a new person just approached
       _liveGazeX = r.gazeX;
       _liveGazeY = r.gazeY;
       _present = true;
@@ -190,6 +223,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (_useLivePerception && _face.state == FaceStateKind.idle) {
         _setStateKind(FaceStateKind.attentive);
       }
+      // Obvious reception reaction on a fresh approach (the ML-Kit camera path is
+      // what actually fires here; the CSJBot sensor stays silent on this unit).
+      if (fresh && !_voiceActive) _greetOnApproach();
     } else {
       // Hold attentive briefly before returning to idle (kills jitter).
       if (_present && _presenceHold == null) {
@@ -198,8 +234,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             : const Duration(seconds: 3);
         _presenceHold = Timer(hold, () {
           _present = false;
+          _greeted = false; // person has left — allow greeting on next approach
           _presenceHold = null;
-          if (_face.state == FaceStateKind.attentive) {
+          if (_face.state == FaceStateKind.attentive ||
+              _face.state == FaceStateKind.greeting) {
             _setStateKind(FaceStateKind.idle);
           }
         });
@@ -215,24 +253,86 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     _greetedAt[e.name] = now;
+    _showGreeting('Hi, ${e.name}!');
+    _greetThenListen('Hi, ${e.name}! Welcome to xboom!');
+  }
 
+  // Greeting reaction on a fresh approach — on-screen wave + voice.
+  // Fires once per visit; resets when the person actually leaves (_greeted = false
+  // in the presence-hold callback) so every new approach gets a fresh greeting.
+  bool _greeted = false;
+  void _greetOnApproach() {
+    if (_greeted) return;
+    _greeted = true;
+    _showGreeting('Hello!');
+    _greetThenListen('Hello! Welcome to xboom!');
+  }
+
+  // Shared: set greeting state, show overlay, start hold timer.
+  void _showGreeting(String text) {
+    if (!mounted) return;
     _greetTimer?.cancel();
     setState(() {
-      _greetName = e.name;
+      _greetText = text;
       _greetVisible = true;
       _face = _face.copyWith(state: FaceStateKind.greeting);
     });
-    // Physical wave to match the on-screen greeting (no-op off the robot).
-    RobotGestures.waveHello(hold: _greetHold);
     _greetTimer = Timer(_greetHold, () {
       if (!mounted) return;
       setState(() {
         _greetVisible = false;
         _face = _face.copyWith(
-            state: _present ? FaceStateKind.attentive : FaceStateKind.idle);
+          state: _present ? FaceStateKind.attentive : FaceStateKind.idle,
+        );
       });
     });
   }
+
+  // Speak a greeting phrase — ElevenLabs voice first, built-in TTS as fallback.
+  void _speakGreeting(String text) {
+    _tts.speak(text).then((ok) {
+      if (!ok) _audioBridge.speak(text);
+    });
+  }
+
+  // Speak the greeting, then auto-open the mic so a visitor can talk without
+  // tapping. The hand-off waits for the greeting audio to drain (handled in
+  // _onPlaybackLevel) so the mic never captures Mikee's own voice; the fallback
+  // timer covers the built-in-TTS path (no playback-level signal) or a missed drain.
+  void _greetThenListen(String phrase) {
+    if (_voiceActive) return; // already in a conversation
+    _pendingAutoListen = true;
+    _autoListenFallback?.cancel();
+    _autoListenFallback = Timer(const Duration(seconds: 4), _startAutoListen);
+    _speakGreeting(phrase);
+  }
+
+  // Hand off from the spoken greeting to an open mic. Idempotent (fires once),
+  // and only while the visitor is still present and no session is already running.
+  void _startAutoListen() {
+    _autoListenFallback?.cancel();
+    if (!_pendingAutoListen) return;
+    _pendingAutoListen = false;
+    if (!mounted || _voiceActive || !_present) return;
+    debugPrint('AmbientFace: greeting done → auto-opening mic (listening)');
+    _startVoice(auto: true);
+  }
+
+  // Auto-started sessions close themselves after _engageWindow of silence so the
+  // mic doesn't stay open to an empty room. Re-armed whenever Mikee returns to
+  // listening; cancelled the instant the visitor engages. No-op for manual sessions.
+  void _armEngage() {
+    if (!_autoSession) return;
+    _engageTimer?.cancel();
+    _engageTimer = Timer(_engageWindow, () {
+      if (_autoSession && _voiceActive && _face.state == FaceStateKind.listening) {
+        debugPrint('AmbientFace: no engagement in ${_engageWindow.inSeconds}s → closing');
+        _endVoice();
+      }
+    });
+  }
+
+  void _cancelEngage() => _engageTimer?.cancel();
 
   void _onPersonDetected(bool pd) {
     // Coarse presence: promote idle → attentive (eyes centered, no box to track).
@@ -248,7 +348,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _onSdkPerson(bool present) {
     _onPersonDetected(present);
     if (present && !_sdkPersonPresent && !_voiceActive) {
-      RobotGestures.waveHello(); // acknowledge the visitor (no-op off-device)
+      _greetOnApproach(); // debounced — same overlay + voice as the ML Kit path
     }
     _sdkPersonPresent = present;
   }
@@ -264,6 +364,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _onUserSpeech(String text) {
     debugPrint('MikeeBargeIn: asr="$text" voiceActive=$_voiceActive state=${_face.state}');
     if (!_voiceActive || text.trim().isEmpty) return;
+    _cancelEngage(); // visitor is talking — don't auto-close
     if (_face.state == FaceStateKind.speaking) {
       debugPrint('MikeeBargeIn: BARGE-IN → stopping Mikee, switching to listening');
       _audioBridge.stopPlayback();
@@ -290,14 +391,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           _voiceActive = true;
           _face = _face.copyWith(state: FaceStateKind.listening);
         });
+        _armEngage(); // auto sessions: start the no-engagement countdown
         break;
       case VoiceEventKind.userSpeaking:
         // User cut in (interruption) → stop playback + listen.
+        _cancelEngage(); // visitor engaged — keep the session open
         _audioBridge.stopPlayback();
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
         // A new turn is starting → stop dropping audio; the upcoming reply plays.
+        _cancelEngage();
         _suppressAgentAudio = false;
         _bargeTimer?.cancel();
         // Genuine processing gap (STT done, reply not yet streaming).
@@ -307,6 +411,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Mute the robot's built-in (Chinese) TTS so only the ElevenLabs voice is
         // heard — the CSJBot AIUI runs in parallel (it gives us the mic) but must
         // not talk over Mikee.
+        _cancelEngage();
         _audioBridge.stopSpeak();
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
@@ -319,6 +424,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         break;
       case VoiceEventKind.sessionEnded:
+        _cancelEngage();
+        _autoSession = false;
         _audioBridge.stopMic();
         _audioBridge.stopPlayback();
         _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
@@ -329,6 +436,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         });
         break;
       case VoiceEventKind.error:
+        _cancelEngage();
+        _autoSession = false;
         _audioBridge.stopMic();
         if (e.serviceUnavailable) _showServiceAlert(e.text);
         setState(() {
@@ -341,7 +450,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _spine.sendVoiceState(e.kind);
   }
 
-  void _startVoice() {
+  // [auto] = true when opened automatically after a greeting (→ auto-closes on
+  // silence). The mic-button / wake-word callers use the default (false) so a
+  // deliberately opened session stays open until the user ends it.
+  void _startVoice({bool auto = false}) {
+    _pendingAutoListen = false; // a session is starting — cancel any greeting hand-off
+    _autoListenFallback?.cancel();
+    _autoSession = auto;
     _voiceAgent.startSession();
     // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI
     // shows we're actually hearing audio (mic fails gracefully on the emulator).
@@ -400,9 +515,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // turn is over, return to listening. This replaces the old arrival-based gap
   // timer that closed the mouth while audio was still queued.
   void _onPlaybackLevel(double level) {
-    if (!mounted || !_voiceActive) return;
+    if (!mounted) return;
+    // Before a session: the spoken greeting just finished (drain) → open the mic.
+    if (!_voiceActive) {
+      if (_pendingAutoListen && level < 0) _startAutoListen();
+      return;
+    }
     if (level < 0) {
+      // Turn ended → back to listening; restart the no-engagement countdown.
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
+      _armEngage();
     } else {
       // Amplify the speech-range RMS so the mouth opens convincingly.
       final mouth = (level * 3.5).clamp(0.04, 1.0);
@@ -457,24 +579,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
               child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
             ),
           ),
-          // Greeting overlay — "Hi, <name>!" below the mouth.
-          if (_greetName != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: MediaQuery.of(context).size.height * 0.18,
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  opacity: _greetVisible ? 1 : 0,
-                  duration: Duration(milliseconds: _greetVisible ? 300 : 500),
-                  child: Center(
-                    child: Text('Hi, $_greetName!',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ),
-            ),
+          // Waving-hand greeting overlay (anonymous approach + named greet).
+          WavingHandOverlay(
+            visible: _greetVisible,
+            message: _greetText,
+          ),
           // Language selector, top-left (top-right holds the SDK/battery chip).
           Positioned(
             top: 12,
