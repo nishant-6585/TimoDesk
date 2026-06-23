@@ -54,6 +54,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
+    // Validate online status immediately before sending intent
     final spineState = ref.read(spineProvider);
     final isOnline = spineState.status?.online ?? false;
 
@@ -70,8 +71,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final dir = _driveStatus == 'FORWARD' ? 'forward' :
                   _driveStatus == 'REVERSE' ? 'back' :
                   _driveStatus == 'RIGHT' ? 'right' : 'left';
-      final notifier = ref.read(spineProvider.notifier);
-      notifier.sendIntent({'intent': 'drive', 'dir': dir});
+      
+      // Re-validate online status immediately before sending
+      if (ref.read(spineProvider).status?.online ?? false) {
+        final notifier = ref.read(spineProvider.notifier);
+        notifier.sendIntent({'intent': 'drive', 'dir': dir});
+      }
     }
     // Do NOT send any command when idle - let robot coast
   }
@@ -93,8 +98,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _headThrottleTimer?.cancel();
     _headThrottleTimer = Timer(const Duration(milliseconds: joystickThrottleMs), () {
       if (mounted) {
-        final notifier = ref.read(spineProvider.notifier);
-        notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+        // Re-validate online status within debounce callback
+        if (ref.read(spineProvider).status?.online ?? false) {
+          final notifier = ref.read(spineProvider.notifier);
+          notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+        }
       }
     });
   }
@@ -112,8 +120,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
+    }
   }
 
   void _sendGesture(String gesture) {
@@ -133,8 +144,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': gesture});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': gesture});
+    }
   }
 
   void _handleStopResume() {
@@ -150,11 +164,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    if (spineState.stopped) {
-      notifier.sendIntent({'intent': 'resume'});
-    } else {
-      notifier.sendIntent({'intent': 'stop'});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      if (spineState.stopped) {
+        notifier.sendIntent({'intent': 'resume'});
+      } else {
+        notifier.sendIntent({'intent': 'stop'});
+      }
     }
   }
 
@@ -504,15 +521,4 @@ class _GesturesCard extends StatelessWidget {
   const _GesturesCard({required this.onGesture, required this.onCenterHead});
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go Home', Icons.home, () => onGesture('home')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod'))]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrimary, side: const BorderSide(color: MikeeColors.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))]));
-  }
-}
-
-class _GestureButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _GestureButton(this.label, this.icon, this.onTap);
-  @override
-  Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(decoration: BoxDecoration(color: MikeeColors.inset, border: Border.all
+    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go Home', Icons.home, () => onGesture('home')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod'))]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrim

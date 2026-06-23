@@ -63,34 +63,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       // Auto-confirm the user (for dev/testing)
       // In production, they'd need to verify their email
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
 
-      // Show success message and switch to sign in
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Account created! Signing you in...'),
-          backgroundColor: MikeeColors.success,
-        ),
-      );
+        // Show success message and switch to sign in
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Account created! Signing you in...'),
+            backgroundColor: MikeeColors.success,
+          ),
+        );
 
-      // Auto sign in after signup with error handling
-      try {
-        await _handleSignIn();
-      } catch (e) {
-        setState(() {
-          _error = 'Auto sign-in failed: ${e.toString()}';
-        });
+        // Auto sign in after signup without nested try-catch
+        if (mounted) {
+          await _handleSignIn();
+        }
       }
     } on AuthException catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.message;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = e.message;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = 'An error occurred: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = 'An error occurred: $e';
+        });
+      }
     }
   }
 
@@ -99,14 +101,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _error = 'Please enter email and password');
+      if (mounted) {
+        setState(() => _error = 'Please enter email and password');
+      }
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       await Supabase.instance.client.auth.signInWithPassword(
@@ -114,22 +120,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      setState(() => _isLoading = false);
-
-      // Auto-navigate on successful login
       if (mounted) {
+        setState(() => _isLoading = false);
+
+        // Auto-navigate on successful login
         context.go('/');
       }
     } on AuthException catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.message;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = e.message;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = 'An error occurred: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = 'An error occurred: $e';
+        });
+      }
     }
   }
 

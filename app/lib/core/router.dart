@@ -18,9 +18,14 @@ class GoRouterRefreshStream extends ChangeNotifier {
   late final StreamSubscription<AuthState> _subscription;
 
   GoRouterRefreshStream(Stream<AuthState> authStream) {
-    _subscription = authStream.listen((_) {
-      notifyListeners();
-    });
+    _subscription = authStream.listen(
+      (_) {
+        notifyListeners();
+      },
+      onError: (_) {
+        notifyListeners();
+      },
+    );
   }
 
   @override
