@@ -55,8 +55,23 @@ android {
     }
 }
 
+repositories {
+    flatDir { dirs '../libs' }
+}
+
 dependencies {
-    implementation project(':newSceneSDK')
+    // CsjRobot SDK — bundled AAR (source lives at Timo/SdkDemoCsj/newSceneSDK locally)
+    implementation(name: 'newSceneSDK-release', ext: 'aar')
+    // Transitive deps the SDK needs (not bundled in the AAR)
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.code.gson:gson:2.8.1'
+    implementation 'com.squareup.retrofit2:retrofit:2.3.0'
+    implementation 'com.squareup.retrofit2:adapter-rxjava2:2.3.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.3.0'
+    implementation 'io.reactivex.rxjava2:rxjava:2.2.6'
+    implementation 'io.reactivex.rxjava2:rxandroid:2.1.0'
+    implementation 'com.microsoft.cognitiveservices.speech:client-sdk:1.42.0'
+
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'androidx.core:core:1.13.1'
     implementation 'io.getstream:stream-webrtc-android:1.1.0'
