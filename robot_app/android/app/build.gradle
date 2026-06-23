@@ -55,13 +55,9 @@ android {
     }
 }
 
-repositories {
-    flatDir { dirs '../libs' }
-}
-
 dependencies {
     // CsjRobot SDK — bundled AAR (source lives at Timo/SdkDemoCsj/newSceneSDK locally)
-    implementation(name: 'newSceneSDK-release', ext: 'aar')
+    implementation files('../libs/newSceneSDK-release.aar')
     // Transitive deps the SDK needs (not bundled in the AAR)
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.code.gson:gson:2.8.1'
