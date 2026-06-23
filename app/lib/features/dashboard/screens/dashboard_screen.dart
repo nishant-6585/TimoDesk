@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -98,7 +99,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _setupListeners() {
-    ref.listenManual<FaceDetection?>(faceDetectionProvider, (prev, next) {
+    ref.listen<FaceDetection?>(faceDetectionProvider, (prev, next) {
       if (next == null) return;
       _addEvent({
         'type': 'face_detected',
@@ -109,7 +110,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       });
     });
 
-    ref.listenManual<VisitorArrival?>(visitorArrivedProvider, (prev, next) {
+    ref.listen<VisitorArrival?>(visitorArrivedProvider, (prev, next) {
       if (next == null) return;
       _addEvent({
         'type': 'visitor_checkin',
@@ -145,6 +146,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _updateTimeString() {
+    if (!mounted) return;
     setState(() {
       final now = DateTime.now();
       _timeString = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
@@ -218,8 +220,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   void dispose() {
     _eventTimer?.cancel();
+    _eventTimer = null;
     _ageTimer?.cancel();
+    _ageTimer = null;
     super.dispose();
+  }
+
+  String _getBatteryDisplay(int? battery) {
+    if (battery == null || battery < 0) {
+      return '--';
+    }
+    return '$battery%';
   }
 
   @override
@@ -438,6 +449,13 @@ class _McHeader extends StatelessWidget {
 
   const _McHeader({required this.compact, required this.online, required this.battery});
 
+  String _getBatteryDisplay() {
+    if (battery == null || battery! < 0) {
+      return '—';
+    }
+    return '$battery%';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -491,7 +509,7 @@ class _McHeader extends StatelessWidget {
                   Icon(battery == null ? Icons.battery_unknown : Icons.battery_charging_full, size: 16,
                       color: battery == null ? MikeeColors.textMuted : MikeeColors.success),
                   const SizedBox(width: 8),
-                  Text(battery == null ? '—' : '$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(_getBatteryDisplay(), style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(width: 8),
                   Container(
                     width: 40,
@@ -501,7 +519,7 @@ class _McHeader extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
-                          width: (40 * (battery ?? 0) / 100).clamp(0, 40),
+                          width: (40 * ((battery ?? 0) / 100)).clamp(0, 40),
                           height: 6,
                           decoration: BoxDecoration(color: MikeeColors.success, borderRadius: BorderRadius.circular(999)),
                         ),
@@ -724,15 +742,4 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
     return _McCard(
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-          Icon(widget.charging ? Icons.bolt : Icons.battery_full, size: 18, color: MikeeColors.primary),
-        ]),
-        const SizedBox(height: 10),
-        Center(
-          child: SizedBox(
-            width: 104,
-            height: 104,
-            child: AnimatedBuilder(
-              animation: _animation,
-              builder
+        Row(mainAxis

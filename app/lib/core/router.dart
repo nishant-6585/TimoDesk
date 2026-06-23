@@ -123,9 +123,29 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 bool _isLoggedIn() {
   try {
-    final session = Supabase.instance.client.auth.currentSession;
-    return session != null && session.accessToken.isNotEmpty;
-  } catch (_) {
+    final authClient = Supabase.instance.client.auth;
+    
+    // Check if auth is initialized
+    if (authClient == null) {
+      return false;
+    }
+    
+    // Use currentUser for more reliable null-safety
+    final currentUser = authClient.currentUser;
+    if (currentUser == null) {
+      return false;
+    }
+    
+    // Validate session and access token
+    final session = authClient.currentSession;
+    if (session == null) {
+      return false;
+    }
+    
+    final accessToken = session.accessToken;
+    return accessToken.isNotEmpty;
+  } catch (e) {
+    // Handle any exceptions during auth state check
     return false;
   }
 }

@@ -63,11 +63,9 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final compact = MediaQuery.of(context).size.width < 900;
-
-    // Prepend REAL recognizer detections as they arrive (no mock face rows).
-    ref.listen<FaceDetection?>(faceDetectionProvider, (prev, next) {
+  void initState() {
+    super.initState();
+    ref.listenManual<FaceDetection?>(faceDetectionProvider, (prev, next) {
       if (next == null) return;
       setState(() {
         _events.insert(0, {
@@ -80,6 +78,11 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
         });
       });
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.of(context).size.width < 900;
 
     return Scaffold(
       backgroundColor: MikeeColors.background,

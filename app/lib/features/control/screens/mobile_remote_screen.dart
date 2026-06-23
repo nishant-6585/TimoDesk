@@ -15,6 +15,14 @@ import '../widgets/joystick.dart';
 /// Phone-first remote: full-bleed camera + drive/head joysticks + arm/wave +
 /// an always-visible STOP/RESUME. Shares spine_service/providers/MjpegView with
 /// the desktop ControlScreen — this is just the small-screen layout (#90 Part A).
+///
+/// Adaptive layout:
+/// - Portrait: camera stacked above controls
+/// - Landscape: camera and controls side-by-side
+///
+/// Joystick throttling uses [Stopwatch] for precise timing and ensures inputs
+/// are normalized to [-1, 1] range before processing. Deadzone (0.15) filters
+/// noise below ~15% stick deflection.
 class MobileRemoteScreen extends ConsumerStatefulWidget {
   const MobileRemoteScreen({super.key});
 
@@ -25,19 +33,33 @@ class MobileRemoteScreen extends ConsumerStatefulWidget {
 class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   bool _streaming = false;
   String _driveStatus = 'IDLE';
-  DateTime _lastDrive = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastHead = DateTime.fromMillisecondsSinceEpoch(0);
+  late Stopwatch _driveThrottle;
+  late Stopwatch _headThrottle;
+
+  // ── Deadzone constant: input magnitude below this is considered noise
+  static const double _deadzone = 0.15;
+
+  @override
+  void initState() {
+    super.initState();
+    _driveThrottle = Stopwatch();
+    _headThrottle = Stopwatch();
+  }
 
   // ── Intents (mirror ControlScreen; throttled drive) ────────────────────────
   void _handleDrive(double x, double y, double mag) {
-    const deadzone = 0.15;
+    // Normalize and validate joystick inputs to [-1, 1] range
+    final normalizedX = x.clamp(-1.0, 1.0);
+    final normalizedY = y.clamp(-1.0, 1.0);
+    final normalizedMag = mag.clamp(0.0, 1.0);
+
     String status;
-    if (mag < deadzone) {
+    if (normalizedMag < _deadzone) {
       status = 'IDLE';
-    } else if (y.abs() > x.abs()) {
-      status = y > 0 ? 'FORWARD' : 'REVERSE';
+    } else if (normalizedY.abs() > normalizedX.abs()) {
+      status = normalizedY > 0 ? 'FORWARD' : 'REVERSE';
     } else {
-      status = x > 0 ? 'RIGHT' : 'LEFT';
+      status = normalizedX > 0 ? 'RIGHT' : 'LEFT';
     }
     if (status != _driveStatus) {
       if (status != 'IDLE') HapticFeedback.selectionClick();
@@ -45,10 +67,15 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     }
     if (status == 'IDLE') return; // coast — send nothing
 
-    // Throttle drive intents to joystickThrottleMs.
-    final now = DateTime.now();
-    if (now.difference(_lastDrive) < joystickThrottleMs) return;
-    _lastDrive = now;
+    // Throttle drive intents to joystickThrottleMs using Stopwatch for precision
+    if (!_driveThrottle.isRunning) {
+      _driveThrottle.start();
+    }
+    if (_driveThrottle.elapsedMilliseconds < joystickThrottleMs) {
+      return;
+    }
+    _driveThrottle.reset();
+    _driveThrottle.start();
 
     final dir = status == 'FORWARD'
         ? 'forward'
@@ -57,29 +84,54 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
             : status == 'RIGHT'
                 ? 'right'
                 : 'left';
-    ref.read(spineProvider.notifier).sendIntent({'intent': 'drive', 'dir': dir});
+    
+    // Check spine connection before sending intent
+    final spineNotifier = ref.read(spineProvider.notifier);
+    if (spineNotifier.isConnected) {
+      spineNotifier.sendIntent({'intent': 'drive', 'dir': dir});
+    }
   }
 
   void _handleHead(double x, double y, double mag) {
-    // Throttle head intents to joystickThrottleMs (same as drive).
-    final now = DateTime.now();
-    if (now.difference(_lastHead) < joystickThrottleMs) return;
-    _lastHead = now;
+    // Normalize and validate joystick inputs to [-1, 1] range
+    final normalizedX = x.clamp(-1.0, 1.0);
+    final normalizedY = y.clamp(-1.0, 1.0);
 
-    final lr = ((x + 1) / 2 * 100).clamp(0, 100).toInt();
-    final ud = ((y + 1) / 2 * 100).clamp(0, 100).toInt();
-    ref.read(spineProvider.notifier).sendIntent({'intent': 'head', 'lr': lr, 'ud': ud});
+    // Throttle head intents to joystickThrottleMs using Stopwatch for precision
+    if (!_headThrottle.isRunning) {
+      _headThrottle.start();
+    }
+    if (_headThrottle.elapsedMilliseconds < joystickThrottleMs) {
+      return;
+    }
+    _headThrottle.reset();
+    _headThrottle.start();
+
+    final lr = ((normalizedX + 1) / 2 * 100).clamp(0, 100).toInt();
+    final ud = ((normalizedY + 1) / 2 * 100).clamp(0, 100).toInt();
+    
+    // Check spine connection before sending intent
+    final spineNotifier = ref.read(spineProvider.notifier);
+    if (spineNotifier.isConnected) {
+      spineNotifier.sendIntent({'intent': 'head', 'lr': lr, 'ud': ud});
+    }
   }
 
   void _gesture(String intent) {
     if (ref.read(spineProvider).stopped) return;
-    ref.read(spineProvider.notifier).sendIntent({'intent': intent});
+    final spineNotifier = ref.read(spineProvider.notifier);
+    if (spineNotifier.isConnected) {
+      spineNotifier.sendIntent({'intent': intent});
+    }
   }
 
   void _stopResume() {
     HapticFeedback.heavyImpact();
     final stopped = ref.read(spineProvider).stopped;
-    ref.read(spineProvider.notifier).sendIntent({'intent': stopped ? 'resume' : 'stop'});
+    final spineNotifier = ref.read(spineProvider.notifier);
+    if (spineNotifier.isConnected) {
+      spineNotifier.sendIntent({'intent': stopped ? 'resume' : 'stop'});
+    }
   }
 
   @override
@@ -130,6 +182,8 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
 
   @override
   void dispose() {
+    _driveThrottle.stop();
+    _headThrottle.stop();
     super.dispose();
   }
 }
@@ -247,6 +301,9 @@ class _CameraPanel extends StatelessWidget {
 }
 
 // ── Controls: drive joystick · head pad · arm/wave ────────────────────────────
+/// Control panel with two joysticks (drive/head) and action buttons (wave/reset/snapshot).
+/// Receives normalized joystick input via [onDrive] and [onHead] callbacks.
+/// All gesture intents are gated by [stopped] flag.
 class _ControlsPanel extends StatelessWidget {
   final String driveStatus;
   final bool stopped;

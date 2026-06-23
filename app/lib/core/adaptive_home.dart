@@ -12,15 +12,14 @@ const double kPhoneBreakpoint = 600;
 class AdaptiveHome extends StatelessWidget {
   const AdaptiveHome({super.key});
 
+  static const MobileRemoteScreen _mobileScreen = MobileRemoteScreen();
+  static const DashboardScreen _dashboardScreen = DashboardScreen();
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < kPhoneBreakpoint) {
-          return const MobileRemoteScreen();
-        }
-        return const DashboardScreen();
-      },
+    final isMobile = MediaQuery.sizeOf(context).width < kPhoneBreakpoint;
+    return RepaintBoundary(
+      child: isMobile ? _mobileScreen : _dashboardScreen,
     );
   }
 }

@@ -24,3 +24,17 @@ const int maxEventsToPull = 50;
 const double cardBorderRadius = 16.0;
 const double buttonBorderRadius = 12.0;
 const double smallBorderRadius = 8.0;
+
+// URL Validation Helper
+class UrlValidator {
+  static bool isValidWebSocketUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return (uri.scheme == 'ws' || uri.scheme == 'wss') &&
+          uri.host.isNotEmpty &&
+          uri.port > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+}
