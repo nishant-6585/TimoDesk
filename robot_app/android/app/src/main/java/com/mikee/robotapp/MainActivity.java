@@ -107,9 +107,10 @@ public class MainActivity extends FlutterActivity {
         ).setStreamHandler(wakePlugin);
 
         // On-device person detection (laser/RGBD/ultrasonic) — idle→active trigger.
-        // Works without cloud or mic; silent no-op on emulator.
+        // Works without cloud or mic; silent no-op on emulator. The SDK listener
+        // is registered post-init in MikeeApplication (see registerWithSdk); here we
+        // only wire the EventChannel so the Dart sink is captured.
         PersonDetectPlugin personPlugin = new PersonDetectPlugin();
-        personPlugin.register();
         new EventChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 PERSON_EVENT_CH

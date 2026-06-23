@@ -57,6 +57,11 @@ public class MikeeApplication extends MultiDexApplication {
                 // Step 7: Init
                 CsjRobot.getInstance().init(MikeeApplication.this);
 
+                // Register the person-detection listener AFTER init so it binds to
+                // a live perception engine (registering at Activity start raced this
+                // async init → the listener never attached and detection never fired).
+                PersonDetectPlugin.registerWithSdk();
+
                 Log.d(TAG, "SDK initialized — flavor=" + BuildConfig.FLAVOR
                         + "  ip=" + BuildConfig.SDK_IP);
 
