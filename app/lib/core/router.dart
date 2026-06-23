@@ -14,8 +14,6 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/enroll_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
 
-// Fix 1: GoRouterRefreshStream listens to Supabase auth state changes
-// This ensures the router re-evaluates the redirect condition when auth changes
 class GoRouterRefreshStream extends ChangeNotifier {
   late final StreamSubscription<AuthState> _subscription;
 
@@ -40,26 +38,40 @@ final _goRouterRefreshStreamProvider = Provider<GoRouterRefreshStream>((ref) {
   return refreshStream;
 });
 
+final authStateProvider = StreamProvider<AuthState>((ref) {
+  return Supabase.instance.client.auth.onAuthStateChange;
+});
+
+final _isLoggedInProvider = Provider<bool>((ref) {
+  final authState = ref.watch(authStateProvider);
+  return authState.whenData((state) {
+    final session = state.session;
+    return session != null && session.accessToken.isNotEmpty;
+  }).whenError((_, __) {
+    return false;
+  }).maybeWhen(
+    data: (isLoggedIn) => isLoggedIn,
+    orElse: () => false,
+  );
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshStream = ref.watch(_goRouterRefreshStreamProvider);
+  final isLoggedIn = ref.watch(_isLoggedInProvider);
   
   return GoRouter(
     refreshListenable: refreshStream,
     redirect: (context, state) {
-      final isLoggedIn = _isLoggedIn();
       final isGoingToLogin = state.matchedLocation == '/login';
 
-      // Rule 1: If NOT logged in and NOT going to /login → redirect to /login
       if (!isLoggedIn && !isGoingToLogin) {
         return '/login';
       }
 
-      // Rule 2: If logged in and trying to access /login → redirect to /
       if (isLoggedIn && isGoingToLogin) {
         return '/';
       }
 
-      // Rule 3: All other cases → allow (logged in at allowed route, or at /login)
       return null;
     },
     routes: [
@@ -71,7 +83,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         name: 'dashboard',
-        // Adaptive: phones get the mobile remote, tablet/web keep the dashboard.
         builder: (context, state) => const AdaptiveHome(),
       ),
       GoRoute(
@@ -120,12 +131,3 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
-
-bool _isLoggedIn() {
-  try {
-    final session = Supabase.instance.client.auth.currentSession;
-    return session != null && session.accessToken.isNotEmpty;
-  } catch (_) {
-    return false;
-  }
-}

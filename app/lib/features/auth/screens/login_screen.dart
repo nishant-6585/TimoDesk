@@ -17,6 +17,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _isSignUp = false;
   bool _isLoading = false;
   String? _error;
@@ -72,8 +73,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       );
 
-      // Auto sign in after signup
-      await _handleSignIn();
+      // Auto sign in after signup with error handling
+      try {
+        await _handleSignIn();
+      } catch (e) {
+        setState(() {
+          _error = 'Auto sign-in failed: ${e.toString()}';
+        });
+      }
     } on AuthException catch (e) {
       setState(() {
         _isLoading = false;
@@ -124,6 +131,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _error = 'An error occurred: $e';
       });
     }
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Email is required';
+    }
+    if (!value.contains('@')) {
+      return 'Please enter a valid email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm your password';
+    }
+    if (value != _passwordController.text) {
+      return 'Passwords do not match';
+    }
+    return null;
   }
 
   @override
@@ -249,6 +286,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   keyboardType: TextInputType.emailAddress,
                   enabled: !_isLoading,
+                  validator: _validateEmail,
                 ),
                 const SizedBox(height: 16),
 
@@ -263,11 +301,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         _obscurePassword ? Icons.visibility_off : Icons.visibility,
                         color: MikeeColors.textSecondary,
                       ),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: _isLoading ? null : () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   obscureText: _obscurePassword,
                   enabled: !_isLoading,
+                  validator: _validatePassword,
                 ),
                 const SizedBox(height: 16),
 
@@ -280,9 +319,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         decoration: InputDecoration(
                           hintText: 'Confirm Password',
                           prefixIcon: const Icon(Icons.lock_outlined, color: MikeeColors.textSecondary),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                              color: MikeeColors.textSecondary,
+                            ),
+                            onPressed: _isLoading ? null : () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                          ),
                         ),
-                        obscureText: _obscurePassword,
+                        obscureText: _obscureConfirmPassword,
                         enabled: !_isLoading,
+                        validator: _validateConfirmPassword,
                       ),
                       const SizedBox(height: 16),
                     ],
