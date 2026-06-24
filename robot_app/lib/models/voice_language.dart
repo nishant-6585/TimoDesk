@@ -6,24 +6,87 @@ class VoiceLanguage {
   final String nativeName; // the language in its own script, e.g. "हिंदी"
   final String flag; // emoji flag
 
+  // Greeting tokens (in this language) used by the approach/face greeting so the
+  // spoken + on-screen hello matches the selected conversation language.
+  final String hello; // greeting word, e.g. "नमस्ते"
+  final String welcome; // "welcome to xboom" line, e.g. "xboom में आपका स्वागत है"
+
   const VoiceLanguage({
     required this.code,
     required this.name,
     required this.nativeName,
     required this.flag,
+    required this.hello,
+    required this.welcome,
   });
+
+  /// On-screen greeting pill text. [name] localises the named (spine) greet.
+  String greetText([String? name]) =>
+      name == null ? '$hello!' : '$hello, $name!';
+
+  /// Spoken greeting phrase (fed to TTS). [name] localises the named greet.
+  String greetSpeech([String? name]) =>
+      name == null ? '$hello! $welcome!' : '$hello $name! $welcome!';
 }
 
 /// The 8 languages Mikee supports (matches the ElevenLabs agent config).
 const List<VoiceLanguage> kSupportedLanguages = [
-  VoiceLanguage(code: "en", name: "English", nativeName: "English", flag: "🇬🇧"),
-  VoiceLanguage(code: "hi", name: "Hindi", nativeName: "हिंदी", flag: "🇮🇳"),
-  VoiceLanguage(code: "ta", name: "Tamil", nativeName: "தமிழ்", flag: "🇮🇳"),
-  VoiceLanguage(code: "ml", name: "Malayalam", nativeName: "മലയാളം", flag: "🇮🇳"),
-  VoiceLanguage(code: "kn", name: "Kannada", nativeName: "ಕನ್ನಡ", flag: "🇮🇳"),
-  VoiceLanguage(code: "te", name: "Telugu", nativeName: "తెలుగు", flag: "🇮🇳"),
-  VoiceLanguage(code: "mr", name: "Marathi", nativeName: "मराठी", flag: "🇮🇳"),
-  VoiceLanguage(code: "gu", name: "Gujarati", nativeName: "ગુજરાતી", flag: "🇮🇳"),
+  VoiceLanguage(
+      code: "en",
+      name: "English",
+      nativeName: "English",
+      flag: "🇬🇧",
+      hello: "Hello",
+      welcome: "Welcome to xboom"),
+  VoiceLanguage(
+      code: "hi",
+      name: "Hindi",
+      nativeName: "हिंदी",
+      flag: "🇮🇳",
+      hello: "नमस्ते",
+      welcome: "xboom में आपका स्वागत है"),
+  VoiceLanguage(
+      code: "ta",
+      name: "Tamil",
+      nativeName: "தமிழ்",
+      flag: "🇮🇳",
+      hello: "வணக்கம்",
+      welcome: "xboom-க்கு வரவேற்கிறோம்"),
+  VoiceLanguage(
+      code: "ml",
+      name: "Malayalam",
+      nativeName: "മലയാളം",
+      flag: "🇮🇳",
+      hello: "നമസ്കാരം",
+      welcome: "xboom-ലേക്ക് സ്വാഗതം"),
+  VoiceLanguage(
+      code: "kn",
+      name: "Kannada",
+      nativeName: "ಕನ್ನಡ",
+      flag: "🇮🇳",
+      hello: "ನಮಸ್ಕಾರ",
+      welcome: "xboom ಗೆ ಸ್ವಾಗತ"),
+  VoiceLanguage(
+      code: "te",
+      name: "Telugu",
+      nativeName: "తెలుగు",
+      flag: "🇮🇳",
+      hello: "నమస్కారం",
+      welcome: "xboom కి స్వాగతం"),
+  VoiceLanguage(
+      code: "mr",
+      name: "Marathi",
+      nativeName: "मराठी",
+      flag: "🇮🇳",
+      hello: "नमस्कार",
+      welcome: "xboom मध्ये आपले स्वागत आहे"),
+  VoiceLanguage(
+      code: "gu",
+      name: "Gujarati",
+      nativeName: "ગુજરાતી",
+      flag: "🇮🇳",
+      hello: "નમસ્તે",
+      welcome: "xboom માં આપનું સ્વાગત છે"),
 ];
 
 /// Look up a language by code; falls back to English.

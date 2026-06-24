@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-prototype",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "7788", "--directory", "robot_app/docs"],
+      "port": 7788
+    }
+  ]
+}

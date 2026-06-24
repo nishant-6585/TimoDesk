@@ -96,7 +96,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     // Throttle head commands to prevent flooding WebSocket
     _headThrottleTimer?.cancel();
-    _headThrottleTimer = Timer(const Duration(milliseconds: joystickThrottleMs), () {
+    _headThrottleTimer = Timer(joystickThrottleMs, () {
       if (mounted) {
         // Re-validate online status within debounce callback
         if (ref.read(spineProvider).status?.online ?? false) {
@@ -521,4 +521,58 @@ class _GesturesCard extends StatelessWidget {
   const _GesturesCard({required this.onGesture, required this.onCenterHead});
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go Home', Icons.home, () => onGesture('home')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod'))]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrim
+    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go Home', Icons.home, () => onGesture('home')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod'))]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), side: const BorderSide(color: MikeeColors.border))))]));
+  }
+}
+
+class _GestureButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _GestureButton(this.label, this.icon, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: MikeeColors.inset,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 20, color: MikeeColors.primary),
+            const SizedBox(height: 6),
+            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: MikeeColors.textSecondary)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _McSlider extends StatelessWidget {
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+  const _McSlider({required this.value, required this.min, required this.max, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        activeTrackColor: MikeeColors.primary,
+        inactiveTrackColor: MikeeColors.border,
+        thumbColor: MikeeColors.primary,
+        overlayColor: MikeeColors.primary.withOpacity(0.15),
+        trackHeight: 4,
+      ),
+      child: Slider(
+        value: value.clamp(min, max),
+        min: min,
+        max: max,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}

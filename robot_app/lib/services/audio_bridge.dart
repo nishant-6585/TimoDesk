@@ -20,10 +20,19 @@ class AudioBridge {
 
   StreamSubscription? _micSub;
 
+  // Each EventChannel has a SINGLE native sink. If two screens (ambient face +
+  // dashboard) each call receiveBroadcastStream(), the second listener overwrites
+  // the native sink and the first screen silently stops getting events (this broke
+  // the face's playback→state updates while the dashboard was open, freezing the
+  // mic gate). Cache one broadcast stream per channel so both screens share it.
+  Stream<String>? _asrText;
+  Stream<double>? _playbackLevels;
+  Stream<String>? _wakeWord;
+
   /// Recognized user speech (CSJBot CAE, echo-cancelled). Emits the live
   /// transcription string each time the user is detected speaking — used for
   /// on-device barge-in (cut Mikee off when the user starts talking).
-  Stream<String> get asrTextStream =>
+  Stream<String> get asrTextStream => _asrText ??=
       _asrChannel.receiveBroadcastStream().map((e) => e?.toString() ?? '');
 
   /// Start mic capture. Each 16 kHz/mono/16-bit PCM chunk is delivered to
@@ -80,12 +89,12 @@ class AudioBridge {
   /// Playback amplitude (0..1) of each chunk AS IT PLAYS through the speaker —
   /// drives lip-sync in sync with what's actually heard. Emits -1 when playback
   /// drains (speech finished), so the face can return to listening on time.
-  Stream<double> get playbackLevelStream =>
+  Stream<double> get playbackLevelStream => _playbackLevels ??=
       _playbackChannel.receiveBroadcastStream().map((e) => (e as num).toDouble());
 
   /// Fires "wakeup" each time the CSJBot wake word triggers. Silent on the
   /// emulator (the native plugin swallows the SDK absence).
-  Stream<String> get wakeWordStream =>
+  Stream<String> get wakeWordStream => _wakeWord ??=
       _wakeChannel.receiveBroadcastStream().map((e) => e as String);
 
   void dispose() {

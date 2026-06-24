@@ -49,13 +49,11 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
 
 final _isLoggedInProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateProvider);
-  return authState.whenData((state) {
-    final session = state.session;
-    return session != null && session.accessToken.isNotEmpty;
-  }).whenError((_, __) {
-    return false;
-  }).maybeWhen(
-    data: (isLoggedIn) => isLoggedIn,
+  return authState.maybeWhen(
+    data: (state) {
+      final session = state.session;
+      return session != null && session.accessToken.isNotEmpty;
+    },
     orElse: () => false,
   );
 });
@@ -67,6 +65,13 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     refreshListenable: refreshStream,
     redirect: (context, state) {
+      // DEV ONLY: skip the login gate and boot straight to the dashboard.
+      // Set back to false (or remove) to restore normal auth redirects.
+      const devSkipAuth = true;
+      if (devSkipAuth) {
+        return state.matchedLocation == '/login' ? '/' : null;
+      }
+
       final isGoingToLogin = state.matchedLocation == '/login';
 
       if (!isLoggedIn && !isGoingToLogin) {

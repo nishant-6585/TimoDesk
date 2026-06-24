@@ -235,6 +235,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         setState(() => _voiceActive = false);
         if (!_resting) _setKind(FaceStateKind.attentive);
         RobotGestures.headCenter(); // reply done → recenter
+        _resetIdle(); // conversation over → restart the return-to-face countdown
         break;
     }
   }
@@ -335,7 +336,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   void _resetIdle() {
     _idle?.cancel();
     _idle = Timer(_idleReturn, () {
-      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+      if (!mounted) return;
+      // Don't auto-return to the face screen while a conversation is live — the
+      // visitor is talking, not touching the screen. Re-check next window; the
+      // session's own idle watchdog closes it on genuine silence, after which this
+      // navigates back (sessionEnded re-arms a fresh countdown).
+      if (_voiceActive) {
+        _resetIdle();
+        return;
+      }
+      Navigator.of(context).popUntil((r) => r.isFirst);
     });
   }
 
@@ -343,6 +353,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _idle?.cancel();
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
     if (mounted) _resetIdle();
+  }
+
+  // Slim banner shown only while a voice session is live: status + an explicit
+  // "End Conversation" control (the shared session is otherwise stopped only from
+  // the face screen). Ends the same session both screens share.
+  Widget _conversationBar() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1412),
+        border: Border(bottom: BorderSide(color: _line)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.graphic_eq_rounded, size: 18, color: _accent),
+        const SizedBox(width: 10),
+        const Text('Conversation active',
+            style: TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w600)),
+        const Spacer(),
+        GestureDetector(
+          onTap: () => widget.voiceAgent.endSession(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5484D),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.stop_rounded, size: 18, color: Colors.white),
+              SizedBox(width: 6),
+              Text('End Conversation',
+                  style: TextStyle(
+                      color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ]),
+    );
   }
 
   // ── Action tiles (§5) ───────────────────────────────────────────────────────
@@ -449,6 +497,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         body: SafeArea(
           child: Column(children: [
             _topBar(),
+            if (_voiceActive) _conversationBar(),
             Expanded(
               child: LayoutBuilder(builder: (context, c) {
                 final w = c.maxWidth;
@@ -497,28 +546,39 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       child: Row(children: [
         _IconBox(icon: Icons.arrow_back_ios_new_rounded, onTap: () => Navigator.of(context).pop()),
         const SizedBox(width: 12),
-        const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text.rich(TextSpan(children: [
-              TextSpan(
-                  text: 'Mikee ',
-                  style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
-              TextSpan(
-                  text: 'Dashboard',
-                  style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w700)),
-            ])),
-            SizedBox(height: 1),
-            Text('RECEPTION HOST',
-                style: TextStyle(
-                    color: _muted2, fontSize: 11, letterSpacing: 1.98, fontWeight: FontWeight.w600)),
-          ],
+        // Flexible so the title yields width to the enlarged language button +
+        // status pills on the right (truncates instead of overflowing the row).
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                      text: 'Mikee ',
+                      style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
+                  TextSpan(
+                      text: 'Dashboard',
+                      style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w700)),
+                ]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 1),
+              Text('RECEPTION HOST',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: _muted2, fontSize: 11, letterSpacing: 1.98, fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 12),
         LanguageButton(
           voiceAgent: widget.voiceAgent,
           dark: true,
+          large: true, // same enlarged style as the face screen
           onReturned: () { if (mounted) setState(() {}); }, // refresh badge
         ),
         const SizedBox(width: 8),

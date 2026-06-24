@@ -735,4 +735,525 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
             height: 104,
             child: AnimatedBuilder(
               animation: _animation,
-              builder
+              builder: (context, _) {
+                final double value = widget.percent == null ? 0 : _animation.value;
+                final Color ringColor = widget.percent == null
+                    ? MikeeColors.textMuted
+                    : value <= 20
+                        ? MikeeColors.error
+                        : value <= 40
+                            ? MikeeColors.warning
+                            : MikeeColors.success;
+                return CustomPaint(
+                  painter: _BatteryRingPainter(progress: value / 100, color: ringColor),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          widget.percent == null ? '—' : '${value.round()}%',
+                          style: GoogleFonts.jetBrainsMono(fontSize: 22, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary),
+                        ),
+                        Text(
+                          widget.charging ? 'charging' : 'on battery',
+                          style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text.rich(TextSpan(
+          text: 'Est. runtime ',
+          style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted),
+          children: [
+            TextSpan(
+              text: widget.percent == null ? '—' : '~${(widget.percent! * 4.2).round()} min',
+              style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textSecondary),
+            ),
+          ],
+        )),
+      ]),
+    );
+  }
+}
+
+/// Circular battery gauge painted behind the percentage readout.
+class _BatteryRingPainter extends CustomPainter {
+  final double progress; // 0..1
+  final Color color;
+
+  _BatteryRingPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width / 2) - 6;
+    final track = Paint()
+      ..color = MikeeColors.border
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, track);
+
+    final arc = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -3.1415926535 / 2,
+      2 * 3.1415926535 * progress.clamp(0.0, 1.0),
+      false,
+      arc,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BatteryRingPainter old) => old.progress != progress || old.color != color;
+}
+
+/// Shared card container — gradient surface, hairline border, rounded corners.
+class _McCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const _McCard({required this.child, this.padding = const EdgeInsets.all(20)});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [MikeeColors.cardTop, MikeeColors.cardBottom],
+        ),
+        border: Border.all(color: MikeeColors.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Small stat card: today's visitor check-ins.
+class _VisitorsCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return _McCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('VISITORS TODAY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+          Icon(Icons.people_alt, size: 18, color: const Color(0xFF3A3A3A)),
+        ]),
+        const SizedBox(height: 12),
+        Text('12', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
+        const SizedBox(height: 4),
+        Text('check-ins since 9:00', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+      ]),
+    );
+  }
+}
+
+/// Small stat card: active admin/control sessions.
+class _SessionsCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return _McCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('ACTIVE SESSIONS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+          Icon(Icons.hub, size: 18, color: const Color(0xFF3A3A3A)),
+        ]),
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Text('1', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.primary)),
+          const SizedBox(width: 6),
+          Text('admin', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
+        ]),
+        const SizedBox(height: 4),
+        Text('this device', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+      ]),
+    );
+  }
+}
+
+/// Live face-recognition banner — driven by [faceDetectionProvider] events.
+class _FaceDetectionCard extends StatelessWidget {
+  final FaceDetection det;
+
+  const _FaceDetectionCard({required this.det});
+
+  @override
+  Widget build(BuildContext context) {
+    final matched = det.matched;
+    final accent = matched ? MikeeColors.success : MikeeColors.warning;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.06),
+        border: Border.all(color: accent.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: accent.withOpacity(0.15)),
+          child: Icon(matched ? Icons.how_to_reg : Icons.person_search, color: accent, size: 24),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              matched ? det.name : 'Unknown visitor',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${matched ? 'Recognized' : 'No match'} · L2 ${det.distance.toStringAsFixed(2)}',
+              style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary),
+            ),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: accent.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+          child: Text(matched ? 'MATCH' : 'CHECK', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: accent)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Live MJPEG camera feed with a status overlay. Reads the robot IP from settings.
+class _LiveFeedWidget extends ConsumerWidget {
+  final bool stopped;
+  final String timeString;
+
+  const _LiveFeedWidget({required this.stopped, required this.timeString});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final robotIp = ref.watch(settingsProvider).robotIp;
+    return _McCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Row(children: [
+              const Icon(Icons.videocam, size: 16, color: MikeeColors.primary),
+              const SizedBox(width: 8),
+              Text('LIVE FEED', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+            ]),
+            Text(timeString, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textMuted)),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(fit: StackFit.expand, children: [
+              Container(
+                color: Colors.black,
+                child: MjpegView(url: robotStreamUrl(robotIp)),
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(6)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: MikeeColors.error)),
+                    const SizedBox(width: 6),
+                    Text('LIVE', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.1, color: Colors.white)),
+                  ]),
+                ),
+              ),
+              if (stopped)
+                Container(
+                  color: Colors.black.withOpacity(0.55),
+                  child: Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.stop_circle, color: MikeeColors.error, size: 40),
+                      const SizedBox(height: 8),
+                      Text('MOTION STOPPED', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.08, color: Colors.white)),
+                    ]),
+                  ),
+                ),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Right-hand control panel: quick actions, head/speed sliders, STOP.
+class _QuickControlsPanel extends StatelessWidget {
+  final bool stopped;
+  final VoidCallback onStop;
+  final void Function(String) onAction;
+  final double headLR;
+  final double speed;
+  final ValueChanged<double> onHeadChange;
+  final ValueChanged<double> onSpeedChange;
+
+  const _QuickControlsPanel({
+    required this.stopped,
+    required this.onStop,
+    required this.onAction,
+    required this.headLR,
+    required this.speed,
+    required this.onHeadChange,
+    required this.onSpeedChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _McCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('QUICK CONTROLS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.photo_camera, label: 'Snapshot', onTap: stopped ? null : () => onAction('snapshot'))),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.waving_hand, label: 'Wave', onTap: stopped ? null : () => onAction('wave'))),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.home, label: 'Home', onTap: stopped ? null : () => onAction('home'))),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.sports_esports, label: 'Control', onTap: () => onAction('control'))),
+        ]),
+        const SizedBox(height: 18),
+        _SliderRow(label: 'Head L/R', value: headLR, min: 0, max: 100, suffix: headLR.round().toString(), enabled: !stopped, onChanged: onHeadChange),
+        const SizedBox(height: 12),
+        _SliderRow(label: 'Speed', value: speed, min: 0, max: 1, suffix: '${(speed * 100).round()}%', enabled: !stopped, onChanged: onSpeedChange),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: Material(
+            color: stopped ? MikeeColors.success : MikeeColors.error,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onStop,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(stopped ? Icons.play_arrow : Icons.stop, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text(stopped ? 'RESUME MOTION' : 'EMERGENCY STOP', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: Colors.white)),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _ActionButton({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Material(
+      color: MikeeColors.inset,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)),
+          child: Column(children: [
+            Icon(icon, size: 20, color: disabled ? MikeeColors.textMuted : MikeeColors.primary),
+            const SizedBox(height: 6),
+            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: disabled ? MikeeColors.textMuted : MikeeColors.textSecondary)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String suffix;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
+  const _SliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.suffix,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
+        Text(suffix, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: enabled ? MikeeColors.textPrimary : MikeeColors.textMuted)),
+      ]),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: MikeeColors.primary,
+          inactiveTrackColor: MikeeColors.border,
+          thumbColor: MikeeColors.primary,
+          overlayColor: MikeeColors.primary.withOpacity(0.15),
+          trackHeight: 4,
+        ),
+        child: Slider(
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          onChanged: enabled ? onChanged : null,
+        ),
+      ),
+    ]);
+  }
+}
+
+/// Recent-events list shown on the dashboard.
+class _EventStreamWidget extends StatelessWidget {
+  final List<EventModel> events;
+
+  const _EventStreamWidget({required this.events});
+
+  @override
+  Widget build(BuildContext context) {
+    return _McCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('EVENT STREAM', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+            child: Text('LIVE', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: MikeeColors.success)),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        if (events.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('No recent events', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textMuted)),
+          )
+        else
+          ...events.map((e) {
+            final color = eventColorMap[e.type] ?? MikeeColors.textMuted;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(margin: const EdgeInsets.only(top: 5), width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(e.type, style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500, color: MikeeColors.textPrimary)),
+                    Text(e.details, style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text(e.ago, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
+                  Text(e.session, style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF4A4A4A))),
+                ]),
+              ]),
+            );
+          }),
+      ]),
+    );
+  }
+}
+
+/// Circular STOP / RESUME button anchored bottom-right.
+class _FloatingStopButton extends StatelessWidget {
+  final bool stopped;
+  final VoidCallback onStop;
+
+  const _FloatingStopButton({required this.stopped, required this.onStop});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = stopped ? MikeeColors.success : MikeeColors.error;
+    return Material(
+      color: color,
+      shape: const CircleBorder(),
+      elevation: 6,
+      shadowColor: color.withOpacity(0.5),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onStop,
+        child: SizedBox(
+          width: 60,
+          height: 60,
+          child: Icon(stopped ? Icons.play_arrow : Icons.stop, color: Colors.white, size: 30),
+        ),
+      ),
+    );
+  }
+}
+
+/// Transient toast overlay stacked at the bottom-left of the screen.
+class _ToastStack extends StatelessWidget {
+  final List<ToastModel> toasts;
+
+  const _ToastStack({required this.toasts});
+
+  @override
+  Widget build(BuildContext context) {
+    if (toasts.isEmpty) return const SizedBox.shrink();
+    return Positioned(
+      left: 24,
+      bottom: 24,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: toasts.map((t) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: MikeeColors.cardTop,
+                border: Border.all(color: t.color.withOpacity(0.4)),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 16)],
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(t.icon, size: 18, color: t.color),
+                const SizedBox(width: 10),
+                Text(t.message, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: MikeeColors.textPrimary)),
+              ]),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}

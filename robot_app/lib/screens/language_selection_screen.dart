@@ -195,15 +195,18 @@ class LanguageButton extends StatelessWidget {
     required this.voiceAgent,
     this.onReturned,
     this.dark = false,
+    this.large = false,
   });
 
   final VoiceAgent voiceAgent;
   final VoidCallback? onReturned;
   final bool dark; // darker chrome for the dashboard top bar
+  final bool large; // bigger, more discoverable variant (ambient face screen)
 
   @override
   Widget build(BuildContext context) {
-    final code = RobotConfig.voiceLanguageCode.toUpperCase();
+    final lang = languageForCode(RobotConfig.voiceLanguageCode);
+    final code = lang.code.toUpperCase();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
@@ -213,24 +216,40 @@ class LanguageButton extends StatelessWidget {
         onReturned?.call();
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: large
+            ? const EdgeInsets.symmetric(horizontal: 18, vertical: 12)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: dark ? const Color(0xFF171717) : Colors.black.withValues(alpha: 0.35),
-          border: Border.all(color: dark ? _line : Colors.white24),
+          color: dark ? const Color(0xFF171717) : Colors.black.withValues(alpha: 0.40),
+          border: Border.all(
+              color: dark ? _line : Colors.white30, width: large ? 1.5 : 1),
           borderRadius: BorderRadius.circular(99),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.language_rounded, size: 18, color: _ink),
-          const SizedBox(width: 6),
+          Icon(Icons.language_rounded, size: large ? 30 : 18, color: _ink),
+          SizedBox(width: large ? 12 : 6),
+          // Big variant shows the flag + name so visitors recognise it as a
+          // language switch, not just an icon.
+          if (large) ...[
+            Text(lang.flag, style: const TextStyle(fontSize: 24)),
+            const SizedBox(width: 10),
+            Text(lang.name,
+                style: const TextStyle(
+                    color: _ink, fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 12),
+          ],
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: EdgeInsets.symmetric(
+                horizontal: large ? 10 : 6, vertical: large ? 5 : 2),
             decoration: BoxDecoration(
               color: _accent,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(large ? 8 : 6),
             ),
             child: Text(code,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: large ? 15 : 10,
+                    fontWeight: FontWeight.w800)),
           ),
         ]),
       ),

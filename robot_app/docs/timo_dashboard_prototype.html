@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280, initial-scale=1">
+<title>Timo Dashboard — Prototype</title>
+<style>
+  /* ── Tokens ─────────────────────────────────────────────── */
+  :root {
+    --bg:        #0F0F0F;
+    --surf:      #1A1A1A;
+    --surf2:     #222222;
+    --border:    #2A2A2A;
+    --orange:    #FF6B35;
+    --orange15:  rgba(255,107,53,.15);
+    --orange30:  rgba(255,107,53,.30);
+    --eye:       #FFE3CE;
+    --txt:       #FFFFFF;
+    --txt60:     rgba(255,255,255,.60);
+    --txt35:     rgba(255,255,255,.35);
+    --txt15:     rgba(255,255,255,.15);
+    --green:     #4ADE80;
+    --amber:     #FBBF24;
+    --red:       #EF4444;
+    --nav-w:     210px;
+    --ctrl-w:    230px;
+    --bar-h:     52px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: var(--bar-h) 1fr;
+    grid-template-columns: var(--nav-w) 1fr var(--ctrl-w);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Top bar ────────────────────────────────────────────── */
+  #topbar {
+    grid-column: 1 / -1;
+    background: var(--surf);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+  }
+
+  #topbar .back-btn {
+    width: 32px; height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surf2);
+    color: var(--txt60);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: border-color .15s, color .15s;
+  }
+  #topbar .back-btn:hover { border-color: var(--orange); color: var(--orange); }
+
+  #topbar .title-block { display: flex; flex-direction: column; gap: 1px; }
+  #topbar .title-block .robot-name {
+    font-size: 15px; font-weight: 700; color: var(--orange); letter-spacing: .3px;
+  }
+  #topbar .title-block .robot-role {
+    font-size: 9px; font-weight: 600; letter-spacing: 2px; color: var(--txt35);
+    text-transform: uppercase;
+  }
+
+  #topbar .divider { width: 1px; height: 28px; background: var(--border); margin: 0 4px; }
+  #topbar .spacer { flex: 1; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px; font-weight: 600;
+  }
+  .status-pill .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .status-pill .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-pill .dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+  #battery {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; color: var(--txt60);
+  }
+  #battery-bar {
+    width: 28px; height: 12px;
+    border: 1.5px solid var(--txt35); border-radius: 3px;
+    position: relative; overflow: visible;
+  }
+  #battery-bar::after {
+    content: ''; position: absolute;
+    right: -4px; top: 50%; transform: translateY(-50%);
+    width: 2px; height: 5px; background: var(--txt35); border-radius: 0 1px 1px 0;
+  }
+  #battery-fill {
+    position: absolute; left: 1px; top: 1px; bottom: 1px;
+    width: calc(92% - 2px);
+    background: var(--green); border-radius: 1px;
+  }
+
+  #clock {
+    font-size: 14px; font-weight: 700; letter-spacing: .5px;
+    color: var(--txt); min-width: 44px; text-align: right;
+  }
+
+  /* ── Left nav rail ──────────────────────────────────────── */
+  #nav {
+    grid-row: 2;
+    background: var(--surf);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 12px 10px;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .nav-section-label {
+    font-size: 8px; font-weight: 700; letter-spacing: 2.5px;
+    color: var(--txt15); text-transform: uppercase;
+    padding: 8px 8px 4px;
+  }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .12s, color .12s;
+    color: var(--txt60);
+    font-size: 13px; font-weight: 500;
+    position: relative;
+  }
+  .nav-item .nav-icon {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .nav-item:hover { background: var(--surf2); color: var(--txt); }
+  .nav-item.active {
+    background: var(--orange15);
+    color: var(--orange);
+    font-weight: 600;
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute; left: 0; top: 25%; bottom: 25%;
+    width: 3px; border-radius: 0 2px 2px 0;
+    background: var(--orange);
+  }
+  .nav-item.soon { opacity: .38; pointer-events: none; }
+  .nav-item.soon .soon-tag {
+    margin-left: auto;
+    font-size: 7px; font-weight: 700; letter-spacing: 1px;
+    color: var(--txt35); text-transform: uppercase;
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 4px;
+  }
+
+  .nav-divider { height: 1px; background: var(--border); margin: 8px 4px; }
+  .nav-spacer { flex: 1; }
+
+  .nav-toggle {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 10px;
+    border-radius: 10px;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    font-size: 12px; font-weight: 500; color: var(--txt60);
+  }
+  .nav-toggle .toggle-label { flex: 1; font-size: 11px; }
+  .toggle-switch {
+    width: 34px; height: 18px;
+    background: var(--orange);
+    border-radius: 9px;
+    position: relative;
+    cursor: pointer;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .toggle-switch.off { background: var(--border); }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    background: #fff; border-radius: 50%;
+    transition: transform .2s;
+  }
+  .toggle-switch.on::after { transform: translateX(16px); }
+
+  /* ── Center: face + conversation ────────────────────────── */
+  #center {
+    grid-row: 2;
+    display: flex; flex-direction: column;
+    align-items: center;
+    padding: 16px 20px 14px;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  /* Face panel */
+  #face-panel {
+    position: relative;
+    flex-shrink: 0;
+  }
+  #face-canvas {
+    display: block;
+    border-radius: 22px;
+    overflow: hidden;
+  }
+  #state-chip {
+    position: absolute;
+    bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(15,15,15,.82);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px; white-space: nowrap;
+  }
+  #state-chip .state-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--orange); box-shadow: 0 0 6px var(--orange);
+    flex-shrink: 0;
+  }
+  #state-chip .state-name { font-weight: 700; color: var(--orange); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; }
+  #state-chip .state-desc { color: var(--txt60); font-size: 9px; }
+
+  /* Conversation panel */
+  #convo-panel {
+    flex: 1; min-height: 0;
+    width: 100%;
+    max-width: 560px;
+    background: var(--surf);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  #messages {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 14px 14px 8px;
+    display: flex; flex-direction: column; gap: 8px;
+    scroll-behavior: smooth;
+  }
+  #messages::-webkit-scrollbar { width: 3px; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .bubble {
+    max-width: 82%;
+    padding: 9px 13px;
+    border-radius: 14px;
+    font-size: 13px; line-height: 1.45;
+    animation: bubbleIn .18s ease-out;
+  }
+  @keyframes bubbleIn {
+    from { opacity: 0; transform: translateY(6px) scale(.97); }
+    to   { opacity: 1; transform: none; }
+  }
+  .bubble.mikee {
+    align-self: flex-start;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+    color: var(--txt);
+  }
+  .bubble.mikee .bubble-sender {
+    font-size: 9px; font-weight: 700; color: var(--orange);
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px;
+  }
+  .bubble.visitor {
+    align-self: flex-end;
+    background: var(--orange15);
+    border: 1px solid var(--orange30);
+    border-bottom-right-radius: 4px;
+    color: var(--txt);
+  }
+
+  /* Suggestion chips */
+  #chips {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 0 14px 10px;
+  }
+  .chip {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 11px; color: var(--txt60);
+    cursor: pointer;
+    transition: border-color .12s, color .12s, background .12s;
+  }
+  .chip:hover { border-color: var(--orange); color: var(--orange); background: var(--orange15); }
+
+  /* Input bar */
+  #input-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+  #msg-input {
+    flex: 1;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--txt);
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color .15s;
+    font-family: inherit;
+  }
+  #msg-input::placeholder { color: var(--txt35); }
+  #msg-input:focus { border-color: var(--orange30); }
+
+  .input-btn {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surf2);
+    color: var(--txt60);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    transition: background .12s, border-color .12s, color .12s;
+    flex-shrink: 0;
+  }
+  .input-btn:hover { border-color: var(--orange); color: var(--orange); background: var(--orange15); }
+  .input-btn.send { background: var(--orange); border-color: var(--orange); color: #fff; }
+  .input-btn.send:hover { background: #e85a25; }
+  #mic-btn.recording {
+    background: rgba(239,68,68,.15);
+    border-color: var(--red);
+    color: var(--red);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+
+  /* ── Right: quick controls ──────────────────────────────── */
+  #controls {
+    grid-row: 2;
+    background: var(--surf);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 12px 12px 12px;
+    gap: 10px;
+    overflow-y: auto;
+  }
+  #controls::-webkit-scrollbar { display: none; }
+
+  .ctrl-section {
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 10px 12px;
+  }
+  .ctrl-label {
+    font-size: 8px; font-weight: 700; letter-spacing: 2.5px;
+    color: var(--txt35); text-transform: uppercase;
+    margin-bottom: 8px; padding: 0 2px;
+  }
+
+  /* Nudge pad (3×3 grid) */
+  .nudge-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .nudge-btn {
+    height: 38px;
+    background: var(--surf);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt60);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: background .1s, border-color .1s, color .1s;
+  }
+  .nudge-btn:hover:not(.center) { background: var(--orange15); border-color: var(--orange); color: var(--orange); }
+  .nudge-btn:active:not(.center) { background: var(--orange30); }
+  .nudge-btn.center {
+    color: var(--txt35); font-size: 10px;
+    font-weight: 700; letter-spacing: .5px;
+    cursor: default;
+  }
+  .nudge-btn.empty { background: transparent; border-color: transparent; cursor: default; }
+
+  /* D-pad */
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .dpad-btn {
+    height: 40px;
+    background: var(--surf);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt60);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: background .1s, border-color .1s, color .1s;
+    -webkit-user-select: none;
+  }
+  .dpad-btn:hover:not(.stop) { background: var(--orange15); border-color: var(--orange); color: var(--orange); }
+  .dpad-btn:active:not(.stop) { background: var(--orange30); }
+  .dpad-btn.stop {
+    background: rgba(239,68,68,.08);
+    border-color: rgba(239,68,68,.25);
+    color: var(--red);
+    font-size: 12px; font-weight: 700;
+  }
+  .dpad-btn.stop:hover { background: rgba(239,68,68,.18); border-color: var(--red); }
+
+  /* Speed slider */
+  .speed-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  }
+  .speed-label { font-size: 9px; color: var(--txt35); font-weight: 600; min-width: 36px; }
+  input[type=range] {
+    flex: 1; height: 3px;
+    -webkit-appearance: none; appearance: none;
+    background: var(--border); border-radius: 2px; outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 6px var(--orange30);
+    cursor: pointer;
+  }
+
+  /* Arm buttons */
+  .arm-row {
+    display: flex; gap: 6px;
+  }
+  .arm-btn {
+    flex: 1; height: 36px;
+    background: var(--surf);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt60);
+    font-size: 11px; font-weight: 600;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .arm-btn:hover { background: var(--orange15); border-color: var(--orange); color: var(--orange); }
+
+  /* E-Stop */
+  #estop {
+    width: 100%; padding: 12px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(239,68,68,.35);
+    background: rgba(239,68,68,.08);
+    color: var(--red);
+    font-size: 12px; font-weight: 800;
+    letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .12s, border-color .12s;
+  }
+  #estop:hover { background: rgba(239,68,68,.18); border-color: var(--red); }
+  #estop.stopped {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+    animation: estopFlash .5s ease-in-out 2;
+  }
+  @keyframes estopFlash { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+  #estop-badge {
+    margin-left: auto;
+    font-size: 8px; padding: 2px 6px;
+    border-radius: 4px; background: rgba(239,68,68,.2);
+    letter-spacing: 1px;
+  }
+  #estop.stopped #estop-badge { background: rgba(255,255,255,.25); color: #fff; }
+
+  .ctrl-spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ──────────────────────────────────────────────── -->
+<div id="topbar">
+  <button class="back-btn" onclick="window.history.back()" title="Back to face">←</button>
+  <div class="title-block">
+    <div class="robot-name">Timo</div>
+    <div class="robot-role">Reception Host</div>
+  </div>
+  <div class="divider"></div>
+  <div class="spacer"></div>
+
+  <div class="status-pill">
+    <span class="dot green"></span>
+    <span>SDK Online</span>
+  </div>
+  <div class="status-pill" id="perception-pill">
+    <span class="dot amber"></span>
+    <span>Perception On</span>
+  </div>
+  <div id="battery">
+    <div id="battery-bar"><div id="battery-fill"></div></div>
+    92%
+  </div>
+  <div id="clock">--:--</div>
+</div>
+
+<!-- ── Left nav ─────────────────────────────────────────────── -->
+<nav id="nav">
+  <div class="nav-section-label">Main</div>
+
+  <div class="nav-item active" onclick="setActive(this)">
+    <span class="nav-icon">🏠</span> Home
+  </div>
+  <div class="nav-item" onclick="setActive(this); openScreen('Enroll Staff')">
+    <span class="nav-icon">👤</span> Enroll Staff
+  </div>
+  <div class="nav-item" onclick="setActive(this); openScreen('Robot Status')">
+    <span class="nav-icon">📊</span> Robot Status
+  </div>
+  <div class="nav-item" onclick="setActive(this); openScreen('Manual Control')">
+    <span class="nav-icon">🕹️</span> Manual Control
+  </div>
+  <div class="nav-item" onclick="setActive(this); openScreen('Settings')">
+    <span class="nav-icon">⚙️</span> Settings
+  </div>
+
+  <div class="nav-divider"></div>
+  <div class="nav-section-label">Services</div>
+
+  <div class="nav-item soon">
+    <span class="nav-icon">🎤</span> Voice Q&A
+    <span class="soon-tag">Soon</span>
+  </div>
+  <div class="nav-item soon">
+    <span class="nav-icon">💳</span> Pay
+    <span class="soon-tag">Soon</span>
+  </div>
+  <div class="nav-item soon">
+    <span class="nav-icon">🗺️</span> Navigate
+    <span class="soon-tag">Soon</span>
+  </div>
+  <div class="nav-item soon">
+    <span class="nav-icon">📒</span> Directory
+    <span class="soon-tag">Soon</span>
+  </div>
+
+  <div class="nav-spacer"></div>
+
+  <div class="nav-toggle">
+    <span style="font-size:13px">👁️</span>
+    <span class="toggle-label">Live Perception</span>
+    <div class="toggle-switch on" id="perception-toggle" onclick="togglePerception()"></div>
+  </div>
+</nav>
+
+<!-- ── Center: face + conversation ──────────────────────────── -->
+<main id="center">
+
+  <!-- Face -->
+  <div id="face-panel">
+    <canvas id="face-canvas" width="280" height="230"></canvas>
+    <div id="state-chip">
+      <div class="state-dot" id="state-dot"></div>
+      <span class="state-name" id="state-name">IDLE</span>
+      <span class="state-desc" id="state-desc">· relaxed, watching the room</span>
+    </div>
+  </div>
+
+  <!-- Conversation -->
+  <div id="convo-panel">
+    <div id="messages">
+      <div class="bubble mikee">
+        <div class="bubble-sender">Timo</div>
+        Hi! I'm Timo, XBoom's reception assistant. How can I help you today?
+      </div>
+    </div>
+    <div id="chips">
+      <div class="chip" onclick="sendChip('I'd like to meet someone.')">Meet someone</div>
+      <div class="chip" onclick="sendChip('What\\'s the WiFi password?')">WiFi</div>
+      <div class="chip" onclick="sendChip('Tell me about XBoom.')">About XBoom</div>
+      <div class="chip" onclick="sendChip('Where is the restroom?')">Restroom</div>
+    </div>
+    <div id="input-bar">
+      <input id="msg-input" type="text" placeholder="Type a message…"
+             onkeydown="if(event.key==='Enter')sendMessage()">
+      <button class="input-btn" id="mic-btn" onclick="toggleMic()" title="Hold to speak">🎤</button>
+      <button class="input-btn send" onclick="sendMessage()" title="Send">➤</button>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Right: quick controls ─────────────────────────────────── -->
+<aside id="controls">
+
+  <!-- Head -->
+  <div class="ctrl-section">
+    <div class="ctrl-label">Head</div>
+    <div class="nudge-pad">
+      <div class="nudge-btn empty"></div>
+      <div class="nudge-btn" onclick="nudge('up')" title="Tilt up">▲</div>
+      <div class="nudge-btn empty"></div>
+      <div class="nudge-btn" onclick="nudge('left')" title="Pan left">◀</div>
+      <div class="nudge-btn center">CTR</div>
+      <div class="nudge-btn" onclick="nudge('right')" title="Pan right">▶</div>
+      <div class="nudge-btn empty"></div>
+      <div class="nudge-btn" onclick="nudge('down')" title="Tilt down">▼</div>
+      <div class="nudge-btn empty"></div>
+    </div>
+  </div>
+
+  <!-- Chassis -->
+  <div class="ctrl-section">
+    <div class="ctrl-label">Chassis</div>
+    <div class="dpad">
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" onmousedown="driveStart('fwd')" onmouseup="driveStop()" title="Forward">▲</div>
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" onmousedown="driveStart('left')" onmouseup="driveStop()" title="Turn left">◀</div>
+      <div class="dpad-btn stop" onmousedown="driveStop()" title="Stop">STOP</div>
+      <div class="dpad-btn" onmousedown="driveStart('right')" onmouseup="driveStop()" title="Turn right">▶</div>
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" onmousedown="driveStart('back')" onmouseup="driveStop()" title="Reverse">▼</div>
+      <div class="dpad-btn empty"></div>
+    </div>
+    <div class="speed-row">
+      <span class="speed-label">Speed</span>
+      <input type="range" min="1" max="5" value="2" id="speed-slider">
+      <span class="speed-label" id="speed-val" style="text-align:right">2 / 5</span>
+    </div>
+  </div>
+
+  <!-- Arms -->
+  <div class="ctrl-section">
+    <div class="ctrl-label">Arms</div>
+    <div class="arm-row">
+      <button class="arm-btn" onclick="wave()">👋 Wave</button>
+      <button class="arm-btn" onclick="armReset()">↺ Reset</button>
+    </div>
+  </div>
+
+  <div class="ctrl-spacer"></div>
+
+  <!-- E-Stop -->
+  <button id="estop" onclick="toggleEstop()">
+    🛑 Emergency Stop
+    <span id="estop-badge">ACTIVE</span>
+  </button>
+
+</aside>
+
+<script>
+// ── Clock ──────────────────────────────────────────────────────
+function tick() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}`;
+}
+tick(); setInterval(tick, 10000);
+
+// ── Speed slider ───────────────────────────────────────────────
+document.getElementById('speed-slider').addEventListener('input', function() {
+  document.getElementById('speed-val').textContent = `${this.value} / 5`;
+});
+
+// ── Nav active state ───────────────────────────────────────────
+function setActive(el) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+function openScreen(name) {
+  // In real app: Navigator.push. Here just flash the face.
+  setFaceState('attentive');
+  setTimeout(() => setFaceState('idle'), 1200);
+}
+
+// ── Perception toggle ──────────────────────────────────────────
+function togglePerception() {
+  const t = document.getElementById('perception-toggle');
+  const pill = document.getElementById('perception-pill');
+  t.classList.toggle('on'); t.classList.toggle('off');
+  const on = t.classList.contains('on');
+  pill.querySelector('.dot').className = `dot ${on ? 'amber' : ''}`;
+  if (!on) pill.querySelector('.dot').style.background = 'var(--txt35)';
+}
+
+// ── E-stop ─────────────────────────────────────────────────────
+let stopped = false;
+function toggleEstop() {
+  stopped = !stopped;
+  const btn = document.getElementById('estop');
+  const badge = document.getElementById('estop-badge');
+  btn.classList.toggle('stopped', stopped);
+  badge.textContent = stopped ? 'STOPPED' : 'ACTIVE';
+}
+
+// ── Drive ──────────────────────────────────────────────────────
+function driveStart(dir) { if (!stopped) setFaceState('attentive'); }
+function driveStop() { setFaceState('idle'); }
+
+// ── Head nudge ─────────────────────────────────────────────────
+function nudge(dir) {
+  // Visual only in prototype — flashes face
+  setFaceState('attentive');
+  setTimeout(() => setFaceState('idle'), 600);
+}
+
+// ── Arm ────────────────────────────────────────────────────────
+function wave() {
+  setFaceState('greeting');
+  setTimeout(() => setFaceState('idle'), 2000);
+}
+function armReset() {
+  setFaceState('idle');
+}
+
+// ── Conversation ────────────────────────────────────────────────
+const RESPONSES = {
+  default: "I'd be happy to help! For anything specific, you can also ask me using the voice button.",
+  meet: "I'll let them know you're here! Could you tell me your name and who you're meeting?",
+  wifi: "Our guest WiFi is: Network: XBoom-Guest • Password: welcome2xboom. Let me know if you need any help connecting!",
+  xboom: "XBoom is an innovative drone and electronics company based right here. We design, build, and deploy drones for commercial and industrial use. Feel free to ask me anything!",
+  restroom: "The restrooms are down the hallway to your left, just past the meeting rooms. Is there anything else I can help you with?",
+};
+
+function getResponse(text) {
+  const t = text.toLowerCase();
+  if (t.includes('meet') || t.includes('someone') || t.includes('appointment')) return RESPONSES.meet;
+  if (t.includes('wifi') || t.includes('wi-fi') || t.includes('internet') || t.includes('password')) return RESPONSES.wifi;
+  if (t.includes('xboom') || t.includes('company') || t.includes('about') || t.includes('drone')) return RESPONSES.xboom;
+  if (t.includes('restroom') || t.includes('toilet') || t.includes('bathroom') || t.includes('washroom')) return RESPONSES.restroom;
+  return RESPONSES.default;
+}
+
+function addBubble(text, role) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = `bubble ${role}`;
+  if (role === 'mikee') {
+    div.innerHTML = `<div class="bubble-sender">Timo</div>${escHtml(text)}`;
+  } else {
+    div.textContent = text;
+  }
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  doSend(text);
+}
+
+function sendChip(text) { doSend(text); }
+
+function doSend(text) {
+  addBubble(text, 'visitor');
+  setFaceState('listening');
+  // Hide chips after first send
+  document.getElementById('chips').style.display = 'none';
+  setTimeout(() => {
+    setFaceState('thinking');
+    setTimeout(() => {
+      const reply = getResponse(text);
+      setFaceState('speaking');
+      addBubble(reply, 'mikee');
+      // Simulate speaking duration
+      setTimeout(() => setFaceState('attentive'), 2200 + reply.length * 18);
+    }, 900 + Math.random() * 400);
+  }, 600);
+}
+
+// ── Mic button ─────────────────────────────────────────────────
+let micOn = false;
+function toggleMic() {
+  micOn = !micOn;
+  const btn = document.getElementById('mic-btn');
+  btn.classList.toggle('recording', micOn);
+  if (micOn) {
+    setFaceState('listening');
+    btn.title = 'Stop recording';
+  } else {
+    setFaceState('thinking');
+    setTimeout(() => {
+      setFaceState('speaking');
+      addBubble("I heard you! In the real robot, your voice goes to ElevenLabs and I'd reply aloud. For now — try typing your message.", 'mikee');
+      setTimeout(() => setFaceState('attentive'), 2500);
+    }, 1000);
+    btn.title = 'Hold to speak';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ── Beam Face Engine (ported from mikee_face_prototype.html) ──────
+// ─────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('face-canvas');
+const ctx = canvas.getContext('2d');
+
+const C = {
+  bg: '#0F0F0F', eye: '#FFE3CE', accent: '#FF6B35',
+  pupil: '#3A1604', mouthFill: '#5A1E06', tongue: '#FF6B35',
+};
+
+// LiveState
+let live = {
+  openL:1, openR:1, browY:0, browTilt:0,
+  mouthCurve:0.1, mouthOpen:0, eyeArc:0, eyeScale:1,
+  glow:0.2, dim:1, squint:0, bounce:0,
+  gx:0, gy:0, dots:0, ring:0, headTilt:0, breath:0, asym:0, t:0,
+};
+
+// Targets for each face state
+const POSES = {
+  idle:      { openL:1,   openR:1,   browY:0,  browTilt:0,   mouthCurve:0.1, mouthOpen:0,    eyeArc:0,   glow:0.15, dim:0.85, squint:0,    dots:0, ring:0, bounce:0 },
+  attentive: { openL:1,   openR:1,   browY:-1, browTilt:-0.1,mouthCurve:0.2, mouthOpen:0,    eyeArc:0,   glow:0.4,  dim:1,    squint:0,    dots:0, ring:0, bounce:0 },
+  greeting:  { openL:1.2, openR:1.2, browY:-2, browTilt:0,   mouthCurve:0.8, mouthOpen:0,    eyeArc:0.9, glow:0.7,  dim:1,    squint:0.35, dots:0, ring:0, bounce:1 },
+  listening: { openL:1.1, openR:1.1, browY:-1, browTilt:0.1, mouthCurve:0.1, mouthOpen:0.04, eyeArc:0,   glow:0.5,  dim:1,    squint:0,    dots:0, ring:0.9, bounce:0 },
+  thinking:  { openL:0.7, openR:0.7, browY:1,  browTilt:0.4, mouthCurve:-0.1,mouthOpen:0,    eyeArc:0,   glow:0.3,  dim:0.9,  squint:0.2,  dots:0.9, ring:0, bounce:0, gxBias:-0.5, gyBias:-0.35 },
+  speaking:  { openL:1,   openR:1,   browY:-0.5,browTilt:0,  mouthCurve:0.4, mouthOpen:0.3,  eyeArc:0,   glow:0.55, dim:1,    squint:0,    dots:0, ring:0, bounce:0 },
+  sleepy:    { openL:0.25,openR:0.25,browY:2,  browTilt:0,   mouthCurve:0.05,mouthOpen:0,    eyeArc:0,   glow:0.05, dim:0.5,  squint:0,    dots:0, ring:0, bounce:0 },
+};
+
+let currentPose = 'idle';
+let poseGxBias = 0, poseGyBias = 0;
+let wanderT = 0;
+let blinkTimer = scheduleBlink();
+let speakPhase = 0;
+let lastFrame = null;
+
+function scheduleBlink() { return 2400 + Math.random() * 3600; }
+
+function setFaceState(name) {
+  if (!POSES[name]) return;
+  currentPose = name;
+  poseGxBias = POSES[name].gxBias || 0;
+  poseGyBias = POSES[name].gyBias || 0;
+  // Update chip
+  const labels = {
+    idle: ['IDLE', '· relaxed, watching the room'],
+    attentive: ['READY', '· someone is nearby'],
+    greeting: ['GREETING', '· welcoming a visitor'],
+    listening: ['LISTENING', '· hearing you…'],
+    thinking: ['THINKING', '· processing…'],
+    speaking: ['SPEAKING', '· responding'],
+    sleepy: ['SLEEPY', '· power saving'],
+  };
+  const info = labels[name] || ['IDLE',''];
+  document.getElementById('state-name').textContent = info[0];
+  document.getElementById('state-desc').textContent = info[1];
+}
+
+// Smooth lerp helper
+function lerp(v, t, k, dt) {
+  return v + (t - v) * (1 - Math.exp(-dt * k));
+}
+
+function animate(ts) {
+  const dt = lastFrame ? Math.min((ts - lastFrame) / 1000, 0.05) : 0.016;
+  lastFrame = ts;
+  live.t += dt;
+  wanderT += dt;
+  speakPhase += dt;
+  blinkTimer -= dt * 1000;
+
+  const pose = POSES[currentPose];
+  const k = 9;
+
+  // Lerp all fields
+  for (const key of ['openL','openR','browY','browTilt','mouthCurve','eyeArc','eyeScale','glow','dim','squint','bounce','dots','ring','headTilt','breath','asym']) {
+    if (pose[key] !== undefined) live[key] = lerp(live[key], pose[key], k, dt);
+  }
+
+  // Mouth open: speaking = lip-sync, else pose target
+  if (currentPose === 'speaking') {
+    const lipSync = 0.5 + 0.32 * Math.sin(15 * live.t) + 0.16 * Math.sin(8.3 * live.t + 1);
+    live.mouthOpen = lerp(live.mouthOpen, lipSync, 22, dt);
+  } else {
+    live.mouthOpen = lerp(live.mouthOpen, pose.mouthOpen, k, dt);
+  }
+
+  // Blink
+  if (blinkTimer <= 0) {
+    live.openL = 0.04; live.openR = 0.04;
+    blinkTimer = scheduleBlink();
+    setTimeout(() => { live.openL = pose.openL; live.openR = pose.openR; }, 180);
+  }
+
+  // Idle wander
+  const wx = Math.sin(wanderT * 0.31) * 0.40 + Math.sin(wanderT * 0.17) * 0.18;
+  const wy = Math.cos(wanderT * 0.23) * 0.28 + Math.cos(wanderT * 0.41) * 0.12;
+  const gxTarget = poseGxBias + (currentPose === 'idle' || currentPose === 'attentive' ? wx : 0);
+  const gyTarget = poseGyBias + (currentPose === 'idle' || currentPose === 'attentive' ? wy : 0);
+  live.gx = lerp(live.gx, gxTarget, 4, dt);
+  live.gy = lerp(live.gy, gyTarget, 4, dt);
+
+  // Breath
+  live.bounce = Math.sin(live.t * 1.2) * 0.5 * (currentPose === 'idle' ? 1 : 0.3);
+
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ── Drawing ──────────────────────────────────────────────────────
+const W = canvas.width, H = canvas.height;
+const S = Math.min(W, H) / 100;
+
+function glow(sigma, alpha, fn) {
+  ctx.save();
+  ctx.shadowBlur = sigma * 2.5;
+  ctx.shadowColor = `rgba(255,107,53,${alpha})`;
+  fn();
+  ctx.restore();
+  fn();
+}
+
+function shade(hex, m) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.min(255,r*m)|0},${Math.min(255,g*m)|0},${Math.min(255,b*m)|0})`;
+}
+
+function withAlpha(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H / 2 + live.bounce * S;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(live.headTilt * 0.12);
+
+  const eyeGap = 26 * S;
+  const eyeY = -8 * S;
+  const mouthY = 26 * S;
+
+  // Ring (listening)
+  if (live.ring > 0.02) {
+    const pr = (44 + Math.sin(live.t * 3.2) * 4) * S;
+    const ringA = (live.ring * (0.18 + 0.12 * Math.sin(live.t * 3.2))).clamp01();
+    ctx.save();
+    ctx.strokeStyle = withAlpha(C.accent, ringA);
+    ctx.lineWidth = 2.5 * S;
+    ctx.beginPath(); ctx.arc(0, 6 * S, pr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawBrow(ctx, -eyeGap, eyeY, S, -1);
+  drawBrow(ctx, eyeGap, eyeY, S, 1);
+  drawEye(ctx, -eyeGap, eyeY, S, -1);
+  drawEye(ctx, eyeGap, eyeY, S, 1);
+  drawMouth(ctx, 0, mouthY, S);
+
+  if (live.dots > 0.02) drawDots(ctx, eyeGap + 16 * S, eyeY - 30 * S, S);
+
+  ctx.restore();
+
+  // Scanlines
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.05)';
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+}
+
+function drawEye(c, ox, oy, s, side) {
+  const baseW = 19 * s * live.eyeScale;
+  const baseH = 24 * s * live.eyeScale;
+  let open = side < 0 ? live.openL : live.openR;
+  open = Math.max(0.04, Math.min(open, 1.3));
+  const h = baseH * (1 - live.squint * 0.35) * Math.min(open, 1.25);
+  const w = baseW;
+  const rad = 7 * s;
+  const arc = live.eyeArc;
+  const dim = live.dim;
+  const col = shade(C.eye, dim);
+  const sigma = (0.5 + live.glow) * 8 * s;
+
+  const rrX = ox - w / 2, rrY = oy - h / 2;
+
+  // Normal eye
+  if (arc < 0.985) {
+    const a = Math.max(0, 1 - arc);
+    glow(sigma, dim * a * 0.6, () => {
+      c.fillStyle = withAlpha(col, a);
+      roundRect(c, rrX, rrY, w, h, rad);
+      c.fill();
+    });
+
+    // Iris / pupil / catchlight
+    c.save();
+    c.beginPath();
+    roundRect(c, rrX, rrY, w, h, rad);
+    c.clip();
+    const gx = Math.max(-1, Math.min(live.gx, 1)) * w * 0.42;
+    const gy = Math.max(-1, Math.min(live.gy, 1)) * h * 0.42;
+    const ir = 8.5 * s;
+    c.fillStyle = withAlpha(C.accent, dim * a);
+    c.beginPath(); c.arc(ox + gx, oy + gy, ir, 0, Math.PI * 2); c.fill();
+    c.fillStyle = withAlpha(shade(C.pupil, dim), a);
+    c.beginPath(); c.arc(ox + gx, oy + gy, ir * 0.52, 0, Math.PI * 2); c.fill();
+    c.fillStyle = withAlpha('#fff', dim * 0.95 * a);
+    c.beginPath(); c.arc(ox + gx + ir * 0.4, oy + gy - ir * 0.5, ir * 0.32, 0, Math.PI * 2); c.fill();
+    c.fillStyle = withAlpha('#fff', dim * 0.48 * a);
+    c.beginPath(); c.arc(ox + gx - ir * 0.35, oy + gy + ir * 0.4, ir * 0.16, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  // Arc (happy ^_^)
+  if (arc > 0.015) {
+    const a = Math.min(arc, 1);
+    const aw = w * 1.15;
+    glow(sigma, dim * arc * 0.7, () => {
+      c.save();
+      c.strokeStyle = withAlpha(col, a);
+      c.lineWidth = 6 * s;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(ox - aw / 2, oy + h * 0.18);
+      c.quadraticCurveTo(ox, oy - h * 0.55, ox + aw / 2, oy + h * 0.18);
+      c.stroke();
+      c.restore();
+    });
+  }
+}
+
+function drawBrow(c, ox, oy, s, side) {
+  if (live.eyeArc > 0.6) return;
+  const dim = live.dim;
+  const w = 20 * s * live.eyeScale;
+  const y = oy - 22 * s + live.browY * s;
+  let tilt = live.browTilt * 0.5;
+  if (live.asym > 0.02) tilt += side > 0 ? -0.25 : 0.08;
+  const innerY = y + (side * -tilt) * 10 * s;
+  const outerY = y + (side * tilt) * 6 * s;
+  const a = Math.max(0, (1 - live.eyeArc) * dim);
+  glow((0.4 + live.glow) * 3 * s, dim * a * 0.5, () => {
+    c.save();
+    c.strokeStyle = withAlpha(shade(C.eye, dim), a);
+    c.lineWidth = 5.5 * s;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(ox - side * w / 2, innerY);
+    c.lineTo(ox + side * w / 2, outerY);
+    c.stroke();
+    c.restore();
+  });
+}
+
+function drawMouth(c, ox, oy, s) {
+  const dim = live.dim;
+  const mw = 34 * s;
+  const curve = live.mouthCurve;
+  const openH = live.mouthOpen * 26 * s;
+  const amt = 18 * s;
+  const cornerY = oy - curve * amt * 0.5;
+  const ctrlY = oy + curve * amt;
+  const sigma = (0.4 + live.glow) * 5 * s;
+
+  if (openH > 0.3 * s) {
+    c.fillStyle = withAlpha(C.mouthFill, dim);
+    c.beginPath();
+    c.moveTo(ox - mw / 2, cornerY - openH / 2);
+    c.quadraticCurveTo(ox, ctrlY - openH / 2, ox + mw / 2, cornerY - openH / 2);
+    c.lineTo(ox + mw / 2, cornerY + openH / 2);
+    c.quadraticCurveTo(ox, ctrlY + openH / 2, ox - mw / 2, cornerY + openH / 2);
+    c.closePath(); c.fill();
+    c.fillStyle = withAlpha(C.tongue, dim * 0.55);
+    c.beginPath();
+    c.ellipse(ox, ctrlY + openH * 0.18, mw * 0.30, openH * 0.30, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+
+  glow(sigma, dim * 0.5, () => {
+    c.save();
+    c.strokeStyle = withAlpha(shade(C.accent, dim), 1);
+    c.lineWidth = 6.5 * s;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(ox - mw / 2, cornerY - openH / 2);
+    c.quadraticCurveTo(ox, ctrlY - openH / 2, ox + mw / 2, cornerY - openH / 2);
+    c.stroke();
+    if (openH > 0.3 * s) {
+      c.beginPath();
+      c.moveTo(ox - mw / 2, cornerY + openH / 2);
+      c.quadraticCurveTo(ox, ctrlY + openH / 2, ox + mw / 2, cornerY + openH / 2);
+      c.stroke();
+    }
+    c.restore();
+  });
+}
+
+function drawDots(c, ox, oy, s) {
+  const phase = (live.t * 1.6) % 3;
+  for (let i = 0; i < 3; i++) {
+    const a = Math.max(0.25, Math.min(1, 1 - Math.abs(phase - i))) * live.dots;
+    glow(2.5 * s, a * 0.8, () => {
+      c.fillStyle = withAlpha(C.accent, a);
+      c.beginPath(); c.arc(ox + i * 11 * s, oy, 4 * s, 0, Math.PI * 2); c.fill();
+    });
+  }
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+// Polyfill clamp01 for Number
+Number.prototype.clamp01 = function() { return Math.max(0, Math.min(1, this)); };
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

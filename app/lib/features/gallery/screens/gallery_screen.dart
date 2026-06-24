@@ -6,7 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
 
 class GalleryScreen extends ConsumerStatefulWidget {
-  const GalleryScreen({Key? key}) : super(key: key);
+  /// Optional capture to deep-link to, from the `/gallery/:captureId` route.
+  final String? captureId;
+  const GalleryScreen({Key? key, this.captureId}) : super(key: key);
 
   @override
   ConsumerState<GalleryScreen> createState() => _GalleryScreenState();
