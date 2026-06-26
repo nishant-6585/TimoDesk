@@ -7,17 +7,21 @@ import 'package:flutter/material.dart';
 /// approach `viewer_web/index.html` uses.
 final Set<String> _registered = {};
 
-Widget buildMjpegView(BuildContext context, String url, BoxFit fit) {
-  final viewType = 'mjpeg::$url';
+Widget buildMjpegView(BuildContext context, String url, BoxFit fit, {bool crossOrigin = false}) {
+  // Key the factory by crossOrigin too — the same URL may be mounted for plain
+  // display (no crossOrigin) and for enrollment pixel-reading (crossOrigin on).
+  final viewType = 'mjpeg::${crossOrigin ? 'co::' : ''}$url';
   if (!_registered.contains(viewType)) {
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
       final img = html.ImageElement()
         ..src = url
-        ..crossOrigin = 'anonymous'  // Allow canvas pixel-reading for face detection
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = fit == BoxFit.contain ? 'contain' : 'cover'
         ..style.border = 'none';
+      // Only request CORS when frames will be read back (canvas pixel access).
+      // Setting it for plain display breaks MJPEG <img> rendering in Chrome.
+      if (crossOrigin) img.crossOrigin = 'anonymous';
       return img;
     });
     _registered.add(viewType);

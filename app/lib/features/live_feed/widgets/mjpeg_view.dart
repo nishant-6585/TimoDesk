@@ -16,9 +16,16 @@ class MjpegView extends StatelessWidget {
   final String url;
   final BoxFit fit;
 
-  const MjpegView({Key? key, required this.url, this.fit = BoxFit.cover})
+  /// Set `crossOrigin="anonymous"` on the web <img>. ONLY needed when the
+  /// frames are read back pixel-by-pixel (e.g. face-api enrollment over the
+  /// robot stream). Keep it OFF for plain display: Chrome fails to render a
+  /// multipart/x-mixed-replace MJPEG <img> when crossOrigin is set, even with
+  /// `Access-Control-Allow-Origin: *` present. No-op off the web.
+  final bool crossOrigin;
+
+  const MjpegView({Key? key, required this.url, this.fit = BoxFit.cover, this.crossOrigin = false})
       : super(key: key);
 
   @override
-  Widget build(BuildContext context) => buildMjpegView(context, url, fit);
+  Widget build(BuildContext context) => buildMjpegView(context, url, fit, crossOrigin: crossOrigin);
 }

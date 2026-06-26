@@ -8,7 +8,8 @@ import 'mjpeg_parser.dart';
 /// Mobile/desktop MJPEG renderer. Opens a streamed HTTP GET and slices out each
 /// JPEG frame by its SOI (FF D8) … EOI (FF D9) markers — no multipart-boundary
 /// parsing needed, which is the most robust way to decode CSJBot/MJPEG streams.
-Widget buildMjpegView(BuildContext context, String url, BoxFit fit) {
+Widget buildMjpegView(BuildContext context, String url, BoxFit fit, {bool crossOrigin = false}) {
+  // crossOrigin is a web-only concern (CORS on the <img>); ignored on io.
   return _MjpegStream(url: url, fit: fit);
 }
 

@@ -54,6 +54,14 @@ export async function verifyToken(
     return { valid: true, userId: KIOSK_USER_ID };
   }
 
+  // Dev bypass: accept the dev sentinel tokens even when JWKS IS configured, so
+  // the admin app works without a Supabase login. Mirrors authorizeRequest and
+  // the documented bypass intent. Gated by DEV_AUTH_BYPASS (forced off in prod);
+  // real Supabase JWTs still fall through to JWKS verification below.
+  if (DEV_AUTH_BYPASS && (token === '' || token === 'dev' || token === 'test-token')) {
+    return { valid: true, userId: 'dev-user' };
+  }
+
   if (!JWKS) {
     // No JWKS configured: accept-all ONLY under the dev bypass, else fail closed.
     if (DEV_AUTH_BYPASS) return { valid: true, userId: 'dev-user' };
@@ -85,7 +93,7 @@ export async function authorizeRequest(
   const authz = (req.headers['authorization'] as string | undefined) ?? '';
   const token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
 
-  if (DEV_AUTH_BYPASS && (token === '' || token === 'test-token')) {
+  if (DEV_AUTH_BYPASS && (token === '' || token === 'dev' || token === 'test-token')) {
     return { ok: true, userId: 'dev-user' };
   }
 

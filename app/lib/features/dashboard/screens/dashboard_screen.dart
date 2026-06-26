@@ -312,20 +312,27 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       _SessionsCard(),
     ];
     if (wide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (int i = 0; i < cards.length; i++) ...[
-            if (i > 0) const SizedBox(width: 20),
-            Expanded(child: cards[i]),
-          ]
-        ],
+      // IntrinsicHeight + stretch → all four cards take the tallest one's height.
+      return IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < cards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 20),
+              Expanded(child: cards[i]),
+            ]
+          ],
+        ),
       );
     }
     return Column(children: [
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: cards[0]), const SizedBox(width: 12), Expanded(child: cards[1])]),
+      IntrinsicHeight(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cards[0]), const SizedBox(width: 12), Expanded(child: cards[1])]),
+      ),
       const SizedBox(height: 12),
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: cards[2]), const SizedBox(width: 12), Expanded(child: cards[3])]),
+      IntrinsicHeight(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cards[2]), const SizedBox(width: 12), Expanded(child: cards[3])]),
+      ),
     ]);
   }
 
@@ -766,15 +773,18 @@ class _LiveFeedWidget extends ConsumerWidget {
           child: AspectRatio(
             aspectRatio: 16 / 9,
             child: Stack(fit: StackFit.expand, children: [
-              Container(color: Colors.black, child: MjpegView(url: robotStreamUrl(robotIp))),
-              // Empty-state hint behind the stream.
-              Center(
+              // Black background + empty-state hint, shown until the stream paints over them.
+              Container(
+                color: Colors.black,
+                alignment: Alignment.center,
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.videocam, size: 56, color: Color(0xFF2E2E2E)),
                   const SizedBox(height: 8),
                   Text('Live Feed · $robotIp:$robotCameraPort', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: const Color(0xFF3A3A3A))),
                 ]),
               ),
+              // The live MJPEG stream paints on top of the placeholder once frames arrive.
+              Positioned.fill(child: MjpegView(url: robotStreamUrl(robotIp))),
               Positioned(
                 top: 10,
                 left: 10,

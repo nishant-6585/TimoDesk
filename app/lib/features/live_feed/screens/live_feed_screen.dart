@@ -68,7 +68,9 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     if (_enrollmentMode && _enrollSource == _EnrollSource.device) {
       return const DeviceWebcamView();
     }
-    if (_streaming) return MjpegView(url: url);
+    // Enrollment over the robot stream reads frames back for face-api, so it
+    // needs crossOrigin; plain viewing must not set it (breaks MJPEG render).
+    if (_streaming) return MjpegView(url: url, crossOrigin: _enrollmentMode && _enrollSource == _EnrollSource.robot);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
