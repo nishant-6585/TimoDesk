@@ -75,7 +75,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   final AudioBridge _audioBridge = AudioBridge();
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
-  StreamSubscription<String>? _asrSub; // recognized user speech → barge-in
   StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
   bool _voiceActive = false; // a session is open (toggles the debug button)
   double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
@@ -84,8 +83,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   //                                    first message (we already greeted via TTS)
   bool _pushToTalk = false; // hold-to-talk held → send FULL mic (bypass gates),
   //                           reliable in a noisy room; drop agent audio meanwhile
-  bool _suppressAgentAudio = false; // after a barge-in: drop the rest of the old
-  Timer? _bargeTimer; //   reply's audio until the next turn (ElevenLabs keeps streaming)
 
   // Auto-listen UX: after a greeting, open the mic automatically so a visitor can
   // just start talking (no tap). _pendingAutoListen waits for the greeting audio
@@ -96,11 +93,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _autoListenFallback;
   bool _autoSession = false;
   Timer? _idleWatch; // periodic idle watchdog → auto-close on inactivity
-  int _lastActivityMs = 0; // last conversation activity (speech heard or spoken)
+  int _lastActivityMs = 0; // last USER activity (speech heard / push-to-talk)
   bool _conversed = false; // a real exchange happened → use the longer idle window
   int _lastSpeakingMs = 0; // last time Mikee's speaker was active → mic-gate tail
-  int _gateOpenUntilMs = 0; // noise-gate hangover deadline
-  bool _gateOpen = false; // current noise-gate state (transition logging only)
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
@@ -113,13 +108,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Playback RMS below this is treated as silence (trailing/padding chunks) — it
   // won't drive the "speaking" state, so the mouth doesn't twitch while listening.
   static const double _speechFloor = 0.03;
-  // Noise gate (squelch): only forward mic audio at/above this RMS to ElevenLabs so
-  // ambient room noise (below it) doesn't trigger phantom replies. Once opened by
-  // speech, it's held open for the hangover so inter-word dips don't chop the
-  // utterance. NOTE: a loud room whose noise reaches speech level (~0.04) can't be
-  // separated by amplitude alone — push-to-talk would be the fix there (see history).
-  static const double _noiseGateOpenRms = 0.04;
-  static const int _noiseGateHangoverMs = 1000;
 
   @override
   void initState() {
@@ -159,10 +147,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _wakeSub = _audioBridge.wakeWordStream.listen((_) {
       if (!_voiceAgent.isActive) _startVoice();
     });
-    // On-device barge-in: the CSJBot CAE recognizes the USER (echo-cancelled). If
-    // the user starts talking while Mikee is speaking, cut Mikee off immediately —
-    // don't wait on ElevenLabs to detect the interruption.
-    _asrSub = _audioBridge.asrTextStream.listen(_onUserSpeech);
+    // NOTE: the on-device CSJBot CAE barge-in was removed — it kept mis-hearing
+    // Mikee's own speaker echo as the user and cut him off mid-sentence. Hands-free,
+    // Mikee now finishes his replies; hold-to-talk stays the reliable way to
+    // interrupt him (it stops playback and routes the full mic to ElevenLabs).
 
     // Start the camera stream so /snapshot serves frames to the on-device face
     // detector (GazeTracker → ML Kit) — that's what drives idle→attentive presence
@@ -191,12 +179,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _ticker.dispose();
     _presenceHold?.cancel();
     _greetTimer?.cancel();
-    _bargeTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
-    _asrSub?.cancel();
     _playbackSub?.cancel();
     _voiceAgent.dispose();
     _tts.dispose();
@@ -358,10 +344,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _idleWatch?.cancel();
     _idleWatch = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_voiceActive || !_autoSession) return;
+      // Idle is measured from the last USER activity (speech heard / push-to-talk),
+      // NOT from Mikee's own speech — otherwise an agent that keeps talking with no
+      // visitor perpetually resets the timer and never returns to idle (obs 1).
       final idleMs = DateTime.now().millisecondsSinceEpoch - _lastActivityMs;
       final window = _conversed ? _conversationIdle : _engageWindow;
-      if (idleMs >= window.inMilliseconds) {
-        debugPrint('AmbientFace: idle ${(idleMs / 1000).toStringAsFixed(0)}s ≥ '
+      // Don't cut Mikee off mid-utterance, but hard-cap at 2× the window so a
+      // runaway/looping agent can't hold the session open indefinitely.
+      final mikeeTalking = _face.state == FaceStateKind.speaking ||
+          _face.state == FaceStateKind.thinking;
+      final hardCap = idleMs >= 2 * window.inMilliseconds;
+      if (idleMs >= window.inMilliseconds && (!mikeeTalking || hardCap)) {
+        debugPrint('AmbientFace: user idle ${(idleMs / 1000).toStringAsFixed(0)}s ≥ '
             '${window.inSeconds}s → closing');
         _endVoice();
       }
@@ -399,28 +393,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
-  // On-device barge-in: the CAE recognized the user. If Mikee is mid-sentence,
-  // cut him off and flip to listening immediately (ElevenLabs also gets the audio
-  // and will take the new turn). Ignored when no session or Mikee isn't speaking.
-  void _onUserSpeech(String text) {
-    debugPrint('MikeeBargeIn: asr="$text" voiceActive=$_voiceActive state=${_face.state}');
-    if (!_voiceActive || text.trim().isEmpty) return;
-    // NOTE: deliberately do NOT cancel the idle timer here. The CSJBot CAE recognises
-    // Mikee's OWN voice (echo) as gibberish constantly, so trusting it would keep the
-    // session alive forever. Real engagement is tracked via ElevenLabs userSpeaking.
-    if (_face.state == FaceStateKind.speaking) {
-      debugPrint('MikeeBargeIn: BARGE-IN → stopping Mikee, switching to listening');
-      _audioBridge.stopPlayback();
-      // ElevenLabs keeps streaming the rest of the interrupted reply — drop those
-      // chunks until the next turn so Mikee actually goes quiet. Safety-cleared after
-      // 6s in case no new turn arrives.
-      _suppressAgentAudio = true;
-      _bargeTimer?.cancel();
-      _bargeTimer = Timer(const Duration(seconds: 6), () => _suppressAgentAudio = false);
-      setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
-    }
-  }
-
   // ── #80 voice: ElevenLabs session drives the face state machine ─────────────
   void _onVoiceEvent(VoiceEvent e) {
     debugPrint('Voice: ${e.kind.name}'
@@ -430,7 +402,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Open in listening — Mikee is waiting for the user (the ring shows).
         // Also clear any stale playback (e.g. a reply cut off by a language
         // switch reconnect) so we don't talk over the new session.
-        _suppressAgentAudio = false;
         _audioBridge.stopPlayback();
         setState(() {
           _voiceActive = true;
@@ -453,8 +424,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _dropFirstAgentTurn = false; // real reply coming → play it
         _conversed = true;
         _bumpActivity();
-        _suppressAgentAudio = false;
-        _bargeTimer?.cancel();
         // Genuine processing gap (STT done, reply not yet streaming).
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
@@ -466,7 +435,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Auto session's unprompted FIRST message: drop it (we already greeted) and
         // stay in listening so the mic isn't muted before the visitor can speak.
         if (_dropFirstAgentTurn) break;
-        _bumpActivity(); // active reply → keep the session alive
+        // NOTE: deliberately NOT bumping activity here — Mikee's OWN speech must not
+        // keep the session alive, or an agent that keeps talking with no visitor
+        // never returns to idle (obs 1). Only USER input resets the idle timer.
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
@@ -475,7 +446,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // tracks the SPEAKER (not network arrival) — so lips move while Mikee is
         // actually talking and close exactly when playback ends.
         // Dropped after a barge-in, the auto first message, or while holding to talk.
-        if (_suppressAgentAudio || _dropFirstAgentTurn || _pushToTalk) break;
+        if (_dropFirstAgentTurn || _pushToTalk) break;
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         break;
       case VoiceEventKind.sessionEnded:
@@ -532,29 +503,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _updateMicLevel(rms);
         return;
       }
-      // (1) Half-duplex echo gate: never feed Mikee's own voice back to ElevenLabs.
-      // His voice plays through a separate AudioTrack the CSJBot CAE does NOT
-      // echo-cancel, so otherwise he hears himself and loops forever. The tail-guard
-      // covers the speaker buffer after we flip to listening. (No mid-sentence barge-in.)
+      // Half-duplex echo gate (the ONLY gate now): never feed Mikee's own voice back
+      // to ElevenLabs. His voice plays through a separate AudioTrack the CSJBot CAE
+      // does NOT echo-cancel, so otherwise he hears himself and loops forever. The
+      // tail-guard covers the speaker buffer after we flip to listening.
       final speakingMuted = _face.state == FaceStateKind.speaking ||
           (now - _lastSpeakingMs) < _micTailGuardMs;
-      // (2) Noise gate (squelch): speech (≥ open RMS) opens the gate; the hangover
-      // keeps it open through inter-word dips. Ambient below the threshold is
-      // suppressed so the room doesn't trigger phantom replies.
-      if (rms >= _noiseGateOpenRms) _gateOpenUntilMs = now + _noiseGateHangoverMs;
-      final gateOpen = now < _gateOpenUntilMs;
-      final sending = !speakingMuted && gateOpen;
-      if (gateOpen != _gateOpen) {
-        _gateOpen = gateOpen;
-        debugPrint('NoiseGate: ${gateOpen ? "OPEN" : "closed"} rms=${rms.toStringAsFixed(3)} '
-            'muted=$speakingMuted state=${_face.state.name} sending=$sending');
-      }
-      // ALWAYS feed ElevenLabs a continuous stream — it runs its own VAD/turn
-      // detection and gated *bursts* break it (it never finalizes a turn → no
-      // reply). So send the real mic audio when the gate is open & not echo-muted,
-      // otherwise send SILENCE. This keeps the stream unbroken for EL's VAD while
-      // ambient room noise and Mikee's own echo are replaced by zeros (suppressed).
-      _voiceAgent.sendAudioChunk(sending ? chunk : Uint8List(chunk.length));
+      // The amplitude noise gate (squelch) was REMOVED (obs 3): it dropped soft and
+      // sentence-onset speech (RMS < 0.04 → silence sent), so capture was hit-or-miss.
+      // We now feed ElevenLabs the REAL mic continuously whenever Mikee isn't
+      // speaking and let its own server-side VAD decide when a turn starts/ends.
+      // While Mikee speaks we send SILENCE so the stream stays unbroken for EL's VAD
+      // without leaking his echo back in.
+      _voiceAgent.sendAudioChunk(speakingMuted ? Uint8List(chunk.length) : chunk);
       _updateMicLevel(rms);
     });
   }
@@ -569,7 +530,6 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _audioBridge.stopPlayback(); // barge-in: silence Mikee so the visitor can talk
     setState(() {
       _pushToTalk = true;
-      _suppressAgentAudio = false;
       _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0);
     });
     if (!_voiceActive) _startVoice(auto: true); // open a session if needed
@@ -647,7 +607,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     } else {
       // Amplify the speech-range RMS so the mouth opens convincingly.
       _lastSpeakingMs = DateTime.now().millisecondsSinceEpoch; // drives the mic gate
-      _bumpActivity(); // Mikee actively speaking → don't let the watchdog close mid-reply
+      // NOTE: NOT bumping activity here — Mikee's own playback must not reset the
+      // idle timer (obs 1). The watchdog's mid-utterance guard prevents cutting him
+      // off mid-reply; only USER speech keeps the session alive.
       final mouth = (level * 3.5).clamp(0.04, 1.0);
       setState(() =>
           _face = _face.copyWith(state: FaceStateKind.speaking, mouthOpen: mouth));
