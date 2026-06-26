@@ -97,6 +97,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   bool _conversed = false; // a real exchange happened → use the longer idle window
   int _lastSpeakingMs = 0; // last time Mikee's speaker was active → mic-gate tail
 
+  // Resilience (#obs3): if ElevenLabs drops the connection unexpectedly mid-visit
+  // (e.g. a transient `code 1002` agent error), reopen the session ONCE instead of
+  // falling back to idle — so a server hiccup self-heals and the visitor can keep
+  // talking. Deliberate closes (idle watchdog / stop button) never reconnect.
+  Timer? _reconnectTimer;
+  bool _intentionalClose = false; // true when WE end the session (not a server drop)
+  bool _suppressTeardown = false; // skip the idle teardown for a drop we're recovering
+  int _reconnectAttempts = 0; // reset on a fresh start or a real turn; caps retries
+  static const int _maxReconnects = 1; // one silent retry per incident
+
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
   static const Duration _engageWindow = Duration(seconds: 10); // no greeting response → close
@@ -179,6 +189,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _ticker.dispose();
     _presenceHold?.cancel();
     _greetTimer?.cancel();
+    _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
     _voiceSub?.cancel();
@@ -246,6 +257,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _presenceHold = Timer(hold, () {
           _present = false;
           _greeted = false; // person has left — allow greeting on next approach
+          _reconnectAttempts = 0; // fresh retry budget for the next visitor
           _presenceHold = null;
           if (_face.state == FaceStateKind.attentive ||
               _face.state == FaceStateKind.greeting) {
@@ -402,6 +414,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Open in listening — Mikee is waiting for the user (the ring shows).
         // Also clear any stale playback (e.g. a reply cut off by a language
         // switch reconnect) so we don't talk over the new session.
+        _suppressTeardown = false; // a new session is live — clear any pending recovery
         _audioBridge.stopPlayback();
         setState(() {
           _voiceActive = true;
@@ -424,6 +437,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _dropFirstAgentTurn = false; // real reply coming → play it
         _conversed = true;
         _bumpActivity();
+        _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
         // Genuine processing gap (STT done, reply not yet streaming).
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
@@ -450,6 +464,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
         break;
       case VoiceEventKind.sessionEnded:
+        // Recovering from an unexpected drop → ignore this teardown; the scheduled
+        // reconnect owns recovery and will reopen the session.
+        if (_suppressTeardown) {
+          _suppressTeardown = false;
+          return;
+        }
+        _intentionalClose = false;
+        _reconnectAttempts = 0;
         _stopIdleWatch();
         _autoSession = false;
         _audioBridge.stopMic();
@@ -462,6 +484,29 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         });
         break;
       case VoiceEventKind.error:
+        // Unexpected server drop (e.g. ElevenLabs `code 1002`)? If the visitor is
+        // still here and we haven't used our retry, reopen the session ONCE silently
+        // instead of dropping to idle / showing the unavailable dialog.
+        if (!_intentionalClose && _present && _reconnectAttempts < _maxReconnects) {
+          _reconnectAttempts++;
+          _suppressTeardown = true; // ignore the sessionEnded that follows this error
+          debugPrint('Voice: unexpected drop → auto-reconnect '
+              '$_reconnectAttempts/$_maxReconnects (${e.text})');
+          _audioBridge.stopMic();
+          _audioBridge.stopPlayback();
+          _reconnectTimer?.cancel();
+          _reconnectTimer = Timer(const Duration(milliseconds: 600), () {
+            if (!mounted) return;
+            if (!_present) {
+              _finalizeIdle(); // visitor left during the gap → settle to idle
+            } else {
+              _startVoice(auto: _autoSession, reconnect: true);
+            }
+          });
+          break;
+        }
+        // Out of retries (or a deliberate close) → give up cleanly.
+        _suppressTeardown = false;
         _stopIdleWatch();
         _autoSession = false;
         _audioBridge.stopMic();
@@ -479,10 +524,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // [auto] = true when opened automatically after a greeting (→ auto-closes on
   // silence). The mic-button / wake-word callers use the default (false) so a
   // deliberately opened session stays open until the user ends it.
-  void _startVoice({bool auto = false}) {
+  void _startVoice({bool auto = false, bool reconnect = false}) {
     _pendingAutoListen = false; // a session is starting — cancel any greeting hand-off
     _autoListenFallback?.cancel();
     _autoSession = auto;
+    // A fresh (non-reconnect) start clears the retry budget; a reconnect keeps it so
+    // a server that immediately drops again can't loop forever.
+    if (!reconnect) {
+      _reconnectAttempts = 0;
+      _reconnectTimer?.cancel();
+    }
+    _intentionalClose = false;
     // Auto sessions already greeted via TTS, so DROP the ElevenLabs agent's own
     // unprompted first message — playing it would hold the face in "speaking" for
     // several seconds and the half-duplex gate would mute the visitor's reply the
@@ -520,7 +572,27 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     });
   }
 
-  void _endVoice() => _voiceAgent.endSession();
+  void _endVoice() {
+    _intentionalClose = true; // a deliberate close → never auto-reconnect
+    _reconnectTimer?.cancel();
+    _voiceAgent.endSession();
+  }
+
+  // Settle the voice UI back to idle without ending a (already-closed) session —
+  // used when a reconnect is abandoned because the visitor walked away.
+  void _finalizeIdle() {
+    _suppressTeardown = false;
+    _stopIdleWatch();
+    _autoSession = false;
+    _audioBridge.stopMic();
+    _audioBridge.stopPlayback();
+    if (!mounted) return;
+    setState(() {
+      _voiceActive = false;
+      _micLevel = 0;
+      _face = _face.copyWith(state: FaceStateKind.idle, mouthOpen: 0);
+    });
+  }
 
   // Hold-to-talk (press & hold the mic button). Opens a session if none, barges in
   // over any current speech, and routes the FULL mic to ElevenLabs while held —
