@@ -135,28 +135,31 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
 
     return Scaffold(
       backgroundColor: MikeeColors.background,
-      appBar: AppBar(
-        title: const Text('Live Feed'),
-        backgroundColor: MikeeColors.surface,
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const StaffListScreen()),
-            ),
-            icon: const Icon(Icons.group),
-            label: const Text('Manage Staff'),
-          ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: _toggleEnrollmentMode,
-            icon: const Icon(Icons.person_add),
-            label: Text(_enrollmentMode ? 'Cancel' : 'Enroll Staff'),
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
       body: Column(
         children: [
+          // Local action bar — the AppShell's top status bar stays above this.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
+            child: Row(
+              children: [
+                Text('Enrol Staff', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const StaffListScreen()),
+                  ),
+                  icon: const Icon(Icons.group),
+                  label: const Text('Manage Staff'),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _toggleEnrollmentMode,
+                  icon: const Icon(Icons.person_add),
+                  label: Text(_enrollmentMode ? 'Cancel' : 'Enroll Staff'),
+                ),
+              ],
+            ),
+          ),
           // Live visitor-arrival banner (driven by visitorArrivedProvider).
           const _VisitorArrivalBanner(),
           Expanded(

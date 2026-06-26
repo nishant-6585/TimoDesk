@@ -11,8 +11,8 @@ import '../features/gallery/screens/gallery_screen.dart';
 import '../features/events/screens/event_log_screen.dart';
 import '../features/patrol_routes/screens/patrol_routes_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
-import '../features/staff/screens/enroll_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
+import '../features/shared/layouts/app_shell.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
   late final StreamSubscription<AuthState> _subscription;
@@ -85,58 +85,66 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Login lives outside the shell — no header/sidebar on the auth screen.
       GoRoute(
         path: '/login',
         name: 'login',
         builder: (context, state) => const LoginScreen(),
       ),
-      GoRoute(
-        path: '/',
-        name: 'dashboard',
-        builder: (context, state) => const AdaptiveHome(),
-      ),
-      GoRoute(
-        path: '/control',
-        name: 'control',
-        builder: (context, state) => const ControlScreen(),
-      ),
-      GoRoute(
-        path: '/live-feed',
-        name: 'live_feed',
-        builder: (context, state) => const LiveFeedScreen(),
-      ),
-      GoRoute(
-        path: '/gallery',
-        name: 'gallery',
-        builder: (context, state) => const GalleryScreen(),
-      ),
-      GoRoute(
-        path: '/gallery/:captureId',
-        name: 'gallery_detail',
-        builder: (context, state) {
-          final captureId = state.pathParameters['captureId']!;
-          return GalleryScreen(captureId: captureId);
-        },
-      ),
-      GoRoute(
-        path: '/event-log',
-        name: 'events',
-        builder: (context, state) => const EventLogScreen(),
-      ),
-      GoRoute(
-        path: '/patrol-routes',
-        name: 'patrol_routes',
-        builder: (context, state) => const PatrolRoutesScreen(),
-      ),
-      GoRoute(
-        path: '/settings',
-        name: 'settings',
-        builder: (context, state) => const SettingsScreen(),
-      ),
-      GoRoute(
-        path: '/enroll-staff',
-        name: 'enroll_staff',
-        builder: (context, state) => const StaffEnrollmentScreen(),
+      // Every navigable screen renders inside AppShell, so the top status bar
+      // and left menu persist and only the body swaps on navigation.
+      ShellRoute(
+        builder: (context, state, child) => AppShell(child: child),
+        routes: [
+          GoRoute(
+            path: '/',
+            name: 'dashboard',
+            builder: (context, state) => const AdaptiveHome(),
+          ),
+          GoRoute(
+            path: '/control',
+            name: 'control',
+            builder: (context, state) => const ControlScreen(),
+          ),
+          GoRoute(
+            path: '/live-feed',
+            name: 'live_feed',
+            builder: (context, state) => const LiveFeedScreen(),
+          ),
+          GoRoute(
+            path: '/gallery',
+            name: 'gallery',
+            builder: (context, state) => const GalleryScreen(),
+          ),
+          GoRoute(
+            path: '/gallery/:captureId',
+            name: 'gallery_detail',
+            builder: (context, state) {
+              final captureId = state.pathParameters['captureId']!;
+              return GalleryScreen(captureId: captureId);
+            },
+          ),
+          GoRoute(
+            path: '/event-log',
+            name: 'events',
+            builder: (context, state) => const EventLogScreen(),
+          ),
+          GoRoute(
+            path: '/patrol-routes',
+            name: 'patrol_routes',
+            builder: (context, state) => const PatrolRoutesScreen(),
+          ),
+          GoRoute(
+            path: '/settings',
+            name: 'settings',
+            builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/enroll-staff',
+            name: 'enroll_staff',
+            builder: (context, state) => const StaffEnrollmentScreen(),
+          ),
+        ],
       ),
     ],
   );

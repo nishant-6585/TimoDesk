@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
-import '../models/patrol_route_model.dart';
 import '../providers/patrol_route_provider.dart';
 import '../widgets/map_canvas.dart';
 import '../widgets/patrol_panels.dart';
@@ -72,82 +70,21 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
     final compact = MediaQuery.of(context).size.width < 900;
     final state = ref.watch(patrolRouteProvider);
 
-    return Scaffold(
-      backgroundColor: MikeeColors.background,
-      body: Stack(
-        children: [
-          Column(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1240),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              _buildHeader(context),
-              // Content
-              Expanded(
-                child: Row(
-                  children: [
-                    if (!compact) _buildSidebar(context),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1240),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildPageHeader(),
-                                const SizedBox(height: 24),
-                                if (!compact) _buildDesktopLayout(state) else _buildMobileLayout(state),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildPageHeader(),
+              const SizedBox(height: 24),
+              if (!compact) _buildDesktopLayout(state) else _buildMobileLayout(state),
             ],
           ),
-        ],
+        ),
       ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(color: MikeeColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: MikeeColors.border))),
-      padding: EdgeInsets.symmetric(horizontal: 24),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Row(children: [
-          Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [MikeeColors.primary, MikeeColors.primaryDark]), boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
-          const SizedBox(width: 12),
-          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0))])
-        ]),
-        Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.08), border: Border.all(color: MikeeColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: MikeeColors.success))])),
-          const SizedBox(width: 12),
-          Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
-        ]),
-      ]),
-    );
-  }
-
-  Widget _buildSidebar(BuildContext context) {
-    return Container(
-      width: 220,
-      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
-      child: Column(children: [
-        Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
-          _NavItem('Dashboard', Icons.space_dashboard, false, () => context.go('/')),
-          _NavItem('Control', Icons.sports_esports, false, () => context.go('/control')),
-          _NavItem('Live Feed', Icons.videocam, false, () => context.go('/live-feed')),
-          _NavItem('Gallery', Icons.photo_library, false, () => context.go('/gallery')),
-          _NavItem('Event Log', Icons.receipt_long, false, () => context.go('/event-log')),
-          _NavItem('Patrol Routes', Icons.route, true, () {}),
-          _NavItem('Settings', Icons.settings, false, () => context.go('/settings')),
-        ]))
-      ]),
     );
   }
 
@@ -321,38 +258,6 @@ class _PatrolRoutesScreenState extends ConsumerState<PatrolRoutesScreen> with Ti
     if (state.selectedWaypoint == null) return;
     ref.read(patrolRouteProvider.notifier).updateWaypoint(
       state.selectedWaypoint!.copyWith(x: offset.dx, y: offset.dy),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  const _NavItem(this.label, this.icon, this.active, this.onTap);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
-              Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary),
-              const SizedBox(width: 12),
-              Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))
-            ]),
-          ),
-        ),
-      ),
     );
   }
 }

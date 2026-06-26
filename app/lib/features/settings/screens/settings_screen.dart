@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
@@ -43,122 +42,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.of(context).size.width < 900;
-
-    return Scaffold(
-      backgroundColor: MikeeColors.background,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Container(
-                height: 64,
-                decoration: BoxDecoration(color: MikeeColors.surface.withOpacity(0.8), border: const Border(bottom: BorderSide(color: MikeeColors.border))),
-                padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
-                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.center, children: [
-                  Row(children: [
-                    Container(width: 36, height: 36, decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [MikeeColors.primary, MikeeColors.primaryDark]), boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)]), child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)))),
-                    if (!compact) ...[const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)), Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0))])]
-                  ]),
-                  if (!compact) Text('Settings', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
-                  Row(children: [
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.08), border: Border.all(color: MikeeColors.success.withOpacity(0.3)), borderRadius: BorderRadius.circular(8)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)), const SizedBox(width: 8), Text('ONLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: MikeeColors.success))])),
-                    const SizedBox(width: 12),
-                    Container(width: 28, height: 28, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)), child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)))),
-                  ]),
-                ]),
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    if (!compact) _Sidebar(onNav: (route) {
-                      final routes = {'dashboard': '/', 'control': '/control', 'feed': '/live-feed', 'gallery': '/gallery', 'events': '/event-log', 'settings': '/settings'};
-                      if (routes.containsKey(route)) context.go(routes[route]!);
-                    }),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 760),
-                            child: Column(children: [
-                              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Row(children: [Icon(Icons.settings, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Settings', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
-                                const SizedBox(height: 4),
-                                Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
-                              ]),
-                              const SizedBox(height: 24),
-                              _SettingCard('NETWORK', [
-                                _SettingField('Robot IP', _robotIp, (v) {
-                                  setState(() => _robotIp = v);
-                                  ref.read(settingsProvider.notifier).setRobotIp(v.trim());
-                                }),
-                                _SettingField('Port', _port, (v) => setState(() => _port = v)),
-                                _SettingField('Signaling Server', _signalingServer, (v) => setState(() => _signalingServer = v)),
-                                _SettingField('Reconnect timeout', _reconnectTimeout, (v) => setState(() => _reconnectTimeout = v)),
-                              ], const SizedBox(height: 16), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: _testConnection, icon: const Icon(Icons.wifi, size: 16), label: Text('Test connection', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))),
-                              const SizedBox(height: 20),
-                              _SafetyCard(
-                                collisionSafety: _collisionSafety,
-                                autoSnapshot: _autoSnapshot,
-                                notifications: _notifications,
-                                speed: _speed,
-                                onCollisionChange: (v) => setState(() => _collisionSafety = v),
-                                onSnapshotChange: (v) => setState(() => _autoSnapshot = v),
-                                onNotificationsChange: (v) => setState(() => _notifications = v),
-                                onSpeedChange: (v) => setState(() => _speed = v),
-                              ),
-                              const SizedBox(height: 20),
-                              _AccountCard(),
-                            ]),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Column(children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [Icon(Icons.settings, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Settings', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+              const SizedBox(height: 4),
+              Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
+            ]),
+            const SizedBox(height: 24),
+            _SettingCard('NETWORK', [
+              _SettingField('Robot IP', _robotIp, (v) {
+                setState(() => _robotIp = v);
+                ref.read(settingsProvider.notifier).setRobotIp(v.trim());
+              }),
+              _SettingField('Port', _port, (v) => setState(() => _port = v)),
+              _SettingField('Signaling Server', _signalingServer, (v) => setState(() => _signalingServer = v)),
+              _SettingField('Reconnect timeout', _reconnectTimeout, (v) => setState(() => _reconnectTimeout = v)),
+            ], const SizedBox(height: 16), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: _testConnection, icon: const Icon(Icons.wifi, size: 16), label: Text('Test connection', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))))),
+            const SizedBox(height: 20),
+            _SafetyCard(
+              collisionSafety: _collisionSafety,
+              autoSnapshot: _autoSnapshot,
+              notifications: _notifications,
+              speed: _speed,
+              onCollisionChange: (v) => setState(() => _collisionSafety = v),
+              onSnapshotChange: (v) => setState(() => _autoSnapshot = v),
+              onNotificationsChange: (v) => setState(() => _notifications = v),
+              onSpeedChange: (v) => setState(() => _speed = v),
+            ),
+            const SizedBox(height: 20),
+            _AccountCard(),
+          ]),
+        ),
       ),
     );
-  }
-}
-
-class _Sidebar extends StatelessWidget {
-  final Function(String) onNav;
-  const _Sidebar({required this.onNav});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      decoration: BoxDecoration(color: MikeeColors.surface, border: const Border(right: BorderSide(color: MikeeColors.border))),
-      child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.all(12), children: [
-        _NavItem('Dashboard', Icons.space_dashboard, false, () => onNav('dashboard')),
-        _NavItem('Control', Icons.sports_esports, false, () => onNav('control')),
-        _NavItem('Live Feed', Icons.videocam, false, () => onNav('feed')),
-        _NavItem('Gallery', Icons.photo_library, false, () => onNav('gallery')),
-        _NavItem('Event Log', Icons.receipt_long, false, () => onNav('events')),
-        _NavItem('Settings', Icons.settings, true, () => onNav('settings')),
-      ]))]),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  const _NavItem(this.label, this.icon, this.active, this.onTap);
-  @override
-  Widget build(BuildContext context) {
-    return Padding(padding: const EdgeInsets.only(bottom: 4), child: Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))), Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary), const SizedBox(width: 12), Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: active ? FontWeight.w500 : FontWeight.normal, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))]),
-    ))));
   }
 }
 

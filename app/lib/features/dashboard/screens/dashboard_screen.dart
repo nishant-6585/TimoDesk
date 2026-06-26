@@ -79,6 +79,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Timer? _eventTimer;
   Timer? _ageTimer;
   String _timeString = '';
+  // Desktop/Mobile preview toggle (matches the prototype's floating pill).
+  bool _forceMobile = false;
 
   @override
   void initState() {
@@ -210,7 +212,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _addEvent({'type': 'command_drive', 'details': 'dest: home_dock', 'session': 'admin'});
         break;
       case 'control':
-        _pushToast(Icons.sports_esports, MikeeColors.primary, 'Opening control room');
+        context.go('/control');
         break;
     }
   }
@@ -226,399 +228,159 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final spineState = ref.watch(spineProvider);
     final online = spineState.connected;
-    // Real battery from spine, or null (shown as "—") when unknown — no fake 78.
+    // Real battery from spine, or null (shown as "—") when unknown — no fake value.
     final rawBattery = spineState.status?.battery;
     final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
     final stopped = spineState.stopped;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 900) {
-          return _buildDesktop(context, online, battery, stopped);
-        } else {
-          return _buildMobile(context, online, battery, stopped);
-        }
-      },
-    );
-  }
-
-  Widget _buildDesktop(BuildContext context, bool online, int? battery, bool stopped) {
-    return Scaffold(
-      backgroundColor: MikeeColors.background,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              _McHeader(compact: false, online: online, battery: battery),
-              Expanded(
-                child: Row(
-                  children: [
-                    _McSidebar(active: 'dashboard', onNav: (route) {
-                      final routes = {
-                        'dashboard': '/',
-                        'control': '/control',
-                        'feed': '/live-feed',
-                        'gallery': '/gallery',
-                        'events': '/event-log',
-                        'patrol_routes': '/patrol-routes',
-                        'settings': '/settings',
-                      };
-                      if (routes.containsKey(route)) {
-                        context.go(routes[route]!);
-                      }
-                    }),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1240),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(child: _RobotStatusCard(online: online, latency: 12)),
-                                    const SizedBox(width: 20),
-                                    Expanded(child: _BatteryCard(percent: battery, charging: true)),
-                                    const SizedBox(width: 20),
-                                    Expanded(child: _VisitorsCard()),
-                                    const SizedBox(width: 20),
-                                    Expanded(child: _SessionsCard()),
-                                  ],
-                                ),
-                                const SizedBox(height: 20),
-                                // Live face-detection card — driven by real recognizer
-                                // events, auto-dismisses via faceDetectionProvider.
-                                Consumer(
-                                  builder: (context, ref, _) {
-                                    final det = ref.watch(faceDetectionProvider);
-                                    if (det == null) return const SizedBox.shrink();
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 20),
-                                      child: _FaceDetectionCard(det: det),
-                                    );
-                                  },
-                                ),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 3,
-                                      child: _LiveFeedWidget(stopped: stopped, timeString: _timeString),
-                                    ),
-                                    const SizedBox(width: 20),
-                                    Expanded(
-                                      flex: 2,
-                                      child: SingleChildScrollView(
-                                        child: _QuickControlsPanel(
-                                          stopped: stopped,
-                                          onStop: _onStop,
-                                          onAction: _onAction,
-                                          headLR: _headLR,
-                                          speed: _speed,
-                                          onHeadChange: (v) {
-                                            setState(() => _headLR = v);
-                                            ref.read(spineProvider.notifier).sendIntent({'intent': 'head', 'lr': v.round(), 'ud': 50});
-                                          },
-                                          onSpeedChange: (v) {
-                                            setState(() => _speed = v);
-                                            ref.read(spineProvider.notifier).sendIntent({'intent': 'speed', 'value': v});
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 20),
-                                _EventStreamWidget(events: _events),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Positioned(
-            bottom: 24,
-            right: 24,
-            child: _FloatingStopButton(stopped: stopped, onStop: _onStop),
-          ),
-          _ToastStack(toasts: _toasts),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobile(BuildContext context, bool online, int? battery, bool stopped) {
-    return Scaffold(
-      backgroundColor: MikeeColors.background,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              _McHeader(compact: true, online: online, battery: battery),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
+        final wide = !_forceMobile && constraints.maxWidth >= 900;
+        return Stack(
+          children: [
+            SingleChildScrollView(
+              padding: EdgeInsets.all(wide ? 24 : 12),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1240),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(child: _RobotStatusCard(online: online, latency: 12)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _BatteryCard(percent: battery, charging: true)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: _VisitorsCard()),
-                          const SizedBox(width: 12),
-                          Expanded(child: _SessionsCard()),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
+                      _buildStatCards(wide, online, battery),
+                      SizedBox(height: wide ? 20 : 12),
                       Consumer(
                         builder: (context, ref, _) {
                           final det = ref.watch(faceDetectionProvider);
                           if (det == null) return const SizedBox.shrink();
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
+                            padding: EdgeInsets.only(bottom: wide ? 20 : 12),
                             child: _FaceDetectionCard(det: det),
                           );
                         },
                       ),
-                      _LiveFeedWidget(stopped: stopped, timeString: _timeString),
-                      const SizedBox(height: 12),
-                      _QuickControlsPanel(
-                        stopped: stopped,
-                        onStop: _onStop,
-                        onAction: _onAction,
-                        headLR: _headLR,
-                        speed: _speed,
-                        onHeadChange: (v) {
-                          setState(() => _headLR = v);
-                          ref.read(spineProvider.notifier).sendIntent({'intent': 'head', 'lr': v.round(), 'ud': 50});
-                        },
-                        onSpeedChange: (v) {
-                          setState(() => _speed = v);
-                          ref.read(spineProvider.notifier).sendIntent({'intent': 'speed', 'value': v});
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _EventStreamWidget(events: _events.take(4).toList()),
+                      if (wide)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(flex: 3, child: _LiveFeedWidget(stopped: stopped, timeString: _timeString)),
+                            const SizedBox(width: 20),
+                            Expanded(flex: 2, child: _quickActions(stopped)),
+                          ],
+                        )
+                      else ...[
+                        _LiveFeedWidget(stopped: stopped, timeString: _timeString),
+                        const SizedBox(height: 12),
+                        _quickActions(stopped),
+                      ],
+                      SizedBox(height: wide ? 20 : 12),
+                      _EventStreamWidget(events: wide ? _events : _events.take(4).toList()),
+                      const SizedBox(height: 88),
                     ],
                   ),
                 ),
               ),
-            ],
-          ),
-          Positioned(
-            bottom: 24,
-            right: 24,
-            child: _FloatingStopButton(stopped: stopped, onStop: _onStop),
-          ),
-          _ToastStack(toasts: _toasts),
-        ],
-      ),
-    );
-  }
-}
-
-// All component widgets below
-class _McHeader extends StatelessWidget {
-  final bool compact;
-  final bool online;
-  final int? battery; // null = unknown → shown as "—"
-
-  const _McHeader({required this.compact, required this.online, required this.battery});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(
-        color: MikeeColors.surface.withOpacity(0.8),
-        border: const Border(bottom: BorderSide(color: MikeeColors.border)),
-      ),
-      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Left: Logo lockup
-          Row(children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [MikeeColors.primary, MikeeColors.primaryDark],
+            ),
+            // Floating Desktop/Mobile preview toggle (prototype parity).
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 24,
+              child: Center(
+                child: _DesktopMobileToggle(
+                  mobile: _forceMobile,
+                  onChanged: (m) => setState(() => _forceMobile = m),
                 ),
-                boxShadow: [BoxShadow(color: MikeeColors.primary.withOpacity(0.35), blurRadius: 16)],
               ),
-              child: Center(child: Text('X', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
             ),
-            if (!compact) ...[
-              const SizedBox(width: 12),
-              Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
-                Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0)),
-              ]),
-            ]
-          ]),
-          // Center: Subtitle (desktop only)
-          if (!compact)
-            Text(
-              'Mikee — Reception Robot',
-              style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
+            Positioned(
+              bottom: 24,
+              right: 24,
+              child: _FloatingStopButton(stopped: stopped, onStop: _onStop),
             ),
-          // Right: Status pills and avatar
-          Row(children: [
-            if (!compact) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: MikeeColors.cardTop, border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(8)),
-                child: Row(children: [
-                  Icon(battery == null ? Icons.battery_unknown : Icons.battery_charging_full, size: 16,
-                      color: battery == null ? MikeeColors.textMuted : MikeeColors.success),
-                  const SizedBox(width: 8),
-                  Text(battery == null ? '—' : '$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 40,
-                    height: 6,
-                    decoration: BoxDecoration(color: MikeeColors.border, borderRadius: BorderRadius.circular(999)),
-                    child: Stack(children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: (40 * (battery ?? 0) / 100).clamp(0, 40),
-                          height: 6,
-                          decoration: BoxDecoration(color: MikeeColors.success, borderRadius: BorderRadius.circular(999)),
-                        ),
-                      )
-                    ]),
-                  ),
-                ]),
-              ),
-              const SizedBox(width: 12),
-            ],
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: (online ? MikeeColors.success : MikeeColors.error).withOpacity(0.08),
-                border: Border.all(color: (online ? MikeeColors.success : MikeeColors.error).withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(children: [
-                Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: online ? MikeeColors.success : MikeeColors.error)),
-                const SizedBox(width: 8),
-                Text(online ? 'ONLINE' : 'OFFLINE', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: online ? MikeeColors.success : MikeeColors.error)),
-              ]),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: MikeeColors.border, width: 2), color: const Color(0xFF2A2A2A)),
-              child: Center(child: Text('NK', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white))),
-            ),
-          ]),
+            _ToastStack(toasts: _toasts),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCards(bool wide, bool online, int? battery) {
+    final cards = <Widget>[
+      _RobotStatusCard(online: online, latency: 12),
+      _BatteryCard(percent: battery, charging: true),
+      _VisitorsCard(),
+      _SessionsCard(),
+    ];
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(width: 20),
+            Expanded(child: cards[i]),
+          ]
         ],
-      ),
+      );
+    }
+    return Column(children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: cards[0]), const SizedBox(width: 12), Expanded(child: cards[1])]),
+      const SizedBox(height: 12),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: cards[2]), const SizedBox(width: 12), Expanded(child: cards[3])]),
+    ]);
+  }
+
+  Widget _quickActions(bool stopped) {
+    return _QuickActionsPanel(
+      stopped: stopped,
+      onStop: _onStop,
+      onAction: _onAction,
+      headLR: _headLR,
+      speed: _speed,
+      onHeadChange: (v) {
+        setState(() => _headLR = v);
+        ref.read(spineProvider.notifier).sendIntent({'intent': 'head', 'lr': v.round(), 'ud': 50});
+      },
+      onSpeedChange: (v) {
+        setState(() => _speed = v);
+        ref.read(spineProvider.notifier).sendIntent({'intent': 'speed', 'value': v});
+      },
     );
   }
 }
 
-class _McSidebar extends StatelessWidget {
-  final String active;
-  final Function(String) onNav;
+// ───────────────────────────── Shared card ─────────────────────────────
 
-  const _McSidebar({required this.active, required this.onNav});
+/// Shared card container — gradient surface, hairline border, rounded corners.
+class _McCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const _McCard({required this.child, this.padding = const EdgeInsets.all(20)});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
+      padding: padding,
       decoration: BoxDecoration(
-        color: MikeeColors.surface,
-        border: const Border(right: BorderSide(color: MikeeColors.border)),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [MikeeColors.cardTop, MikeeColors.cardBottom],
+        ),
+        border: Border.all(color: MikeeColors.border),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              _NavItem('Dashboard', Icons.space_dashboard, active == 'dashboard', () => onNav('dashboard')),
-              _NavItem('Control', Icons.sports_esports, active == 'control', () => onNav('control')),
-              _NavItem('Live Feed', Icons.videocam, active == 'feed', () => onNav('feed')),
-              _NavItem('Gallery', Icons.photo_library, active == 'gallery', () => onNav('gallery')),
-              _NavItem('Event Log', Icons.receipt_long, active == 'events', () => onNav('events')),
-              _NavItem('Patrol Routes', Icons.route, active == 'patrol_routes', () => onNav('patrol_routes')),
-              _NavItem('Settings', Icons.settings, active == 'settings', () => onNav('settings')),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(border: Border(top: BorderSide(color: MikeeColors.border))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('v0.1.0', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
-            const SizedBox(height: 4),
-            Text('xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF4A4A4A))),
-          ]),
-        ),
-      ]),
+      child: child,
     );
   }
 }
 
-class _NavItem extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _NavItem(this.label, this.icon, this.active, this.onTap);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: active ? MikeeColors.primary.withOpacity(0.12) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(children: [
-              if (active) Container(width: 4, height: 20, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: MikeeColors.primary, borderRadius: BorderRadius.circular(999))),
-              Icon(icon, size: 20, color: active ? MikeeColors.primary : MikeeColors.textSecondary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: active ? MikeeColors.primary : MikeeColors.textSecondary)),
-              ),
-            ]),
-          ),
-        ),
-      ),
+Widget _cardLabel(String text) => Text(
+      text,
+      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary),
     );
-  }
-}
+
+// ───────────────────────────── Stat cards ─────────────────────────────
 
 class _RobotStatusCard extends StatelessWidget {
   final bool online;
@@ -631,8 +393,8 @@ class _RobotStatusCard extends StatelessWidget {
     return _McCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('ROBOT STATUS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-          Icon(Icons.smart_toy, size: 18, color: const Color(0xFF3A3A3A)),
+          _cardLabel('ROBOT STATUS'),
+          const Icon(Icons.smart_toy, size: 18, color: Color(0xFF3A3A3A)),
         ]),
         const SizedBox(height: 12),
         Row(children: [
@@ -647,20 +409,14 @@ class _RobotStatusCard extends StatelessWidget {
             style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
             children: online
                 ? [
-                    TextSpan(
-                      text: '${latency}ms',
-                      style: GoogleFonts.jetBrainsMono(fontSize: 13, color: Colors.white),
-                    ),
-                    TextSpan(
-                      text: ' latency',
-                      style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
-                    ),
+                    TextSpan(text: '${latency}ms', style: GoogleFonts.jetBrainsMono(fontSize: 13, color: Colors.white)),
+                    TextSpan(text: ' latency', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
                   ]
                 : null,
           ),
         ),
         const SizedBox(height: 8),
-        Divider(color: MikeeColors.border, height: 1),
+        const Divider(color: MikeeColors.border, height: 1),
         const SizedBox(height: 8),
         Text.rich(TextSpan(
           text: 'Last seen ',
@@ -689,10 +445,7 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1100),
-      vsync: this,
-    );
+    _animationController = AnimationController(duration: const Duration(milliseconds: 1100), vsync: this);
     _animation = Tween<double>(begin: 0, end: (widget.percent ?? 0).toDouble()).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
@@ -725,7 +478,7 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('BATTERY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
+          _cardLabel('BATTERY'),
           Icon(widget.charging ? Icons.bolt : Icons.battery_full, size: 18, color: MikeeColors.primary),
         ]),
         const SizedBox(height: 10),
@@ -743,7 +496,7 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
                         ? MikeeColors.error
                         : value <= 40
                             ? MikeeColors.warning
-                            : MikeeColors.success;
+                            : MikeeColors.primary;
                 return CustomPaint(
                   painter: _BatteryRingPainter(progress: value / 100, color: ringColor),
                   child: Center(
@@ -755,8 +508,8 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
                           style: GoogleFonts.jetBrainsMono(fontSize: 22, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary),
                         ),
                         Text(
-                          widget.charging ? 'charging' : 'on battery',
-                          style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textMuted),
+                          widget.charging ? 'CHARGING' : 'ON BATTERY',
+                          style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textMuted),
                         ),
                       ],
                     ),
@@ -768,11 +521,11 @@ class _BatteryCardState extends State<_BatteryCard> with TickerProviderStateMixi
         ),
         const SizedBox(height: 12),
         Text.rich(TextSpan(
-          text: 'Est. runtime ',
+          text: widget.charging ? 'Full in ' : 'Est. runtime ',
           style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted),
           children: [
             TextSpan(
-              text: widget.percent == null ? '—' : '~${(widget.percent! * 4.2).round()} min',
+              text: widget.percent == null ? '—' : '~${((100 - widget.percent!) * 1.9).round()} min',
               style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textSecondary),
             ),
           ],
@@ -818,69 +571,135 @@ class _BatteryRingPainter extends CustomPainter {
   bool shouldRepaint(_BatteryRingPainter old) => old.progress != progress || old.color != color;
 }
 
-/// Shared card container — gradient surface, hairline border, rounded corners.
-class _McCard extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-
-  const _McCard({required this.child, this.padding = const EdgeInsets.all(20)});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [MikeeColors.cardTop, MikeeColors.cardBottom],
-        ),
-        border: Border.all(color: MikeeColors.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: child,
-    );
-  }
-}
-
-/// Small stat card: today's visitor check-ins.
 class _VisitorsCard extends StatelessWidget {
+  // No live data source yet — representative figures matching the prototype.
+  static const int _count = 24;
+  static const int _delta = 3;
+  static const List<double> _trend = [0.35, 0.28, 0.5, 0.42, 0.62, 0.55, 0.8, 1.0];
+
   @override
   Widget build(BuildContext context) {
     return _McCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('VISITORS TODAY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-          Icon(Icons.people_alt, size: 18, color: const Color(0xFF3A3A3A)),
+          _cardLabel("TODAY'S VISITORS"),
+          const Icon(Icons.people_alt, size: 18, color: Color(0xFF3A3A3A)),
         ]),
         const SizedBox(height: 12),
-        Text('12', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
+        Text('$_count', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
         const SizedBox(height: 4),
-        Text('check-ins since 9:00', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+        Text('visitors checked in', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+        const SizedBox(height: 10),
+        SizedBox(height: 32, child: CustomPaint(size: const Size(double.infinity, 32), painter: _SparklinePainter(_trend))),
+        const SizedBox(height: 8),
+        Row(children: [
+          const Icon(Icons.trending_up, size: 14, color: MikeeColors.success),
+          const SizedBox(width: 4),
+          Text('+$_delta from yesterday', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: MikeeColors.success)),
+        ]),
       ]),
     );
   }
 }
 
-/// Small stat card: active admin/control sessions.
+/// Tiny line+fill sparkline used by the visitors card.
+class _SparklinePainter extends CustomPainter {
+  final List<double> points; // each 0..1
+
+  _SparklinePainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+    final dx = size.width / (points.length - 1);
+    Offset at(int i) => Offset(dx * i, size.height - points[i] * size.height);
+
+    final path = Path()..moveTo(at(0).dx, at(0).dy);
+    for (int i = 1; i < points.length; i++) {
+      path.lineTo(at(i).dx, at(i).dy);
+    }
+
+    final fill = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      fill,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [MikeeColors.primary.withOpacity(0.25), MikeeColors.primary.withOpacity(0.0)],
+        ).createShader(Offset.zero & size),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = MikeeColors.primary
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) => old.points != points;
+}
+
 class _SessionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _McCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('ACTIVE SESSIONS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-          Icon(Icons.hub, size: 18, color: const Color(0xFF3A3A3A)),
+          _cardLabel('ACTIVE SESSIONS'),
+          const Icon(Icons.share, size: 18, color: Color(0xFF3A3A3A)),
         ]),
         const SizedBox(height: 12),
-        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-          Text('1', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.primary)),
-          const SizedBox(width: 6),
-          Text('admin', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Text('2', style: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
+          const Spacer(),
+          SizedBox(
+            width: 54,
+            height: 28,
+            child: Stack(children: [
+              const _SessionAvatar(initials: 'RS', color: MikeeColors.info, left: 26),
+              const _SessionAvatar(initials: 'NK', color: MikeeColors.primary, left: 0),
+            ]),
+          ),
         ]),
         const SizedBox(height: 4),
-        Text('this device', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+        Text('admin sessions active', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+        const SizedBox(height: 10),
+        Text('You + 1 other', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF4A4A4A))),
       ]),
+    );
+  }
+}
+
+class _SessionAvatar extends StatelessWidget {
+  final String initials;
+  final Color color;
+  final double left;
+
+  const _SessionAvatar({required this.initials, required this.color, required this.left});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: Border.all(color: MikeeColors.cardBottom, width: 2),
+        ),
+        child: Center(child: Text(initials, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white))),
+      ),
     );
   }
 }
@@ -912,15 +731,9 @@ class _FaceDetectionCard extends StatelessWidget {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              matched ? det.name : 'Unknown visitor',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary),
-            ),
+            Text(matched ? det.name : 'Unknown visitor', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
             const SizedBox(height: 2),
-            Text(
-              '${matched ? 'Recognized' : 'No match'} · L2 ${det.distance.toStringAsFixed(2)}',
-              style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary),
-            ),
+            Text('${matched ? 'Recognized' : 'No match'} · L2 ${det.distance.toStringAsFixed(2)}', style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary)),
           ]),
         ),
         Container(
@@ -932,6 +745,8 @@ class _FaceDetectionCard extends StatelessWidget {
     );
   }
 }
+
+// ───────────────────────────── Live feed ─────────────────────────────
 
 /// Live MJPEG camera feed with a status overlay. Reads the robot IP from settings.
 class _LiveFeedWidget extends ConsumerWidget {
@@ -946,26 +761,19 @@ class _LiveFeedWidget extends ConsumerWidget {
     return _McCard(
       padding: const EdgeInsets.all(12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Row(children: [
-              const Icon(Icons.videocam, size: 16, color: MikeeColors.primary),
-              const SizedBox(width: 8),
-              Text('LIVE FEED', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-            ]),
-            Text(timeString, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textMuted)),
-          ]),
-        ),
-        const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: AspectRatio(
             aspectRatio: 16 / 9,
             child: Stack(fit: StackFit.expand, children: [
-              Container(
-                color: Colors.black,
-                child: MjpegView(url: robotStreamUrl(robotIp)),
+              Container(color: Colors.black, child: MjpegView(url: robotStreamUrl(robotIp))),
+              // Empty-state hint behind the stream.
+              Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.videocam, size: 56, color: Color(0xFF2E2E2E)),
+                  const SizedBox(height: 8),
+                  Text('Live Feed · $robotIp:$robotCameraPort', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: const Color(0xFF3A3A3A))),
+                ]),
               ),
               Positioned(
                 top: 10,
@@ -978,6 +786,15 @@ class _LiveFeedWidget extends ConsumerWidget {
                     const SizedBox(width: 6),
                     Text('LIVE', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.1, color: Colors.white)),
                   ]),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.45), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.fullscreen, size: 18, color: Colors.white70),
                 ),
               ),
               if (stopped)
@@ -994,13 +811,31 @@ class _LiveFeedWidget extends ConsumerWidget {
             ]),
           ),
         ),
+        const SizedBox(height: 10),
+        Row(children: [
+          _feedStat('RES', '640×480'),
+          const SizedBox(width: 18),
+          _feedStat('FPS', '15'),
+          const SizedBox(width: 18),
+          _feedStat('LATENCY', '45ms'),
+          const Spacer(),
+          Text(timeString, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
+        ]),
       ]),
     );
   }
+
+  Widget _feedStat(String label, String value) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label ', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textMuted)),
+      Text(value, style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textSecondary)),
+    ]);
+  }
 }
 
-/// Right-hand control panel: quick actions, head/speed sliders, STOP.
-class _QuickControlsPanel extends StatelessWidget {
+// ───────────────────────────── Quick actions ─────────────────────────────
+
+class _QuickActionsPanel extends StatelessWidget {
   final bool stopped;
   final VoidCallback onStop;
   final void Function(String) onAction;
@@ -1009,7 +844,7 @@ class _QuickControlsPanel extends StatelessWidget {
   final ValueChanged<double> onHeadChange;
   final ValueChanged<double> onSpeedChange;
 
-  const _QuickControlsPanel({
+  const _QuickActionsPanel({
     required this.stopped,
     required this.onStop,
     required this.onAction,
@@ -1023,43 +858,50 @@ class _QuickControlsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return _McCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('QUICK CONTROLS', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-        const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: _ActionButton(icon: Icons.photo_camera, label: 'Snapshot', onTap: stopped ? null : () => onAction('snapshot'))),
-          const SizedBox(width: 10),
-          Expanded(child: _ActionButton(icon: Icons.waving_hand, label: 'Wave', onTap: stopped ? null : () => onAction('wave'))),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          Expanded(child: _ActionButton(icon: Icons.home, label: 'Home', onTap: stopped ? null : () => onAction('home'))),
-          const SizedBox(width: 10),
-          Expanded(child: _ActionButton(icon: Icons.sports_esports, label: 'Control', onTap: () => onAction('control'))),
-        ]),
-        const SizedBox(height: 18),
-        _SliderRow(label: 'Head L/R', value: headLR, min: 0, max: 100, suffix: headLR.round().toString(), enabled: !stopped, onChanged: onHeadChange),
-        const SizedBox(height: 12),
-        _SliderRow(label: 'Speed', value: speed, min: 0, max: 1, suffix: '${(speed * 100).round()}%', enabled: !stopped, onChanged: onSpeedChange),
-        const SizedBox(height: 18),
+        Text('Quick Actions', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
+        const SizedBox(height: 16),
+        // Emergency stop — primary, glowing, at the top.
         SizedBox(
           width: double.infinity,
-          child: Material(
-            color: stopped ? MikeeColors.success : MikeeColors.error,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              onTap: onStop,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(stopped ? Icons.play_arrow : Icons.stop, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Text(stopped ? 'RESUME MOTION' : 'EMERGENCY STOP', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: Colors.white)),
-                ]),
+              boxShadow: stopped ? [] : [BoxShadow(color: MikeeColors.error.withOpacity(0.45), blurRadius: 22)],
+            ),
+            child: Material(
+              color: stopped ? MikeeColors.success : MikeeColors.error,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onStop,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(stopped ? Icons.play_arrow : Icons.stop_circle, color: Colors.white, size: 22),
+                    const SizedBox(width: 10),
+                    Text(stopped ? 'RESUME MOTION' : 'EMERGENCY STOP', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.05, color: Colors.white)),
+                  ]),
+                ),
               ),
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.sports_esports, label: 'Control Room', onTap: () => onAction('control'))),
+          const SizedBox(width: 12),
+          Expanded(child: _ActionButton(icon: Icons.waving_hand, label: 'Wave Hello', onTap: stopped ? null : () => onAction('wave'))),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.photo_camera, label: 'Take Snapshot', onTap: stopped ? null : () => onAction('snapshot'))),
+          const SizedBox(width: 12),
+          Expanded(child: _ActionButton(icon: Icons.home, label: 'Go Home', onTap: stopped ? null : () => onAction('home'))),
+        ]),
+        const SizedBox(height: 20),
+        _SliderRow(label: 'HEAD POSITION', value: headLR, min: 0, max: 100, suffix: 'LR ${headLR.round()}', leading: Icons.smart_toy, enabled: !stopped, onChanged: onHeadChange),
+        const SizedBox(height: 14),
+        _SliderRow(label: 'SPEED', value: speed, min: 0, max: 1, suffix: '${speed.toStringAsFixed(1)}x', enabled: !stopped, onChanged: onSpeedChange),
       ]),
     );
   }
@@ -1082,12 +924,19 @@ class _ActionButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           decoration: BoxDecoration(border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)),
-          child: Column(children: [
-            Icon(icon, size: 20, color: disabled ? MikeeColors.textMuted : MikeeColors.primary),
-            const SizedBox(height: 6),
-            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: disabled ? MikeeColors.textMuted : MikeeColors.textSecondary)),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 18, color: disabled ? MikeeColors.textMuted : MikeeColors.primary),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: disabled ? MikeeColors.textMuted : MikeeColors.textSecondary),
+              ),
+            ),
           ]),
         ),
       ),
@@ -1103,6 +952,7 @@ class _SliderRow extends StatelessWidget {
   final String suffix;
   final bool enabled;
   final ValueChanged<double> onChanged;
+  final IconData? leading;
 
   const _SliderRow({
     required this.label,
@@ -1112,35 +962,46 @@ class _SliderRow extends StatelessWidget {
     required this.suffix,
     required this.enabled,
     required this.onChanged,
+    this.leading,
   });
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
-        Text(suffix, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: enabled ? MikeeColors.textPrimary : MikeeColors.textMuted)),
+        Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
+        Text(suffix, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: enabled ? MikeeColors.primary : MikeeColors.textMuted)),
       ]),
-      SliderTheme(
-        data: SliderTheme.of(context).copyWith(
-          activeTrackColor: MikeeColors.primary,
-          inactiveTrackColor: MikeeColors.border,
-          thumbColor: MikeeColors.primary,
-          overlayColor: MikeeColors.primary.withOpacity(0.15),
-          trackHeight: 4,
+      Row(children: [
+        if (leading != null) ...[
+          Icon(leading, size: 16, color: MikeeColors.textMuted),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: MikeeColors.primary,
+              inactiveTrackColor: MikeeColors.border,
+              thumbColor: MikeeColors.primary,
+              overlayColor: MikeeColors.primary.withOpacity(0.15),
+              trackHeight: 4,
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: enabled ? onChanged : null,
+            ),
+          ),
         ),
-        child: Slider(
-          value: value.clamp(min, max),
-          min: min,
-          max: max,
-          onChanged: enabled ? onChanged : null,
-        ),
-      ),
+      ]),
     ]);
   }
 }
 
-/// Recent-events list shown on the dashboard.
+// ───────────────────────────── Event stream ─────────────────────────────
+
+/// Recent-events table shown on the dashboard.
 class _EventStreamWidget extends StatelessWidget {
   final List<EventModel> events;
 
@@ -1149,16 +1010,27 @@ class _EventStreamWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _McCard(
+      padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('EVENT STREAM', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: MikeeColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-            child: Text('LIVE', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: MikeeColors.success)),
-          ),
+          Row(children: [
+            Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: MikeeColors.success)),
+            const SizedBox(width: 8),
+            Text('Live Event Stream', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
+          ]),
+          Text('View All →', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: MikeeColors.primary)),
         ]),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        // Column headers
+        Row(children: [
+          _col('TIME', 2),
+          _col('EVENT', 3),
+          _col('DETAILS', 4),
+          _col('SESSION', 2, alignEnd: true),
+        ]),
+        const SizedBox(height: 8),
+        const Divider(color: MikeeColors.border, height: 1),
+        const SizedBox(height: 4),
         if (events.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1168,25 +1040,93 @@ class _EventStreamWidget extends StatelessWidget {
           ...events.map((e) {
             final color = eventColorMap[e.type] ?? MikeeColors.textMuted;
             return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(margin: const EdgeInsets.only(top: 5), width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
-                const SizedBox(width: 12),
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Expanded(flex: 2, child: Text(e.ago, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textMuted))),
                 Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(e.type, style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500, color: MikeeColors.textPrimary)),
-                    Text(e.details, style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
+                  flex: 3,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+                        const SizedBox(width: 6),
+                        Flexible(child: Text(e.type, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.w500, color: color))),
+                      ]),
+                    ),
+                  ),
+                ),
+                Expanded(flex: 4, child: Text(e.details, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.jetBrainsMono(fontSize: 12, color: MikeeColors.textSecondary))),
+                Expanded(
+                  flex: 2,
+                  child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    const Icon(Icons.person, size: 12, color: MikeeColors.textMuted),
+                    const SizedBox(width: 4),
+                    Text(e.session, style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
                   ]),
                 ),
-                const SizedBox(width: 8),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(e.ago, style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
-                  Text(e.session, style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF4A4A4A))),
-                ]),
               ]),
             );
           }),
       ]),
+    );
+  }
+
+  Widget _col(String label, int flex, {bool alignEnd = false}) {
+    return Expanded(
+      flex: flex,
+      child: Align(
+        alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+        child: Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textMuted)),
+      ),
+    );
+  }
+}
+
+// ───────────────────────────── Floating controls ─────────────────────────────
+
+/// Desktop/Mobile layout preview toggle pill (matches the prototype).
+class _DesktopMobileToggle extends StatelessWidget {
+  final bool mobile;
+  final ValueChanged<bool> onChanged;
+
+  const _DesktopMobileToggle({required this.mobile, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: MikeeColors.cardTop,
+        border: Border.all(color: MikeeColors.border),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 16)],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        _seg('Desktop', Icons.desktop_windows, !mobile, () => onChanged(false)),
+        _seg('Mobile', Icons.smartphone, mobile, () => onChanged(true)),
+      ]),
+    );
+  }
+
+  Widget _seg(String label, IconData icon, bool active, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(color: active ? MikeeColors.primary : Colors.transparent, borderRadius: BorderRadius.circular(999)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 15, color: active ? Colors.white : MikeeColors.textSecondary),
+            const SizedBox(width: 6),
+            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : MikeeColors.textSecondary)),
+          ]),
+        ),
+      ),
     );
   }
 }
