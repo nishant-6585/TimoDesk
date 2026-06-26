@@ -5,13 +5,11 @@
  *  - applySensorEvent (pure state + log mapping)
  *  - createSensorPipeline (broadcast + log wiring)
  *  - person_detected transition-only logging
- *  - MockRobotSDK emitter: fires when running, suppressed under STOP
  */
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { applySensorEvent, createSensorPipeline } from '../src/sensors';
-import { MockRobotSDK } from '../src/robot/mock';
-import { RobotStatus, SensorEvent } from '../src/types';
+import { RobotStatus } from '../src/types';
 
 function baseStatus(overrides: Partial<RobotStatus> = {}): RobotStatus {
   return {
@@ -154,59 +152,6 @@ describe('createSensorPipeline', () => {
     // obstacleState from the first event persists into the second broadcast
     expect(after.obstacleState).toBe('blocked');
     expect(after.personDetected).toBe(true);
-  });
-});
-
-describe('MockRobotSDK sensor simulator', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('emits obstacle events while running', () => {
-    vi.useFakeTimers();
-    const mock = new MockRobotSDK({
-      isStopped: () => false,
-      sensorSim: { obstacleMs: 1000, sensorHealthMs: 1_000_000, localizationMs: 1_000_000, personMs: 1_000_000 },
-    });
-    const events: SensorEvent[] = [];
-    mock.onSensorEvent(e => events.push(e));
-
-    vi.advanceTimersByTime(5000); // ~5 obstacle ticks at 1s cadence
-
-    expect(events.length).toBeGreaterThan(0);
-    expect(events.every(e => e.type === 'obstacle_event')).toBe(true);
-    mock.cleanup();
-  });
-
-  it('suppresses all sensor events while under a safety STOP', () => {
-    vi.useFakeTimers();
-    const mock = new MockRobotSDK({
-      isStopped: () => true, // STOP active
-      sensorSim: { obstacleMs: 1000, sensorHealthMs: 1000, localizationMs: 1000, personMs: 1000 },
-    });
-    const events: SensorEvent[] = [];
-    mock.onSensorEvent(e => events.push(e));
-
-    vi.advanceTimersByTime(20000); // 20s — would be many events if not suppressed
-
-    expect(events).toHaveLength(0);
-    mock.cleanup();
-  });
-
-  it('stopSensorSim halts emission', () => {
-    vi.useFakeTimers();
-    const mock = new MockRobotSDK({
-      isStopped: () => false,
-      sensorSim: { obstacleMs: 1000, sensorHealthMs: 1000, localizationMs: 1000, personMs: 1000 },
-    });
-    const events: SensorEvent[] = [];
-    mock.onSensorEvent(e => events.push(e));
-
-    mock.stopSensorSim();
-    vi.advanceTimersByTime(20000);
-
-    expect(events).toHaveLength(0);
-    mock.cleanup();
   });
 });
 

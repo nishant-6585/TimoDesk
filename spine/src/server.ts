@@ -315,8 +315,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         }
       });
       // Push trigger (#90): obstacle blocked → notify admins (best-effort).
-      // On real hardware this fires once the CSJBot nav events feed the pipeline
-      // (#81); with MockRobotSDK it fires on simulated obstacle events.
+      // Fires once the CSJBot nav events feed the pipeline (#81).
       if (supabase && status.obstacleState) {
         void maybeNotifyObstacleBlocked(supabase, status.obstacleState);
       }

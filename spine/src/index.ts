@@ -1,10 +1,9 @@
 /**
  * index.ts — Spine entry point
- * Reads env → picks SDK (mock vs real) → starts server
+ * Connects to the real robot → starts server
  */
 
 import { RobotSDK } from './robot/interface';
-import { MockRobotSDK } from './robot/mock';
 import { RealRobotSDK } from './robot/real';
 import { startServer } from './server';
 import { startCameraServer } from './camera';
@@ -15,21 +14,10 @@ async function main() {
   console.log('    TIMO RECEPTION ROBOT — SPINE (Integration Gateway)');
   console.log('═══════════════════════════════════════════════════════════════\n');
 
-  // 1. Pick SDK mode
-  const mode = (process.env.ROBOT_MODE || 'mock').toLowerCase();
-  let sdk: RobotSDK;
-
-  if (mode === 'mock') {
-    console.log('🤖 ROBOT_MODE=mock — Using MockRobotSDK (no hardware required)');
-    sdk = new MockRobotSDK({ eventIntervalMs: 10000 });
-  } else if (mode === 'real') {
-    const robotIP = process.env.ROBOT_IP || '192.168.99.101';
-    console.log(`🤖 ROBOT_MODE=real — Connecting to robot at ${robotIP}`);
-    sdk = new RealRobotSDK({ robotIP });
-  } else {
-    console.error(`❌ Invalid ROBOT_MODE="${mode}" — must be "mock" or "real"`);
-    process.exit(1);
-  }
+  // 1. Connect to the robot
+  const robotIP = process.env.ROBOT_IP || '192.168.99.101';
+  console.log(`🤖 Connecting to robot at ${robotIP}`);
+  const sdk: RobotSDK = new RealRobotSDK({ robotIP });
 
   // 2. Check Supabase
   if (isSupabaseConfigured()) {

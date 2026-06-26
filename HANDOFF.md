@@ -1,5 +1,7 @@
 # Session Handoff
 
+> **🤖 2026-06-26 — MockRobotSDK removed.** The spine now talks **only** to the real robot via `RealRobotSDK`. Deleted `spine/src/robot/mock.ts` + `tests/mock-sdk.test.ts`; dropped the `ROBOT_MODE` env var and its mock/real branch in `index.ts` (set `ROBOT_IP` — the spine connects on boot); trimmed the mock-only sensor-simulator tests from `sensors.test.ts`. Spine: `tsc --noEmit` clean, **46/46 vitest passing** (no more flaky mock-timing tests). Historical notes below that reference the mock, `ROBOT_MODE`, or the flaky mock-sdk tests are **stale** — the build/test/file-map references have been corrected, but the dated session narratives are left as-is for history.
+>
 > **Last updated:** 2026-06-20 (**#82 animated face + live perception DONE (= #89 P2)** — Beam render replaces the #89 P1 placeholder, gaze/greeting wired, **kiosk credential resolved** (closes the last auth go-live item); see the callout below. Prior context: **auth go-live DONE — JWKS/ES256 verification + real login gate, prod-proven**; **Firebase/FCM config activated** — `firebase_options.dart` + Android plugin committed, APK proven, only spine service-account key + on-device test remain (see `docs/FIREBASE_SETUP.md`); #70/#87/#88 done; **#89** P1 DONE; **#90** Part A done + Part B code-complete, native-build break resolved (phone remote builds on device); **#91 deployment & config** (kill localhost/hardcoded-IPs — hybrid: cloud web app + on-prem spine, robot self-register) + **#92 CI/CD GitHub Actions** added to pipeline) · **For:** Claude Code on any future session picking up Mikee work
 >
 > **Read this BEFORE `PROJECT_STATUS.md` / `FLUTTER_APP_SUMMARY.md`** — those are older. This file is the live state.
@@ -84,7 +86,7 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 **Files modified:**
 - `spine/src/types.ts` — 5 new `RobotStatus` fields: `obstacleState`, `localizationQuality`, `sensorHealth`, `personDetected`, `lastObstacleEventAt`; new `SensorEvent` discriminated union
 - `spine/src/robot/interface.ts` — added `onSensorEvent(...)` to the SDK contract
-- `spine/src/robot/mock.ts` — synthetic emitter (obstacle 8–15s weighted 60/20/12/8, health 30s, lq 45s, person 20s); STOP suppression; `start/stopSensorSim()`; auto-start
+- ~~`spine/src/robot/mock.ts`~~ — *(DELETED 2026-06-26 with the mock SDK)* synthetic emitter (obstacle 8–15s weighted 60/20/12/8, health 30s, lq 45s, person 20s); STOP suppression; `start/stopSensorSim()`; auto-start
 - `spine/src/robot/real.ts` — no-op `onSensorEvent` pointing at `SENSOR_BRIDGE.md`
 - `spine/src/server.ts` — registers the pipeline: seed status → broadcast `robot_status` → `logEvent`
 
@@ -137,7 +139,7 @@ These are noise but harmless — the code state is correct. Optionally clean up 
 
 **🛑 Hardware bring-up epic (#60–#64) — BLOCKED: awaiting physical Mikee robot.** Real camera + real movement against actual hardware. The plumbing is mostly built; this epic is verification + the last-mile native bridges. Cannot be validated without the robot on the desk, so it stays parked, not scheduled.
 
-- **#60** Verify `RealRobotSDK` (`spine/src/robot/real.ts`) end-to-end: `ROBOT_MODE=real` + `ROBOT_IP`, intents → robot WS ports 8081/8082/8083, confirm drive/head/arm/wave actually move the chassis. SDK is implemented but **never run against hardware.**
+- **#60** Verify `RealRobotSDK` (`spine/src/robot/real.ts`) end-to-end: set `ROBOT_IP` (the spine always connects to the real robot now), intents → robot WS ports 8081/8082/8083, confirm drive/head/arm/wave actually move the chassis. *(drive/head/camera/battery proven on hardware per the 2026-06 update above; arm/wave still owe a hardware pass.)*
 - **#61** Confirm `robot_app` native plugins (`ChassisControlPlugin` / `HeadControlPlugin` / `ArmControlPlugin`) actually call the CSJBot **motor** SDK — right now they're WebSocket command receivers; the real motor bridge is the "(future) native SDK bridge."
 - **#62** Swap the **mock camera** (cycling RGB frames, per `README.md:96`) for the real CSJBot camera feed in `CameraStreamPlugin`. MJPEG server + admin-app `MjpegView` already work against the mock; this swaps the source.
 - **#63** Wire the native sensor bridge (`robot_app/docs/SENSOR_BRIDGE.md`) into `RealRobotSDK.onSensorEvent` (currently a no-op) so Phase 1A obstacle/health/localization events flow from real hardware.
@@ -291,7 +293,7 @@ Goal: stop developing on `localhost`, deploy properly, and get rid of hardcoded 
 
 Automated test + build (+ deploy) on push/PR. Independent of the #91 hosting decision — the test/build half can start immediately.
   - **Workflows:**
-    - **spine** — `npm ci` → `tsc --noEmit` → `npm test` (vitest) on PR + push to main. ⚠️ FIRST fix/quarantine the **2 pre-existing flaky MockRobotSDK timing tests** (mock-sdk/sensors) or CI is permanently red — they fail nondeterministically; either make them deterministic (inject/fake timers) or mark them `test.skip` with a TODO.
+    - **spine** — `npm ci` → `tsc --noEmit` → `npm test` (vitest) on PR + push to main. (The 2 flaky MockRobotSDK timing tests that used to make CI red were removed with the mock SDK on 2026-06-26 — 46/46 deterministic now.)
     - **app (Flutter)** — `flutter pub get` → `flutter analyze` → `flutter test` → `flutter build web`. (Note `flutter analyze` had an environmental crash once — pin the Flutter version in CI to avoid it.)
     - **robot_app (Flutter)** — `flutter analyze` → `flutter build apk --debug` (artifact upload). Requires the committed `google-services.json` (✅ now committed).
   - **Deploy (after #91 decision):** on merge to main → deploy web app to the chosen host; deploy/restart spine (if cloud, e.g. Railway/Render/Fly; if on-prem, a self-hosted runner or a pull-based agent). Supabase migrations: keep MANUAL for now (auto-applying schema from CI is risky) — revisit later.
@@ -496,7 +498,7 @@ The strongest candidates, roughly in priority order:
 ```bash
 # Sync + baselines
 git pull origin main
-cd spine && npm install && npm test     # 51 pass; 2 MockRobotSDK *timing* tests are pre-existing flaky (mock-sdk/sensors)
+cd spine && npm install && npm test     # 46 pass (mock SDK + its flaky timing tests removed 2026-06-26)
 npx tsc --noEmit                         # clean
 ```
 
@@ -548,7 +550,7 @@ The original Windows session built extended context in personal memory files at 
 |---|---|
 | Phase 1A spine code | `spine/src/sensors.ts`, `spine/src/types.ts`, `spine/src/server.ts` |
 | Phase 1A tests | `spine/tests/sensors.test.ts` |
-| Mock synthetic emitter | `spine/src/robot/mock.ts` |
+| Real sensor source (no-op until bridge lands) | `spine/src/robot/real.ts` `onSensorEvent` |
 | Native bridge reference (NOT deployed) | `robot_app/docs/SENSOR_BRIDGE.md` |
 | Wire-format fix (#53, DONE `7a19c83`) | `spine/src/server.ts` event handler · `app/lib/services/spine/spine_service.dart` · `viewer_web/index.html` |
 | Phase 1B target (#42) | `app/lib/services/spine/spine_state.dart` (model) · `app/lib/features/control/widgets/` (new cards) · `control_screen.dart` (wire-in) |

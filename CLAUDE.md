@@ -25,7 +25,7 @@ robot_app/          Flutter on Mikee chest screen — MJPEG server + (future) na
 viewer_web/         Single-file HTML control UI — WebSocket to spine
 viewer_mobile/      Flutter mobile camera viewer
 signaling_server/   Node.js WebRTC signaling + serves viewer_web
-spine/              ★ TypeScript broker — central safety layer. MockRobotSDK + RealRobotSDK. Tests: 20+ passing.
+spine/              ★ TypeScript broker — central safety layer. RealRobotSDK only. Tests: 46 passing.
 supabase/           5 migrations · 8 tables · RLS everywhere · pgvector for face/KB embeddings · DPDP-compliant purge
 app/                ★ Flutter admin — 7 features (auth, dashboard, control, live_feed, gallery, events, settings)
 ```
@@ -33,7 +33,7 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 ## Key architectural decisions
 
 1. **Spine as the single broker.** Clients never talk to the robot SDK directly. All commands flow through `spine` on port 4000 so safety interlocks live in ONE place.
-2. **MockRobotSDK first, real later.** Entire stack built against fake robot. Swap via `ROBOT_MODE=real` env var. Real hardware not yet available.
+2. **Real robot only.** The spine talks exclusively to the physical Mikee via `RealRobotSDK` (WS ports 8081/8082/8083 + HTTP snapshot/battery). The old MockRobotSDK and `ROBOT_MODE` swap were removed (June 2026) — set `ROBOT_IP` and the spine connects on boot.
 3. **Stateless Flutter client.** App sends intents, receives status. Spine + Supabase own state. Closing the app mid-session is safe.
 4. **DPDP compliance baked in.** Staff face data isolated, opt-in only. Visitor table has zero biometric fields. Nightly auto-purge.
 
@@ -75,7 +75,7 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 
 | Component | Command |
 |---|---|
-| Spine | `cd spine && npm install && npm run dev` (mock SDK by default) |
+| Spine | `cd spine && npm install && npm run dev` (connects to `ROBOT_IP`) |
 | Spine tests | `cd spine && npm test` |
 | Flutter admin (web) | `cd app && flutter pub get && flutter run -d chrome` |
 | Flutter admin (iOS) | `cd app && flutter run -d ios` |
@@ -85,11 +85,11 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 
 ## Current status (snapshot)
 
-✅ **Working end-to-end (against MockRobotSDK):** Login → Dashboard → Control → joystick drag → spine routes through safety interlock → MockRobotSDK executes → event logged to Supabase → realtime status update → STOP greys controls → RESUME re-enables.
+✅ **Working end-to-end (against the real robot):** Login → Dashboard → Control → joystick drag → spine routes through safety interlock → `RealRobotSDK` forwards to the robot WS ports → event logged to Supabase → realtime status update → STOP greys controls → RESUME re-enables. Drive, head, arm, wave, live MJPEG camera, and battery all run on hardware.
 
 🔴 **Known blocker:** Supabase email rate limit on `@xboom.in` domain. Workaround: use Gmail / disable email confirmation in Supabase Auth settings for dev. Documented in `ISSUE_EMAIL_RATE_LIMIT.md`.
 
-🟡 **Awaiting hardware:** Real robot SDK integration (`RealRobotSDK` is a placeholder). Mock works for full development.
+🟡 **Hardware gaps in `RealRobotSDK`:** `onSensorEvent` is still a no-op (the native sensor bridge in `robot_app/docs/SENSOR_BRIDGE.md` isn't wired yet, so obstacle/health/localization/person fields sit at their `unknown`/`null` defaults), and `getStatus` is static.
 
 ⬜ **Not yet built (Phase 2):** Face recognition, voice Q&A (STT + KB search + Claude RAG + TTS), autonomous patrol, Mission Control dashboard (in-progress per `MISSION_CONTROL_BUILD.md`).
 
@@ -111,16 +111,16 @@ These persist across Claude sessions on this machine. Read for deeper architectu
 
 ## Active work (June 2026)
 
-**Current focus:** Wire CSJBot SDK obstacle / sensor / localization events into spine state and Flutter admin UI. Target MockRobotSDK only — real hardware unavailable.
+**Current focus:** Wire CSJBot SDK obstacle / sensor / localization events through the native bridge into `RealRobotSDK.onSensorEvent` (currently a no-op) so the existing spine pipeline + Flutter admin UI light up on real hardware.
 
 **Key finding from SDK research:** CSJBot does NOT expose raw LIDAR point cloud. It surfaces high-level obstacle events (`NAVI_ROBOT_BLOCKED_NTF`, `NAVI_ROBOT_WAITSHORT_NTF`, `LQ_LOW_NTF`, etc.) which are sufficient for reception robot use case. Full research in `mikee-lidar-integration.md`.
 
-**Native bridge code (when real hardware arrives):** documented in `robot_app/docs/SENSOR_BRIDGE.md` (to be created during Phase 1 work). Don't deploy until hardware is plugged in.
+**Native bridge code:** documented in `robot_app/docs/SENSOR_BRIDGE.md`. The spine-side sensor pipeline (`sensors.ts`, types, Flutter `SensorStatusCard`) is fully built; it's just fed by nothing until the bridge forwards events over the chassis WebSocket and `RealRobotSDK` parses them.
 
 ## Engineering style
 
 - **Honest reporting:** When something can't be done or is partially done, say so explicitly. Don't paper over gaps.
-- **Mock-first:** New features must work against MockRobotSDK before hardware integration.
+- **Real-robot only:** There is no mock SDK. New features are built and verified against the physical Mikee (`RealRobotSDK`); keep handlers behind the spine intent layer so untested hardware paths fail safe.
 - **Minimal surface area:** Don't add new dependencies unless you make the case. Don't add Phase 2 features (face, voice, patrol) into Phase 1 work.
 - **Test what's new:** Vitest for spine, Flutter test for app. Cover happy path + one failure mode minimum.
 - **Read-before-write:** When in doubt about a file's existing shape, read it first. Don't pattern-match from memory.

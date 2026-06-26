@@ -1,7 +1,6 @@
 /**
  * robot/interface.ts — RobotSDK contract
- * Both MockRobotSDK and RealRobotSDK implement this interface.
- * Allows swapping between mock (dev) and real (production) via .env
+ * Implemented by RealRobotSDK; the spine talks to the robot only through this.
  */
 
 import { RobotStatus, RobotEvent, SensorEvent } from '../types';
@@ -64,8 +63,8 @@ export interface RobotSDK {
 
   /**
    * Register a handler for sensor/obstacle awareness events (Phase 1A).
-   * Mock synthesizes these on a timer; Real receives them from the native
-   * bridge documented in robot_app/docs/SENSOR_BRIDGE.md.
+   * RealRobotSDK receives them from the native bridge documented in
+   * robot_app/docs/SENSOR_BRIDGE.md.
    */
   onSensorEvent(handler: (event: SensorEvent) => void): void;
 }

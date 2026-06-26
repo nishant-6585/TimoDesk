@@ -1,6 +1,6 @@
 /**
  * types.ts — Shared TypeScript definitions for spine and SDK
- * This is the contract that MockRobotSDK and RealRobotSDK both implement
+ * This is the contract that RealRobotSDK implements
  */
 
 // Admin client intents (what the app sends to the spine)
@@ -59,7 +59,7 @@ export interface RobotStatus {
   lastObstacleEventAt: string | null; // ISO-8601
 }
 
-// Sensor events emitted by the robot (or mock) — discriminated on `type`.
+// Sensor events emitted by the robot — discriminated on `type`.
 // Distinct from RobotEvent: these drive the new RobotStatus sensor fields.
 export type SensorEvent =
   | { type: 'obstacle_event'; state: Exclude<ObstacleState, 'unknown'>; timestamp: number }
@@ -67,7 +67,7 @@ export type SensorEvent =
   | { type: 'localization_lq'; quality: Exclude<LocalizationQuality, 'unknown'>; lq: number; timestamp: number }
   | { type: 'person_detected'; detected: boolean; timestamp: number };
 
-// Events emitted by the robot (or mock)
+// Events emitted by the robot
 export interface RobotEvent {
   type:
     | 'face_detected'
