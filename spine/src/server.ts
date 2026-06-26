@@ -331,5 +331,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       );
       sdk.onSensorEvent(handleSensorEvent);
     });
+
+    // Status heartbeat: clients only request robot_status once (at auth), so
+    // without this they'd never see the robot come online/offline or battery
+    // change after connecting. Poll the SDK and broadcast every 5s. getStatus()
+    // is a cheap read of cached state (no robot round-trip), so this is light.
+    setInterval(() => {
+      void sdk.getStatus().then(broadcastStatus);
+    }, 5000);
   });
 }

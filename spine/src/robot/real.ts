@@ -56,16 +56,40 @@ export class RealRobotSDK implements RobotSDK {
     try {
       const response = await fetch(`http://${this.robotIP}:8090/battery`);
       if (response.ok) {
+        // A successful HTTP response means the robot is reachable. This probe
+        // runs on boot + every 30s and is the canonical liveness signal that
+        // drives `online` (the flag the admin Control screen gates commands on).
+        this.setOnline(true);
         const data = (await response.json()) as { battery?: number };
         const battery = data.battery as number;
         if (battery >= 0 && battery <= 100) {
           this.status.battery = battery;
           console.log(`[Real SDK] Battery updated: ${battery}%`);
         }
+      } else {
+        this.setOnline(false);
       }
     } catch (err) {
-      // Silently fail — battery endpoint might not be reachable yet.
+      // Probe failed → robot unreachable. Mark offline so the admin UI greys
+      // out controls instead of silently dropping commands.
+      this.setOnline(false);
     }
+  }
+
+  /**
+   * Update the cached online flag and emit a transition event so the server can
+   * broadcast fresh status to admin clients the moment reachability changes.
+   */
+  private setOnline(online: boolean): void {
+    if (this.status.online === online) return;
+    this.status.online = online;
+    console.log(`[Real SDK] Robot ${online ? 'online' : 'offline'}`);
+    const event: RobotEvent = {
+      type: online ? 'robot_online' : 'robot_offline',
+      payload: {},
+      timestamp: Date.now(),
+    };
+    this.eventHandlers.forEach(h => h(event));
   }
 
   private startBatteryFetch() {
@@ -102,6 +126,9 @@ export class RealRobotSDK implements RobotSDK {
         if (type === 'head') this.ws_head = ws;
         else if (type === 'chassis') this.ws_chassis = ws;
         else this.ws_arms = ws;
+        // A successful control-port connection is definitive proof the robot is
+        // reachable — mark online immediately rather than waiting for the probe.
+        this.setOnline(true);
         resolve(ws!);
       };
 
