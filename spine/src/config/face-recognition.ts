@@ -31,11 +31,14 @@ export const FACE_CONFIG = {
   // - vote_window / vote_min: a candidate identity must win at least vote_min of
   //   the last vote_window frames before it's emitted (kills single-frame flips).
   match_margin: 0.06,
-  vote_window: 5,
-  vote_min: 3,
+  // 2-of-3 (was 3-of-5): greet faster while still requiring agreement across frames
+  // to kill single-frame flips. Pairs with the lower cadence below.
+  vote_window: 3,
+  vote_min: 2,
 
   // Detection
-  detection_cadence_ms: 1000, // Detect every 1.0s (faster so voting isn't sluggish)
+  detection_cadence_ms: 500, // Detect every 0.5s — greet near-immediately (was 1000ms,
+  // which with 3-of-5 voting meant ~3s before a greeting). 2-of-3 @ 500ms ≈ 1s.
   frame_timeout_ms: 5000, // Timeout for frame capture
   camera_port: 8080, // MJPEG stream port
 
