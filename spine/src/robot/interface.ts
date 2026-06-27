@@ -3,7 +3,7 @@
  * Implemented by RealRobotSDK; the spine talks to the robot only through this.
  */
 
-import { RobotStatus, RobotEvent, SensorEvent } from '../types';
+import { RobotStatus, RobotEvent, SensorEvent, RobotPosition } from '../types';
 
 export interface RobotSDK {
   /**
@@ -74,4 +74,13 @@ export interface RobotSDK {
    * battery that the 8090 endpoint reports. Optional — only RealRobotSDK has it.
    */
   setRealBattery?(level: number, charging: boolean): void;
+
+  /** Capture the robot's current SLAM pose (for saving a nav point). */
+  getPosition?(): Promise<RobotPosition>;
+
+  /** Navigate to a saved point (needs a localized map + off-dock). */
+  navi?(point: RobotPosition): Promise<void>;
+
+  /** Cancel an in-progress navigation. */
+  cancelNavi?(): Promise<void>;
 }
