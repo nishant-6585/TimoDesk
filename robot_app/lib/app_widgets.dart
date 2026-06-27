@@ -5,7 +5,8 @@ import 'providers.dart';
 
 class BatteryIndicator extends StatelessWidget {
   final BatteryState state;
-  const BatteryIndicator({required this.state});
+  final bool large; // bigger icon + text for the chest screen (face / dashboard)
+  const BatteryIndicator({required this.state, this.large = false});
 
   @override
   Widget build(BuildContext context) {
@@ -28,11 +29,13 @@ class BatteryIndicator extends StatelessWidget {
                 : level >= 30
                     ? Icons.battery_5_bar
                     : Icons.battery_2_bar;
+    final double iconSize = large ? 32 : 20;
+    final double fontSize = large ? 26 : 14;
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 20, color: color),
-      const SizedBox(width: 4),
-      Text(unknown ? '—' : '$level%',
-          style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+      Icon(icon, size: iconSize, color: color),
+      SizedBox(width: large ? 8 : 4),
+      Text(unknown ? '—' : '$level%${charging ? ' ⚡' : ''}',
+          style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.bold)),
     ]);
   }
 }

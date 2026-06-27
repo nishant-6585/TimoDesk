@@ -602,10 +602,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                       ? Icons.battery_5_bar_rounded
                       : Icons.battery_2_bar_rounded;
           return Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 16, color: _muted),
-            const SizedBox(width: 4),
+            Icon(icon, size: 24, color: _muted),
+            const SizedBox(width: 6),
             Text(b == null ? '—' : '$b%',
-                style: const TextStyle(color: _muted, fontSize: 11, fontWeight: FontWeight.w600)),
+                style: const TextStyle(color: _muted, fontSize: 17, fontWeight: FontWeight.w700)),
           ]);
         }),
         const SizedBox(width: 12),
