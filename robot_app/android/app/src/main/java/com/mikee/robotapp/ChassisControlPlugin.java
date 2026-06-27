@@ -34,6 +34,8 @@ import java.util.concurrent.ScheduledFuture;
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnMapStateListener;
 import com.csjbot.coshandler.listener.OnRobotDockStateListener;
+import com.csjbot.coshandler.listener.OnPositionListener;
+import com.csjbot.coshandler.listener.OnNaviListener;
 
 public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private static final String TAG = "Mikee.ChassisControl";
@@ -566,9 +568,73 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 } else if ("get_status".equals(cmd)) {
                     Log.d(TAG, "Status requested");
                     sendJson(buildStatusMessage());
+                } else if ("get_position".equals(cmd)) {
+                    // Capture the robot's current SLAM pose (for saving a nav point).
+                    Log.d(TAG, "get_position requested");
+                    try {
+                        CsjRobot.getInstance().getAction().getPosition(posJson -> {
+                            Log.d(TAG, "position: " + posJson);
+                            try {
+                                JSONObject p = new JSONObject(posJson);
+                                JSONObject out = new JSONObject();
+                                out.put("type", "position");
+                                out.put("x", p.optDouble("x", 0));
+                                out.put("y", p.optDouble("y", 0));
+                                out.put("z", p.optDouble("z", 0));
+                                out.put("rotation", p.optDouble("rotation", 0));
+                                out.put("error_code", p.optInt("error_code", -1));
+                                sendJson(out.toString());
+                            } catch (JSONException e) {
+                                Log.e(TAG, "position parse: " + e.getMessage());
+                            }
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "get_position error: " + e.getMessage());
+                    }
+                } else if ("navi".equals(cmd)) {
+                    // Navigate to a saved point: {cmd:navi, x,y,z,rotation}. Needs a
+                    // loaded+localized SLAM map and the robot off the dock.
+                    try {
+                        JSONObject point = new JSONObject();
+                        point.put("x", json.optDouble("x", 0));
+                        point.put("y", json.optDouble("y", 0));
+                        point.put("z", json.optDouble("z", 0));
+                        point.put("rotation", json.optDouble("rotation", 0));
+                        Log.d(TAG, "navi to: " + point);
+                        CsjRobot.getInstance().getAction().navi(point.toString(), naviCb);
+                    } catch (Exception e) {
+                        Log.e(TAG, "navi error: " + e.getMessage());
+                    }
+                } else if ("cancel_navi".equals(cmd)) {
+                    Log.d(TAG, "cancel_navi requested");
+                    try {
+                        CsjRobot.getInstance().getAction().cancelNavi(naviCb);
+                    } catch (Exception e) {
+                        Log.e(TAG, "cancel_navi error: " + e.getMessage());
+                    }
                 }
             } catch (JSONException e) {
                 Log.e(TAG, "Parse error: " + e.getMessage());
+            }
+        }
+
+        // Forwards navi lifecycle events back over the WS to the spine → admin.
+        private final OnNaviListener naviCb = new OnNaviListener() {
+            @Override public void moveResult(String j)        { sendNavi("move_result", j); }
+            @Override public void messageSendResult(String j) { sendNavi("message_send_result", j); }
+            @Override public void cancelResult(String j)      { sendNavi("cancel_result", j); }
+            @Override public void goHome()                    { sendNavi("go_home", "{}"); }
+        };
+
+        private void sendNavi(String event, String dataJson) {
+            try {
+                JSONObject out = new JSONObject();
+                out.put("type", "navi");
+                out.put("event", event);
+                out.put("data", dataJson);
+                sendJson(out.toString());
+            } catch (JSONException e) {
+                Log.e(TAG, "sendNavi: " + e.getMessage());
             }
         }
 
