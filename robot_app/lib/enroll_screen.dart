@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
+import 'services/face_enroll.dart';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 // Spine + camera base URLs now live in RobotConfig (persisted, editable in the
@@ -87,6 +88,10 @@ class _EnrollScreenState extends State<EnrollScreen> {
   // Upload
   String _uploadMsg = '';
   String? _doneError;
+
+  // SDK face registration (post-upload, optional second step)
+  bool _sdkEnrolling = false;
+  String? _sdkResult;
 
   _Pose get _pose => _posePlan[_poseIndex];
 
@@ -519,6 +524,21 @@ class _EnrollScreenState extends State<EnrollScreen> {
     ]);
   }
 
+  Future<void> _enrollSdk() async {
+    setState(() {
+      _sdkEnrolling = true;
+      _sdkResult = null;
+    });
+    final ok = await FaceEnroll.saveFace(_nameCtr.text.trim());
+    if (!mounted) return;
+    setState(() {
+      _sdkEnrolling = false;
+      _sdkResult = ok
+          ? 'Registered with Mikee ✓ — will be greeted by name'
+          : 'Robot not reachable — try again while on the robot';
+    });
+  }
+
   Widget _buildUploading() => Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const CircularProgressIndicator(color: _orange),
@@ -541,7 +561,55 @@ class _EnrollScreenState extends State<EnrollScreen> {
           const SizedBox(height: 8),
           Text(_doneError ?? '${_nameCtr.text} · $_uploadMsg',
               textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 28),
+          if (ok) ...[
+            const SizedBox(height: 16),
+            const Divider(color: Colors.white12),
+            const SizedBox(height: 12),
+            const Text(
+              'Step 2 — Register with Mikee',
+              style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Keep standing in front of the robot, then tap below.\nMikee will capture and remember your face on-device.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            if (_sdkResult != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  _sdkResult!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _sdkResult!.contains('✓') ? const Color(0xFF4ADE80) : Colors.orangeAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            FilledButton.icon(
+              onPressed: _sdkEnrolling || _sdkResult?.contains('✓') == true ? null : _enrollSdk,
+              icon: _sdkEnrolling
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Icon(_sdkResult?.contains('✓') == true
+                      ? Icons.check_circle
+                      : Icons.face_retouching_natural),
+              label: Text(_sdkEnrolling
+                  ? 'Capturing…'
+                  : _sdkResult?.contains('✓') == true
+                      ? 'Registered with Mikee'
+                      : 'Register with Mikee Robot'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
             style: FilledButton.styleFrom(
