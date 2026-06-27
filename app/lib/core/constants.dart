@@ -4,13 +4,15 @@ const Duration joystickThrottleMs = Duration(milliseconds: 50);
 const int joystickRadius = 90;
 
 // REAL ROBOT NETWORK SETTINGS
-// Default values are environment-specific and set at build time via flavors or build args
-// For development: ws://localhost:4000 and 192.168.10.23
-// For production: values must be configured via environment variables or build configuration
-// Never rely on hardcoded defaults for production deployments
-// Users can override these via SharedPreferences (settings_provider) after app initialization
-const String defaultSpineUrl = String.fromEnvironment('SPINE_URL', defaultValue: 'ws://localhost:4000');
-const String defaultRobotIp = String.fromEnvironment('ROBOT_IP', defaultValue: '192.168.10.23');
+// Values must be explicitly configured via environment variables or secure configuration
+// No hardcoded defaults - users must configure spine_url and robot_ip before first app launch
+// Configuration can be set via:
+// 1. Build environment variables (SPINE_URL, ROBOT_IP)
+// 2. Onboarding flow on first app launch
+// 3. Secure settings screen after app initialization
+// Users can override via SharedPreferences (settings_provider) after initial configuration
+const String? defaultSpineUrl = String.fromEnvironment('SPINE_URL');
+const String? defaultRobotIp = String.fromEnvironment('ROBOT_IP');
 
 // Robot camera (MJPEG server in robot_app/CameraStreamPlugin, port 8080)
 const int robotCameraPort = 8080;

@@ -61,41 +61,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Account created! Signing you in...'),
-            backgroundColor: MikeeColors.success,
-          ),
-        );
+      if (!mounted) return;
 
-        if (mounted) {
-          try {
-            await _handleSignIn();
-          } catch (signInError) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _error = 'Account created successfully, but sign-in failed. Please sign in manually: $signInError';
-              });
-            }
-          }
-        }
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Account created! Signing you in...'),
+          backgroundColor: MikeeColors.success,
+        ),
+      );
+
+      await _performSignIn();
     } on AuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = e.message;
-        });
-      }
+      _setLoadingAndError(false, e.message);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'An error occurred during signup: $e';
-        });
-      }
+      _setLoadingAndError(false, 'An error occurred during signup: $e');
     }
   }
 
@@ -104,18 +83,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      if (mounted) {
-        setState(() => _error = 'Please enter email and password');
-      }
+      setState(() => _error = 'Please enter email and password');
       return;
     }
 
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    await _performSignIn();
+  }
+
+  Future<void> _performSignIn() async {
+    if (!mounted) return;
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
 
     try {
       await Supabase.instance.client.auth.signInWithPassword(
@@ -123,25 +107,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      if (mounted) {
-        setState(() => _isLoading = false);
-        context.go('/');
-      }
+      if (!mounted) return;
+
+      _setLoadingAndError(false, null);
+      context.go('/');
     } on AuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = e.message;
-        });
-      }
+      _setLoadingAndError(false, e.message);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'An error occurred during sign in: $e';
-        });
-      }
+      _setLoadingAndError(false, 'An error occurred during sign in: $e');
     }
+  }
+
+  void _setLoadingAndError(bool isLoading, String? error) {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = isLoading;
+      _error = error;
+    });
   }
 
   String? _validateEmail(String? value) {
