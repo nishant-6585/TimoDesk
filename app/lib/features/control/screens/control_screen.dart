@@ -26,13 +26,36 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   double _maxSpeed = 0.5;
   String _driveStatus = 'IDLE';
   int _throttle = 0;
-  bool _wasDriving = false; // true while a drive command is active (joystick out of deadzone)
+  bool _wasDriving = false;
   Timer? _headThrottleTimer;
+  DateTime? _lastOfflineSnackbar;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasDriving = false;
+  }
 
   @override
   void dispose() {
     _headThrottleTimer?.cancel();
     super.dispose();
+  }
+
+  void _showOfflineSnackbar() {
+    final now = DateTime.now();
+    if (_lastOfflineSnackbar == null || now.difference(_lastOfflineSnackbar!).inSeconds >= 3) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
+      _lastOfflineSnackbar = now;
+    }
+  }
+
+  bool _isRobotOnline() {
+    return ref.read(spineProvider).status?.online ?? false;
   }
 
   void _handleDriveJoystick(double x, double y, double mag) {
@@ -54,15 +77,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
-    // Validate online status immediately before sending intent
-    final spineState = ref.read(spineProvider);
-    final isOnline = spineState.status?.online ?? false;
+    // Cache online status once per action
+    final isOnline = _isRobotOnline();
 
     // Joystick returned to the deadzone (released or centered) → halt the wheels.
     // The robot_app holds a moveSerial heartbeat until it receives stop, so we
-    // MUST send stop_drive on release or the robot keeps moving. Only send it on
-    // the moving→idle transition (not on every idle frame), and only if we were
-    // actually driving. stop_drive does not latch the global STOP interlock.
+    // MUST send stop_drive on release or the robot keeps moving. Send unconditionally
+    // on moving→idle transition for safety; robot_app ignores redundant stops.
     if (_driveStatus == 'IDLE') {
       if (_wasDriving) {
         _wasDriving = false;
@@ -75,23 +96,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     // Send drive command ONLY if joystick is not in deadzone and robot is online
     if (!isOnline) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
-        );
-      }
+      _showOfflineSnackbar();
       return;
     }
+
     final dir = _driveStatus == 'FORWARD' ? 'forward' :
                 _driveStatus == 'REVERSE' ? 'back' :
                 _driveStatus == 'RIGHT' ? 'right' : 'left';
 
-    // Re-validate online status immediately before sending
-    if (ref.read(spineProvider).status?.online ?? false) {
-      _wasDriving = true;
-      final notifier = ref.read(spineProvider.notifier);
-      notifier.sendIntent({'intent': 'drive', 'dir': dir});
-    }
+    _wasDriving = true;
+    final notifier = ref.read(spineProvider.notifier);
+    notifier.sendIntent({'intent': 'drive', 'dir': dir});
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
@@ -100,8 +115,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _headY = ((y + 1) / 2 * 100).clamp(0, 100);
     });
 
-    final spineState = ref.read(spineProvider);
-    final isOnline = spineState.status?.online ?? false;
+    final isOnline = _isRobotOnline();
 
     if (!isOnline) {
       return;
@@ -111,33 +125,26 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _headThrottleTimer?.cancel();
     _headThrottleTimer = Timer(joystickThrottleMs, () {
       if (mounted) {
-        // Re-validate online status within debounce callback
-        if (ref.read(spineProvider).status?.online ?? false) {
-          final notifier = ref.read(spineProvider.notifier);
-          notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
-        }
+        final notifier = ref.read(spineProvider.notifier);
+        notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
       }
     });
   }
 
   void _resetHead() {
-    final spineState = ref.read(spineProvider);
-    final isOnline = spineState.status?.online ?? false;
-
     setState(() {
       _headX = 50;
       _headY = 50;
     });
 
+    final isOnline = _isRobotOnline();
+
     if (!isOnline) {
       return;
     }
 
-    // Re-validate online status immediately before sending
-    if (ref.read(spineProvider).status?.online ?? false) {
-      final notifier = ref.read(spineProvider.notifier);
-      notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
-    }
+    final notifier = ref.read(spineProvider.notifier);
+    notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
   }
 
   void _sendGesture(String gesture) {
@@ -149,19 +156,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     }
 
     if (!isOnline) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
-        );
-      }
+      _showOfflineSnackbar();
       return;
     }
 
-    // Re-validate online status immediately before sending
-    if (ref.read(spineProvider).status?.online ?? false) {
-      final notifier = ref.read(spineProvider.notifier);
-      notifier.sendIntent({'intent': gesture});
-    }
+    final notifier = ref.read(spineProvider.notifier);
+    notifier.sendIntent({'intent': gesture});
   }
 
   void _handleStopResume() {
@@ -169,22 +169,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final isOnline = spineState.status?.online ?? false;
 
     if (!isOnline) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
-        );
-      }
+      _showOfflineSnackbar();
       return;
     }
 
-    // Re-validate online status immediately before sending
-    if (ref.read(spineProvider).status?.online ?? false) {
-      final notifier = ref.read(spineProvider.notifier);
-      if (spineState.stopped) {
-        notifier.sendIntent({'intent': 'resume'});
-      } else {
-        notifier.sendIntent({'intent': 'stop'});
-      }
+    final notifier = ref.read(spineProvider.notifier);
+    if (spineState.stopped) {
+      notifier.sendIntent({'intent': 'resume'});
+    } else {
+      notifier.sendIntent({'intent': 'stop'});
     }
   }
 

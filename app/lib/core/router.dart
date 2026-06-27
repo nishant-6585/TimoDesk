@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -66,8 +67,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: refreshStream,
     redirect: (context, state) {
       // DEV ONLY: skip the login gate and boot straight to the dashboard.
-      // Set back to false (or remove) to restore normal auth redirects.
-      const devSkipAuth = true;
+      // Only enabled in debug mode to prevent accidental production exposure.
+      final devSkipAuth = kDebugMode;
       if (devSkipAuth) {
         return state.matchedLocation == '/login' ? '/' : null;
       }

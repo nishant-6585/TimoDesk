@@ -25,8 +25,16 @@ class MobileRemoteScreen extends ConsumerStatefulWidget {
 class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   bool _streaming = false;
   String _driveStatus = 'IDLE';
-  DateTime _lastDrive = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastHead = DateTime.fromMillisecondsSinceEpoch(0);
+  late DateTime _lastDrive;
+  late DateTime _lastHead;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize throttle timestamps to now to prevent unthrottled burst on first joystick movement.
+    _lastDrive = DateTime.now();
+    _lastHead = DateTime.now();
+  }
 
   // ── Intents (mirror ControlScreen; throttled drive) ────────────────────────
   void _handleDrive(double x, double y, double mag) {
@@ -50,6 +58,9 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     if (now.difference(_lastDrive) < joystickThrottleMs) return;
     _lastDrive = now;
 
+    // Verify robot is online before sending intent.
+    if (!(ref.read(spineProvider).status?.online ?? false)) return;
+
     final dir = status == 'FORWARD'
         ? 'forward'
         : status == 'REVERSE'
@@ -65,6 +76,9 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     final now = DateTime.now();
     if (now.difference(_lastHead) < joystickThrottleMs) return;
     _lastHead = now;
+
+    // Verify robot is online before sending intent.
+    if (!(ref.read(spineProvider).status?.online ?? false)) return;
 
     final lr = ((x + 1) / 2 * 100).clamp(0, 100).toInt();
     final ud = ((y + 1) / 2 * 100).clamp(0, 100).toInt();
