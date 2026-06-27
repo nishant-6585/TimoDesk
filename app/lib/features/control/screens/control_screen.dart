@@ -26,6 +26,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   double _maxSpeed = 0.5;
   String _driveStatus = 'IDLE';
   int _throttle = 0;
+  bool _wasDriving = false; // true while a drive command is active (joystick out of deadzone)
   Timer? _headThrottleTimer;
 
   @override
@@ -57,27 +58,40 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final spineState = ref.read(spineProvider);
     final isOnline = spineState.status?.online ?? false;
 
-    // Send drive command ONLY if joystick is not in deadzone and robot is online
-    if (_driveStatus != 'IDLE') {
-      if (!isOnline) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
-          );
+    // Joystick returned to the deadzone (released or centered) → halt the wheels.
+    // The robot_app holds a moveSerial heartbeat until it receives stop, so we
+    // MUST send stop_drive on release or the robot keeps moving. Only send it on
+    // the moving→idle transition (not on every idle frame), and only if we were
+    // actually driving. stop_drive does not latch the global STOP interlock.
+    if (_driveStatus == 'IDLE') {
+      if (_wasDriving) {
+        _wasDriving = false;
+        if (isOnline) {
+          ref.read(spineProvider.notifier).sendIntent({'intent': 'stop_drive'});
         }
-        return;
       }
-      final dir = _driveStatus == 'FORWARD' ? 'forward' :
-                  _driveStatus == 'REVERSE' ? 'back' :
-                  _driveStatus == 'RIGHT' ? 'right' : 'left';
-      
-      // Re-validate online status immediately before sending
-      if (ref.read(spineProvider).status?.online ?? false) {
-        final notifier = ref.read(spineProvider.notifier);
-        notifier.sendIntent({'intent': 'drive', 'dir': dir});
-      }
+      return;
     }
-    // Do NOT send any command when idle - let robot coast
+
+    // Send drive command ONLY if joystick is not in deadzone and robot is online
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
+      return;
+    }
+    final dir = _driveStatus == 'FORWARD' ? 'forward' :
+                _driveStatus == 'REVERSE' ? 'back' :
+                _driveStatus == 'RIGHT' ? 'right' : 'left';
+
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      _wasDriving = true;
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': 'drive', 'dir': dir});
+    }
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {

@@ -62,6 +62,10 @@ public class MikeeApplication extends MultiDexApplication {
                 // async init → the listener never attached and detection never fired).
                 PersonDetectPlugin.registerWithSdk();
 
+                // Staff face-recognition listener (greet-by-name). Appends to the
+                // SDK's face-listener list — coexists with PersonDetectPlugin above.
+                FaceRecognitionPlugin.registerWithSdk();
+
                 Log.d(TAG, "SDK initialized — flavor=" + BuildConfig.FLAVOR
                         + "  ip=" + BuildConfig.SDK_IP);
 

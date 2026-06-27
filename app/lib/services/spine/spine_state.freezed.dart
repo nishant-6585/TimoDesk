@@ -367,6 +367,7 @@ abstract class _SpineState implements SpineState {
 mixin _$RobotStatus {
   bool get online => throw _privateConstructorUsedError;
   int get battery => throw _privateConstructorUsedError;
+  bool get isCharging => throw _privateConstructorUsedError;
   bool get isMoving => throw _privateConstructorUsedError;
   int get headLR => throw _privateConstructorUsedError;
   int get headUD => throw _privateConstructorUsedError;
@@ -397,6 +398,7 @@ abstract class $RobotStatusCopyWith<$Res> {
   $Res call(
       {bool online,
       int battery,
+      bool isCharging,
       bool isMoving,
       int headLR,
       int headUD,
@@ -429,6 +431,7 @@ class _$RobotStatusCopyWithImpl<$Res, $Val extends RobotStatus>
   $Res call({
     Object? online = null,
     Object? battery = null,
+    Object? isCharging = null,
     Object? isMoving = null,
     Object? headLR = null,
     Object? headUD = null,
@@ -450,6 +453,10 @@ class _$RobotStatusCopyWithImpl<$Res, $Val extends RobotStatus>
           ? _value.battery
           : battery // ignore: cast_nullable_to_non_nullable
               as int,
+      isCharging: null == isCharging
+          ? _value.isCharging
+          : isCharging // ignore: cast_nullable_to_non_nullable
+              as bool,
       isMoving: null == isMoving
           ? _value.isMoving
           : isMoving // ignore: cast_nullable_to_non_nullable
@@ -523,6 +530,7 @@ abstract class _$$RobotStatusImplCopyWith<$Res>
   $Res call(
       {bool online,
       int battery,
+      bool isCharging,
       bool isMoving,
       int headLR,
       int headUD,
@@ -554,6 +562,7 @@ class __$$RobotStatusImplCopyWithImpl<$Res>
   $Res call({
     Object? online = null,
     Object? battery = null,
+    Object? isCharging = null,
     Object? isMoving = null,
     Object? headLR = null,
     Object? headUD = null,
@@ -575,6 +584,10 @@ class __$$RobotStatusImplCopyWithImpl<$Res>
           ? _value.battery
           : battery // ignore: cast_nullable_to_non_nullable
               as int,
+      isCharging: null == isCharging
+          ? _value.isCharging
+          : isCharging // ignore: cast_nullable_to_non_nullable
+              as bool,
       isMoving: null == isMoving
           ? _value.isMoving
           : isMoving // ignore: cast_nullable_to_non_nullable
@@ -629,6 +642,7 @@ class _$RobotStatusImpl implements _RobotStatus {
   const _$RobotStatusImpl(
       {required this.online,
       required this.battery,
+      this.isCharging = false,
       required this.isMoving,
       required this.headLR,
       required this.headUD,
@@ -645,6 +659,9 @@ class _$RobotStatusImpl implements _RobotStatus {
   final bool online;
   @override
   final int battery;
+  @override
+  @JsonKey()
+  final bool isCharging;
   @override
   final bool isMoving;
   @override
@@ -671,7 +688,7 @@ class _$RobotStatusImpl implements _RobotStatus {
 
   @override
   String toString() {
-    return 'RobotStatus(online: $online, battery: $battery, isMoving: $isMoving, headLR: $headLR, headUD: $headUD, leftArm: $leftArm, rightArm: $rightArm, isWaving: $isWaving, obstacleState: $obstacleState, localizationQuality: $localizationQuality, sensorHealth: $sensorHealth, personDetected: $personDetected, lastObstacleEventAt: $lastObstacleEventAt)';
+    return 'RobotStatus(online: $online, battery: $battery, isCharging: $isCharging, isMoving: $isMoving, headLR: $headLR, headUD: $headUD, leftArm: $leftArm, rightArm: $rightArm, isWaving: $isWaving, obstacleState: $obstacleState, localizationQuality: $localizationQuality, sensorHealth: $sensorHealth, personDetected: $personDetected, lastObstacleEventAt: $lastObstacleEventAt)';
   }
 
   @override
@@ -681,6 +698,8 @@ class _$RobotStatusImpl implements _RobotStatus {
             other is _$RobotStatusImpl &&
             (identical(other.online, online) || other.online == online) &&
             (identical(other.battery, battery) || other.battery == battery) &&
+            (identical(other.isCharging, isCharging) ||
+                other.isCharging == isCharging) &&
             (identical(other.isMoving, isMoving) ||
                 other.isMoving == isMoving) &&
             (identical(other.headLR, headLR) || other.headLR == headLR) &&
@@ -707,6 +726,7 @@ class _$RobotStatusImpl implements _RobotStatus {
       runtimeType,
       online,
       battery,
+      isCharging,
       isMoving,
       headLR,
       headUD,
@@ -732,6 +752,7 @@ abstract class _RobotStatus implements RobotStatus {
   const factory _RobotStatus(
       {required final bool online,
       required final int battery,
+      final bool isCharging,
       required final bool isMoving,
       required final int headLR,
       required final int headUD,
@@ -748,6 +769,8 @@ abstract class _RobotStatus implements RobotStatus {
   bool get online;
   @override
   int get battery;
+  @override
+  bool get isCharging;
   @override
   bool get isMoving;
   @override

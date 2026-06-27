@@ -26,9 +26,16 @@ export class RealRobotSDK implements RobotSDK {
   private ws_arms: WebSocket | null = null;
 
   private eventHandlers: Array<(event: RobotEvent) => void> = [];
+
+  // Real chassis charge fed by the battery bridge (adb logcat → /robot/battery).
+  // -1 = no bridge data yet; when >= 0 it overrides the head/tablet battery that
+  // the robot_app 8090 endpoint reports.
+  private realBattery = -1;
+
   private status: RobotStatus = {
     online: false,
     battery: -1, // -1 = unknown until the first real /battery fetch (admin shows "—")
+    isCharging: false,
     isMoving: false,
     headLR: 50,
     headUD: 50,
@@ -56,16 +63,42 @@ export class RealRobotSDK implements RobotSDK {
     try {
       const response = await fetch(`http://${this.robotIP}:8090/battery`);
       if (response.ok) {
+        // A successful HTTP response means the robot is reachable. This probe
+        // runs on boot + every 30s and is the canonical liveness signal that
+        // drives `online` (the flag the admin Control screen gates commands on).
+        this.setOnline(true);
         const data = (await response.json()) as { battery?: number };
         const battery = data.battery as number;
-        if (battery >= 0 && battery <= 100) {
+        // The 8090 endpoint is the head/tablet battery. Only use it when the
+        // bridge hasn't supplied the real chassis charge (realBattery < 0).
+        if (this.realBattery < 0 && battery >= 0 && battery <= 100) {
           this.status.battery = battery;
-          console.log(`[Real SDK] Battery updated: ${battery}%`);
+          console.log(`[Real SDK] Battery (head/tablet) updated: ${battery}%`);
         }
+      } else {
+        this.setOnline(false);
       }
     } catch (err) {
-      // Silently fail — battery endpoint might not be reachable yet.
+      // Probe failed → robot unreachable. Mark offline so the admin UI greys
+      // out controls instead of silently dropping commands.
+      this.setOnline(false);
     }
+  }
+
+  /**
+   * Update the cached online flag and emit a transition event so the server can
+   * broadcast fresh status to admin clients the moment reachability changes.
+   */
+  private setOnline(online: boolean): void {
+    if (this.status.online === online) return;
+    this.status.online = online;
+    console.log(`[Real SDK] Robot ${online ? 'online' : 'offline'}`);
+    const event: RobotEvent = {
+      type: online ? 'robot_online' : 'robot_offline',
+      payload: {},
+      timestamp: Date.now(),
+    };
+    this.eventHandlers.forEach(h => h(event));
   }
 
   private startBatteryFetch() {
@@ -102,6 +135,9 @@ export class RealRobotSDK implements RobotSDK {
         if (type === 'head') this.ws_head = ws;
         else if (type === 'chassis') this.ws_chassis = ws;
         else this.ws_arms = ws;
+        // A successful control-port connection is definitive proof the robot is
+        // reachable — mark online immediately rather than waiting for the probe.
+        this.setOnline(true);
         resolve(ws!);
       };
 
@@ -274,6 +310,20 @@ export class RealRobotSDK implements RobotSDK {
       console.error('[Real SDK] takeSnapshot failed:', err);
       throw err;
     }
+  }
+
+  /**
+   * Feed the REAL chassis charge + charging state in from the battery bridge
+   * (adb logcat → robot-core `robot_info`). This is the true drive battery,
+   * unlike the head/tablet value the 8090 endpoint returns.
+   */
+  setRealBattery(level: number, charging: boolean): void {
+    if (level >= 0 && level <= 100) {
+      this.realBattery = level;
+      this.status.battery = level;
+    }
+    this.status.isCharging = charging;
+    console.log(`[Real SDK] Real chassis battery: ${level}% charging=${charging}`);
   }
 
   /**

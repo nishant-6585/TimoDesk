@@ -41,6 +41,7 @@ class MockTestSDK implements RobotSDK {
     return {
       online: true,
       battery: 80,
+      isCharging: false,
       isMoving: false,
       headLR: 50,
       headUD: 50,
@@ -76,6 +77,20 @@ describe('Command Router', () => {
       expect(sdk.calls).toHaveLength(1);
       expect(sdk.calls[0].method).toBe('drive');
       expect(sdk.calls[0].args[0]).toBe('forward');
+    });
+
+    it('stop_drive intent → calls sdk.stopDrive(), returns ack', async () => {
+      const msg: AdminMessage = {
+        type: 'intent',
+        intent: { intent: 'stop_drive' },
+      };
+
+      const response = await routeMessage(msg, sessionId, userId, sdk);
+
+      expect(response.type).toBe('ack');
+      expect(response.ok).toBe(true);
+      expect(sdk.calls).toHaveLength(1);
+      expect(sdk.calls[0].method).toBe('stopDrive');
     });
 
     it('head intent → calls sdk.setHeadPosition(lr, ud)', async () => {
@@ -178,6 +193,31 @@ describe('Command Router', () => {
       const driveResponse = await routeMessage(driveMsg, sessionId, userId, sdk);
       expect(driveResponse.type).toBe('error');
       expect(driveResponse.message).toContain('stopped');
+    });
+
+    it('stop_drive is allowed while globally stopped and does NOT un-latch', async () => {
+      // Latch global STOP
+      await routeMessage({ type: 'intent', intent: { intent: 'stop' } }, sessionId, userId, sdk);
+
+      // stop_drive must still go through (halting is always safe)
+      const sd = await routeMessage(
+        { type: 'intent', intent: { intent: 'stop_drive' } },
+        sessionId,
+        userId,
+        sdk
+      );
+      expect(sd.type).toBe('ack');
+      expect(sdk.calls.some((c) => c.method === 'stopDrive')).toBe(true);
+
+      // …but it must NOT have un-latched the interlock: drive is still blocked.
+      const drive = await routeMessage(
+        { type: 'intent', intent: { intent: 'drive', dir: 'forward' } },
+        sessionId,
+        userId,
+        sdk
+      );
+      expect(drive.type).toBe('error');
+      expect(drive.message).toContain('stopped');
     });
 
     it('RESUME intent → allows movement again', async () => {

@@ -67,4 +67,11 @@ export interface RobotSDK {
    * robot_app/docs/SENSOR_BRIDGE.md.
    */
   onSensorEvent(handler: (event: SensorEvent) => void): void;
+
+  /**
+   * Feed the REAL chassis charge in from an external source (the battery bridge
+   * that tails robot-core's `robot_info` over adb). Overrides the head/tablet
+   * battery that the 8090 endpoint reports. Optional — only RealRobotSDK has it.
+   */
+  setRealBattery?(level: number, charging: boolean): void;
 }

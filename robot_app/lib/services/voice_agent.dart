@@ -58,6 +58,11 @@ class VoiceAgent {
 
   WebSocket? _channel;
   StreamSubscription? _sub;
+
+  // One-shot context to send as the first user turn of the NEXT session (e.g.
+  // "STAFF_RECOGNIZED: Nishant"), so the agent opens with a personalised greeting.
+  // Cleared after it's sent. See [injectGreeting].
+  String? _pendingContext;
   bool _speaking = false; // emit agentSpeaking once per turn, not per audio chunk
   int _connectedAtMs = 0; // when the WS connected — to spot early server drops
   bool get isActive => _channel != null;
@@ -71,6 +76,15 @@ class VoiceAgent {
   // a private field across files.
   final List<Map<String, dynamic>> _transcript = [];
   List<Map<String, dynamic>> get transcript => List.unmodifiable(_transcript);
+
+  /// Queue a one-shot context line to deliver as the FIRST user turn of the next
+  /// session — e.g. `injectGreeting('STAFF_RECOGNIZED: Nishant')` so the agent
+  /// greets that staff member by name (the agent's system prompt interprets the
+  /// `STAFF_RECOGNIZED:` prefix). No-op silent if the session is already open;
+  /// it applies to the NEXT [startSession]. Cleared once sent.
+  void injectGreeting(String context) {
+    if (context.isNotEmpty) _pendingContext = context;
+  }
 
   Future<void> startSession() async {
     if (_channel != null) return;
@@ -103,6 +117,15 @@ class VoiceAgent {
           'tts': {'output_format': 'pcm_16000'},
         },
       }));
+
+      // One-shot recognised-staff context → first user turn, so the agent opens
+      // with a by-name greeting. Sent right after init (the WS preserves order, so
+      // the server processes the initiation first). Cleared so it fires only once.
+      final ctx = _pendingContext;
+      _pendingContext = null;
+      if (ctx != null && ctx.isNotEmpty) {
+        ws.add(jsonEncode({'type': 'user_message', 'text': ctx}));
+      }
 
       _sub = ws.listen(_onMessage, onDone: _onDone, onError: (e) {
         _emit(VoiceEvent(VoiceEventKind.error, text: e.toString()));

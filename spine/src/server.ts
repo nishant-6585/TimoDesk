@@ -66,6 +66,27 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Handle HTTP routes
       const url = req.url || '';
 
+      // Battery bridge: real chassis charge fed from adb logcat (robot-core
+      // robot_info). Doesn't need Supabase. Body: { battery: 0-100, charging: bool }.
+      if (url === '/robot/battery' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          try {
+            const { battery, charging } = JSON.parse(body || '{}');
+            if (typeof battery === 'number' && sdk.setRealBattery) {
+              sdk.setRealBattery(battery, !!charging);
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, reason: 'bad body' }));
+          }
+        });
+        return;
+      }
+
       // All HTTP routes need Supabase; fail clearly if it isn't configured.
       if (!supabase) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -331,5 +352,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       );
       sdk.onSensorEvent(handleSensorEvent);
     });
+
+    // Status heartbeat: clients only request robot_status once (at auth), so
+    // without this they'd never see the robot come online/offline or battery
+    // change after connecting. Poll the SDK and broadcast every 5s. getStatus()
+    // is a cheap read of cached state (no robot round-trip), so this is light.
+    setInterval(() => {
+      void sdk.getStatus().then(broadcastStatus);
+    }, 5000);
   });
 }

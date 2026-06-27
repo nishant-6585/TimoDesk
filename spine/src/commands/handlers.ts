@@ -30,6 +30,16 @@ export async function handleIntent(
         return { type: 'ack', intent: 'drive', ok: true };
       }
 
+      case 'stop_drive': {
+        // Joystick released → halt the wheels. This is NOT the emergency STOP:
+        // it forwards {cmd:'stop'} to the chassis (cancels the robot_app's
+        // moveSerial heartbeat) without latching the global interlock, so the
+        // operator can immediately drive again without hitting RESUME.
+        console.log(`[Handlers] Executing stop_drive (halt wheels, no interlock latch)`);
+        await sdk.stopDrive();
+        return { type: 'ack', intent: 'stop_drive', ok: true };
+      }
+
       case 'head': {
         const lr = intent.lr;
         const ud = intent.ud;
