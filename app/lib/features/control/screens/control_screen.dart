@@ -32,6 +32,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   bool _isSnackbarShowing = false;
   Queue<Map<String, dynamic>> _commandQueue = Queue();
   Timer? _commandQueueTimer;
+  Timer? _stopDriveRetryTimer;
   int _stopDriveRetries = 0;
   static const int _maxStopDriveRetries = 3;
   static const int _stopDriveRetryIntervalMs = 500;
@@ -46,6 +47,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void dispose() {
     _headThrottleTimer?.cancel();
     _commandQueueTimer?.cancel();
+    _stopDriveRetryTimer?.cancel();
     super.dispose();
   }
 
@@ -72,7 +74,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   bool _isRobotOnline() {
-    return ref.read(spineProvider).status?.online ?? false;
+    return ref.read(spineProvider)?.status?.online ?? false;
+  }
+
+  bool _isStopDriveQueued() {
+    return _commandQueue.any((cmd) => cmd['intent'] == 'stop_drive');
   }
 
   void _queueCommand(Map<String, dynamic> command) {
@@ -84,6 +90,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (_commandQueue.isEmpty) {
       _commandQueueTimer?.cancel();
       _commandQueueTimer = null;
+      _stopDriveRetryTimer?.cancel();
+      _stopDriveRetryTimer = null;
       _stopDriveRetries = 0;
       return;
     }
@@ -97,11 +105,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     
     notifier.sendIntent(command);
 
-    if (command['intent'] == 'stop_drive' && _stopDriveRetries < _maxStopDriveRetries) {
+    if (command['intent'] == 'stop_drive') {
       _stopDriveRetries++;
-      _commandQueue.addFirst(command);
-    } else if (command['intent'] == 'stop_drive') {
-      _stopDriveRetries = 0;
+      if (_stopDriveRetries < _maxStopDriveRetries) {
+        _stopDriveRetryTimer?.cancel();
+        _stopDriveRetryTimer = Timer(const Duration(milliseconds: _stopDriveRetryIntervalMs), () {
+          if (mounted && _isRobotOnline() && !_isStopDriveQueued()) {
+            _queueCommand({'intent': 'stop_drive'});
+          }
+        });
+      } else {
+        _stopDriveRetries = 0;
+        _stopDriveRetryTimer?.cancel();
+        _stopDriveRetryTimer = null;
+      }
     }
 
     if (_commandQueue.isNotEmpty) {
@@ -135,13 +152,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _wasDriving = false;
         if (isOnline) {
           _stopDriveRetries = 0;
-          _queueCommand({'intent': 'stop_drive'});
-          for (int i = 0; i < _maxStopDriveRetries - 1; i++) {
-            Future.delayed(Duration(milliseconds: _stopDriveRetryIntervalMs * (i + 1)), () {
-              if (mounted && _isRobotOnline()) {
-                _queueCommand({'intent': 'stop_drive'});
-              }
-            });
+          _stopDriveRetryTimer?.cancel();
+          _stopDriveRetryTimer = null;
+          if (!_isStopDriveQueued()) {
+            _queueCommand({'intent': 'stop_drive'});
           }
         }
       }
@@ -207,9 +221,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   void _sendGesture(String gesture) {
     final spineState = ref.read(spineProvider);
-    final isOnline = spineState.status?.online ?? false;
+    final isOnline = spineState?.status?.online ?? false;
 
-    if (spineState.stopped) {
+    if (spineState?.stopped ?? false) {
       return;
     }
 
@@ -224,7 +238,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   void _handleStopResume() {
     final spineState = ref.read(spineProvider);
-    final isOnline = spineState.status?.online ?? false;
+    final isOnline = spineState?.status?.online ?? false;
 
     if (!isOnline) {
       _showOfflineSnackbar();
@@ -232,7 +246,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     }
 
     final notifier = ref.read(spineProvider.notifier);
-    if (spineState.stopped) {
+    if (spineState?.stopped ?? false) {
       notifier.sendIntent({'intent': 'resume'});
     } else {
       notifier.sendIntent({'intent': 'stop'});
@@ -242,8 +256,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   @override
   Widget build(BuildContext context) {
     final spine = ref.watch(spineProvider);
-    final stopped = spine.stopped;
-    final isBlocked = spine.status?.obstacleState == ObstacleState.blocked;
+    final stopped = spine?.stopped ?? false;
+    final isBlocked = spine?.status?.obstacleState == ObstacleState.blocked;
 
     return Stack(
       children: [
@@ -265,7 +279,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 onCenterHead: _resetHead,
                 onStopResume: _handleStopResume,
                 stopped: stopped,
-                status: spine.status,
+                status: spine?.status,
               ),
             ),
           ),

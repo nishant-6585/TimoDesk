@@ -29,3 +29,32 @@ const int maxEventsToPull = 50;
 const double cardBorderRadius = 16.0;
 const double buttonBorderRadius = 12.0;
 const double smallBorderRadius = 8.0;
+
+// Validation helpers for required environment configuration
+class ConfigurationValidator {
+  static void validateRequiredConfig() {
+    final missingVars = <String>[];
+    
+    if (defaultSpineUrl == null || defaultSpineUrl!.isEmpty) {
+      missingVars.add('SPINE_URL');
+    }
+    if (defaultRobotIp == null || defaultRobotIp!.isEmpty) {
+      missingVars.add('ROBOT_IP');
+    }
+    
+    if (missingVars.isNotEmpty) {
+      throw ConfigurationException(
+        'Missing required environment variables: ${missingVars.join(', ')}. '
+        'Please set SPINE_URL and ROBOT_IP before launching the app.',
+      );
+    }
+  }
+}
+
+class ConfigurationException implements Exception {
+  final String message;
+  ConfigurationException(this.message);
+  
+  @override
+  String toString() => 'ConfigurationException: $message';
+}
