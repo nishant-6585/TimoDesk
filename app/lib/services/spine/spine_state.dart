@@ -93,6 +93,7 @@ class RobotStatus with _$RobotStatus {
   const factory RobotStatus({
     required bool online,
     required int battery,
+    @Default(false) bool isCharging,
     required bool isMoving,
     required int headLR,
     required int headUD,
@@ -120,6 +121,7 @@ class RobotStatus with _$RobotStatus {
     return RobotStatus(
       online: json['online'] ?? false,
       battery: json['battery'] ?? 0,
+      isCharging: json['isCharging'] ?? false,
       isMoving: json['isMoving'] ?? false,
       headLR: json['headLR'] ?? 50,
       headUD: json['headUD'] ?? 50,

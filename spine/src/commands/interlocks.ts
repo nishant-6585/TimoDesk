@@ -54,9 +54,11 @@ export async function checkInterlocks(
       };
     }
 
-    // ALLOW non-movement intents (snapshot, get_status, resume)
+    // ALLOW non-movement intents (snapshot, get_status, resume) + stop_drive.
+    // stop_drive only HALTS the wheels, so it must always be permitted — even
+    // while globally stopped — and must never be rate-limited.
     // Don't rate-limit snapshot/status when stopped
-    if (['snapshot', 'get_status', 'resume'].includes(intentType)) {
+    if (['snapshot', 'get_status', 'resume', 'stop_drive'].includes(intentType)) {
       console.log(`[Interlocks] [ALLOW] Intent '${intentType}' is permitted while stopped`);
       return { allowed: true };
     }

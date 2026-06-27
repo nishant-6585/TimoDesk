@@ -26,9 +26,16 @@ export class RealRobotSDK implements RobotSDK {
   private ws_arms: WebSocket | null = null;
 
   private eventHandlers: Array<(event: RobotEvent) => void> = [];
+
+  // Real chassis charge fed by the battery bridge (adb logcat → /robot/battery).
+  // -1 = no bridge data yet; when >= 0 it overrides the head/tablet battery that
+  // the robot_app 8090 endpoint reports.
+  private realBattery = -1;
+
   private status: RobotStatus = {
     online: false,
     battery: -1, // -1 = unknown until the first real /battery fetch (admin shows "—")
+    isCharging: false,
     isMoving: false,
     headLR: 50,
     headUD: 50,
@@ -62,9 +69,11 @@ export class RealRobotSDK implements RobotSDK {
         this.setOnline(true);
         const data = (await response.json()) as { battery?: number };
         const battery = data.battery as number;
-        if (battery >= 0 && battery <= 100) {
+        // The 8090 endpoint is the head/tablet battery. Only use it when the
+        // bridge hasn't supplied the real chassis charge (realBattery < 0).
+        if (this.realBattery < 0 && battery >= 0 && battery <= 100) {
           this.status.battery = battery;
-          console.log(`[Real SDK] Battery updated: ${battery}%`);
+          console.log(`[Real SDK] Battery (head/tablet) updated: ${battery}%`);
         }
       } else {
         this.setOnline(false);
@@ -301,6 +310,20 @@ export class RealRobotSDK implements RobotSDK {
       console.error('[Real SDK] takeSnapshot failed:', err);
       throw err;
     }
+  }
+
+  /**
+   * Feed the REAL chassis charge + charging state in from the battery bridge
+   * (adb logcat → robot-core `robot_info`). This is the true drive battery,
+   * unlike the head/tablet value the 8090 endpoint returns.
+   */
+  setRealBattery(level: number, charging: boolean): void {
+    if (level >= 0 && level <= 100) {
+      this.realBattery = level;
+      this.status.battery = level;
+    }
+    this.status.isCharging = charging;
+    console.log(`[Real SDK] Real chassis battery: ${level}% charging=${charging}`);
   }
 
   /**

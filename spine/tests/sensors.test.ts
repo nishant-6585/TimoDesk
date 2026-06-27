@@ -15,6 +15,7 @@ function baseStatus(overrides: Partial<RobotStatus> = {}): RobotStatus {
   return {
     online: true,
     battery: 85,
+    isCharging: false,
     isMoving: false,
     headLR: 50,
     headUD: 50,

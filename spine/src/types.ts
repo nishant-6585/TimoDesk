@@ -7,6 +7,7 @@
 export interface Intent {
   intent:
     | 'drive'
+    | 'stop_drive' // halt the wheels on joystick release — does NOT latch the global STOP interlock
     | 'head'
     | 'arm'
     | 'wave'
@@ -44,7 +45,8 @@ export interface SensorHealth {
 // Robot status (what the robot reports back)
 export interface RobotStatus {
   online: boolean;
-  battery: number; // 0–100
+  battery: number; // 0–100 — real chassis charge when available (via battery bridge), else head/tablet
+  isCharging: boolean; // robot on charger / charge_status != 0
   isMoving: boolean;
   headLR: number; // 0–100
   headUD: number; // 0–100

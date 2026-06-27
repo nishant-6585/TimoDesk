@@ -33,6 +33,7 @@ import java.util.concurrent.ScheduledFuture;
 
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnMapStateListener;
+import com.csjbot.coshandler.listener.OnRobotDockStateListener;
 
 public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private static final String TAG = "Mikee.ChassisControl";
@@ -408,6 +409,37 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
             CsjRobot.getInstance().getAction().search(result -> {
                 Log.d(TAG, "search() result: " + result);
             });
+
+            // Put the chassis into manual movement mode (mode=1) up front, instead
+            // of only inside the naviReady branch. On units with no SLAM map,
+            // naviReady never fires, so setNaviMode was never sent and the direct
+            // serial path (moveBySerial/moveSerial) had no effect — the wheels
+            // stayed locked. Setting it here lets manual teleop work map-free.
+            // No motion is commanded by this call; it only selects the mode.
+            try {
+                CsjRobot.getInstance().getAction().setNaviMode(1);
+                Log.d(TAG, "setNaviMode(1) sent unconditionally (manual movement mode for map-free teleop)");
+            } catch (Exception e) {
+                Log.e(TAG, "setNaviMode(1) failed: " + e.getMessage());
+            }
+
+            // ── Diagnostics (read-only): surface WHY the chassis may refuse to move.
+            // These print once at chassis start so logcat shows the real blocker:
+            // on the charging dock (motors locked), no map loaded (SLAM never ready),
+            // or an empty map list.
+            try {
+                CsjRobot.getInstance().getAction().getDockerState(state ->
+                    Log.d(TAG, "DIAG dockState=" + state
+                        + " (" + OnRobotDockStateListener.STATE_ON_DOCK + "=ON_DOCK → motors locked while charging)"));
+            } catch (Exception e) { Log.e(TAG, "DIAG getDockerState failed: " + e.getMessage()); }
+            try {
+                CsjRobot.getInstance().getAction().getMapState(s ->
+                    Log.d(TAG, "DIAG mapState=" + s));
+            } catch (Exception e) { Log.e(TAG, "DIAG getMapState failed: " + e.getMessage()); }
+            try {
+                CsjRobot.getInstance().getAction().getMapList(s ->
+                    Log.d(TAG, "DIAG mapList=" + s));
+            } catch (Exception e) { Log.e(TAG, "DIAG getMapList failed: " + e.getMessage()); }
         } catch (Exception e) {
             Log.e(TAG, "initChassisMovement error: " + e.getMessage());
         }

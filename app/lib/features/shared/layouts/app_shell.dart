@@ -43,6 +43,7 @@ class AppShell extends ConsumerWidget {
     final online = spine.connected;
     final rawBattery = spine.status?.battery;
     final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
+    final bool charging = spine.status?.isCharging ?? false;
 
     final location = GoRouterState.of(context).uri.path;
     final active = _activeFor(location);
@@ -52,7 +53,7 @@ class AppShell extends ConsumerWidget {
       backgroundColor: MikeeColors.background,
       body: Column(
         children: [
-          _ShellHeader(compact: compact, online: online, battery: battery),
+          _ShellHeader(compact: compact, online: online, battery: battery, charging: charging),
           Expanded(
             child: Row(
               children: [
@@ -78,8 +79,9 @@ class _ShellHeader extends StatelessWidget {
   final bool compact;
   final bool online;
   final int? battery; // null = unknown → shown as "—"
+  final bool charging; // robot on charger → show bolt + amber
 
-  const _ShellHeader({required this.compact, required this.online, required this.battery});
+  const _ShellHeader({required this.compact, required this.online, required this.battery, this.charging = false});
 
   @override
   Widget build(BuildContext context) {
@@ -130,28 +132,41 @@ class _ShellHeader extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(color: MikeeColors.cardTop, border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(8)),
-                child: Row(children: [
-                  Icon(battery == null ? Icons.battery_unknown : Icons.battery_charging_full, size: 16,
-                      color: battery == null ? MikeeColors.textMuted : MikeeColors.success),
-                  const SizedBox(width: 8),
-                  Text(battery == null ? '—' : '$battery%', style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 40,
-                    height: 6,
-                    decoration: BoxDecoration(color: MikeeColors.border, borderRadius: BorderRadius.circular(999)),
-                    child: Stack(children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: (40 * (battery ?? 0) / 100).clamp(0, 40),
-                          height: 6,
-                          decoration: BoxDecoration(color: MikeeColors.success, borderRadius: BorderRadius.circular(999)),
-                        ),
-                      )
-                    ]),
-                  ),
-                ]),
+                child: Builder(builder: (_) {
+                  // Charging → amber + bolt; low (<20%) → red; else green.
+                  final Color barColor = battery == null
+                      ? MikeeColors.textMuted
+                      : charging
+                          ? const Color(0xFFFFA726) // amber while charging
+                          : (battery! < 20 ? MikeeColors.error : MikeeColors.success);
+                  final IconData icon = battery == null
+                      ? Icons.battery_unknown
+                      : charging
+                          ? Icons.bolt
+                          : (battery! < 20 ? Icons.battery_alert : Icons.battery_full);
+                  return Row(children: [
+                    Icon(icon, size: 16, color: barColor),
+                    const SizedBox(width: 8),
+                    Text(battery == null ? '—' : '$battery%${charging ? ' ⚡' : ''}',
+                        style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w500, color: barColor)),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 40,
+                      height: 6,
+                      decoration: BoxDecoration(color: MikeeColors.border, borderRadius: BorderRadius.circular(999)),
+                      child: Stack(children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: (40 * (battery ?? 0) / 100).clamp(0, 40),
+                            height: 6,
+                            decoration: BoxDecoration(color: barColor, borderRadius: BorderRadius.circular(999)),
+                          ),
+                        )
+                      ]),
+                    ),
+                  ]);
+                }),
               ),
               const SizedBox(width: 12),
             ],
