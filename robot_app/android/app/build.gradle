@@ -34,8 +34,12 @@ android {
     productFlavors {
         robot {
             dimension "env"
-            buildConfigField "String", "SDK_IP",   '"127.0.0.1"'
-            buildConfigField "int",    "SDK_PORT",  '60002'
+            // robot-core / nav server address — same one Alpha Map connects to
+            // (its offline-login screen shows IP 192.168.99.2, port 1445; the head
+            // reaches it over eth1). The SDK's 127.0.0.1:60002 default was wrong —
+            // robot-core isn't on the head's localhost, it's the chassis board.
+            buildConfigField "String", "SDK_IP",   '"192.168.99.2"'
+            buildConfigField "int",    "SDK_PORT",  '1445'
             resValue "string", "app_name", "Mikee Robot"
         }
         remote {
