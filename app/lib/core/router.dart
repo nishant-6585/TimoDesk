@@ -58,17 +58,27 @@ final _isLoggedInProvider = Provider<bool>((ref) {
   );
 });
 
-final flavorProvider = Provider<String>((ref) {
-  // This should be set during app initialization based on build flavor.
-  // In main.dart, set this via ref.read(flavorProvider.notifier).state = flavor;
-  // Defaults to 'prod' for safety if not explicitly set.
-  return const String.fromEnvironment('FLUTTER_APP_FLAVOR', defaultValue: 'prod');
+final flavorProvider = StateProvider<String>((ref) {
+  // MUST be explicitly set during app initialization in main.dart
+  // before any router is built. This provider has no default value—
+  // if not set, accessing it will throw to catch uninitialized flavor.
+  throw StateError(
+    'flavorProvider was not initialized. '
+    'Call ref.read(flavorProvider.notifier).state = flavor in main.dart '
+    'before building the router. Valid flavors: dev, staging, prod.',
+  );
 });
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshStream = ref.watch(_goRouterRefreshStreamProvider);
   final isLoggedIn = ref.watch(_isLoggedInProvider);
   final flavor = ref.watch(flavorProvider);
+
+  // Validate flavor is one of the allowed values.
+  assert(
+    ['dev', 'staging', 'prod'].contains(flavor),
+    'Invalid flavor: $flavor. Must be one of: dev, staging, prod',
+  );
 
   return GoRouter(
     refreshListenable: refreshStream,

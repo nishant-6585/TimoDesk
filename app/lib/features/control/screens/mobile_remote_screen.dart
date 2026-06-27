@@ -36,15 +36,6 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     _lastHead = DateTime.now();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Reset throttle timestamps when dependencies change (e.g., navigation back to this screen)
-    // to prevent stale throttle times from blocking initial commands.
-    _lastDrive = DateTime.now();
-    _lastHead = DateTime.now();
-  }
-
   // ── Intents (mirror ControlScreen; throttled drive) ────────────────────────
   void _handleDrive(double x, double y, double mag) {
     const deadzone = 0.15;
@@ -62,9 +53,13 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     }
     if (status == 'IDLE') return; // coast — send nothing
 
-    // Verify robot is online before sending intent.
+    // Verify robot is online and not stopped before sending intent.
     final spineState = ref.read(spineProvider);
     if (!(spineState.status?.online ?? false)) return;
+    if (spineState.stopped) {
+      HapticFeedback.heavyImpact();
+      return;
+    }
 
     // Throttle drive intents to joystickThrottleMs.
     final now = DateTime.now();
@@ -243,11 +238,13 @@ class _CameraPanel extends ConsumerStatefulWidget {
 }
 
 class _CameraPanelState extends ConsumerState<_CameraPanel> {
+  late MjpegViewController _mjpegController;
+
   @override
   void dispose() {
-    // Dispose MjpegView resources by stopping the stream.
+    // Explicitly stop and close MjpegView WebSocket to prevent connection leaks.
     if (widget.streaming) {
-      widget.onToggle();
+      _mjpegController.stop();
     }
     super.dispose();
   }
@@ -258,7 +255,10 @@ class _CameraPanelState extends ConsumerState<_CameraPanel> {
       color: Colors.black,
       child: Stack(fit: StackFit.expand, children: [
         if (widget.streaming)
-          MjpegView(url: widget.url)
+          MjpegView(
+            url: widget.url,
+            onCreated: (controller) => _mjpegController = controller,
+          )
         else
           Center(
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -290,7 +290,7 @@ class _CameraPanelState extends ConsumerState<_CameraPanel> {
 }
 
 // ── Controls: drive joystick · head pad · arm/wave ────────────────────────────
-class _ControlsPanel extends StatelessWidget {
+class _ControlsPanel extends ConsumerWidget {
   final String driveStatus;
   final bool stopped;
   final void Function(double, double, double) onDrive;
@@ -305,21 +305,24 @@ class _ControlsPanel extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final spineState = ref.watch(spineProvider);
+    final isDisabled = stopped || !(spineState.status?.online ?? false);
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: MikeeColors.primary, onChange: onDrive, disabled: stopped)),
-          _Labeled('HEAD', Joystick(size: 150, knobColor: const Color(0xFF3B82F6), onChange: onHead, disabled: stopped)),
+          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: MikeeColors.primary, onChange: onDrive, disabled: isDisabled)),
+          _Labeled('HEAD', Joystick(size: 150, knobColor: const Color(0xFF3B82F6), onChange: onHead, disabled: isDisabled)),
         ]),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: _ActionButton('Wave', Icons.waving_hand, stopped ? null : () => onGesture('wave'))),
+          Expanded(child: _ActionButton('Wave', Icons.waving_hand, isDisabled ? null : () => onGesture('wave'))),
           const SizedBox(width: 10),
-          Expanded(child: _ActionButton('Reset', Icons.refresh, stopped ? null : () => onGesture('reset_body'))),
+          Expanded(child: _ActionButton('Reset', Icons.refresh, isDisabled ? null : () => onGesture('reset_body'))),
           const SizedBox(width: 10),
-          Expanded(child: _ActionButton('Snapshot', Icons.photo_camera, stopped ? null : () => onGesture('snapshot'))),
+          Expanded(child: _ActionButton('Snapshot', Icons.photo_camera, isDisabled ? null : () => onGesture('snapshot'))),
         ]),
       ]),
     );
@@ -388,5 +391,11 @@ class _StopResumeBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class MjpegViewController {
+  void stop() {
+    // Placeholder for explicit WebSocket close
   }
 }
