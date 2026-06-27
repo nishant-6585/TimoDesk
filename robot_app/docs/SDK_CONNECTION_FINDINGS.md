@@ -1,58 +1,57 @@
-# CSJBot SDK ↔ robot-core connection — root-cause findings (2026-06-27)
+# CSJBot SDK ↔ robot-core connection — findings & fix (2026-06-27)
 
 ## Symptom
-robot_app's CSJBot SDK receives **no robot-state callbacks**: battery falls back to
-the Android head/tablet value (~50%), person detection is silent/inconsistent, and
-the chassis never reports nav-ready (drive blocked). All three are the *same* failure.
+robot_app's CSJBot SDK receives **no robot-state callbacks**: battery shows the
+Android head/tablet value (~50%), person detection is silent/inconsistent, and the
+chassis never reports nav-ready (drive blocked). All three are the *same* failure:
+the SDK never connects to robot-core.
 
-## Root cause (confirmed)
-The bundled SDK (`android/libs/newSceneSDK-release.aar`) reaches robot-core over
-**MQTT**: `CsjRobot.init()` → `connectToMqtt()` → `Extra.connectMqttServer()`.
+## Root cause — APP-SIDE REGRESSION (fixed)
+The SDK reaches robot-core through a **Netty "cos" client**
+(`HandlerMsgSocketService` → `CosClientAgent` → `CosConnectorNetty.connect(defaultIp,
+defaultPort)`), enabled by `useSocket=true` which `setIpAndrPort()` sets.
 
-On-robot diagnostics added to `MikeeApplication` (`SDK-DIAG` logs) show:
-```
-SDK auth success
-SDK target: defaultIp=127.0.0.1 defaultPort=60002 (flavor ip=127.0.0.1:60002)
-SDK initialized — flavor=robot ip=127.0.0.1
-```
-…and then **none** of the connection callbacks ever fire — no `mqttConnect=true`,
-no `serverConnect`, no `slam`. The SDK dials an MQTT broker at **127.0.0.1:60002**.
+Two things were broken, both lost when the SDK was switched from a project module to
+a **bundled AAR** (commit `ccff2d4`):
+1. **The Netty dependency was dropped.** The vendor demo
+   (`Timo/SdkDemoCsj/app/build.gradle`) declares `io.netty:netty-all:4.1.23.Final`;
+   our `app/build.gradle` never did (though `proguard-rules.pro` still `-keep`s
+   `io.netty.**`). Without it, socket mode crashed with
+   `ClassNotFoundException: io.netty.channel.nio.NioEventLoopGroup`.
+2. **Socket mode was disabled.** `MikeeApplication` skipped `setIpAndrPort()` for the
+   `127.0.0.1` (robot) flavor, leaving the SDK on the MQTT path (`HandlerMsgService`)
+   which this robot has no broker for.
 
-A full port scan of the robot (with Alpha Map logged in and robot-core healthy)
-shows **nothing listening on 60002** — on localhost, on the internal chassis net
-(`eth1 192.168.99.x`), or anywhere — and **no mqtt/mosquitto/cos broker process**.
-Listening ports are only: 8080/8081/8082/8083/8090 (robot_app's own servers),
-53 (dns), and a couple of dynamic localhost ports.
+### Fix applied (this branch)
+- `app/build.gradle`: add `io.netty:netty-all:4.1.23.Final`.
+- `MikeeApplication`: always call `setIpAndrPort(SDK_IP, SDK_PORT)` (→ `useSocket=true`).
 
-Meanwhile **Alpha Map (com.csjbot.robotstation) talks to robot-core successfully**
-— but over a **different transport: Netty/ROS** (`CosConnectorNetty`,
-`CsjSlamCore` `robot_info`/`get_localization_quality`), NOT MQTT. robot-core
-reports `nav_ready=true`, `e_stop=false`, localization quality 5 — it is alive and
-healthy; mikee's SDK simply can't reach it because it speaks the wrong protocol to
-a port that has no listener.
+**Verified on-robot:** the app is now stable (no crash) and the SDK correctly
+instantiates `com.csjbot.cosclient.core.CosConnectorNetty` and runs a clean 5s
+connect-retry loop — the **same Netty cos client Alpha Map uses**. The app-side is
+fixed.
 
-## Conclusion: SDK ↔ firmware version mismatch
-This robot's robot-core exposes **Netty/ROS** (what Alpha Map uses). The bundled
-`newSceneSDK` AAR is an **MQTT-based** build that expects a broker at
-`127.0.0.1:60002` which this firmware does not run. A reboot does NOT help — it's
-not a service that failed to start; the robot simply has no MQTT broker.
+## Remaining blocker — robot-side: cos server on :60002 not listening
+The SDK dials `defaultIp:defaultPort = 127.0.0.1:60002` and the connect **fails**
+(`CosLogger: operationComplete not isSuccess`) because **nothing listens on 60002**
+anywhere on the robot — confirmed even with Alpha Map logged in and robot-core
+healthy (`nav_ready=true`, battery 63%).
 
-## The fix (needs the vendor — CSJBot, via Vishal)
-Obtain the **CSJBot SDK AAR + sample/demo app that matches this robot's firmware**
-— the version Alpha Map is built against (Netty/ROS transport), not MQTT/60002.
-Then:
-1. Replace `android/libs/newSceneSDK-release.aar` with the matching version.
-2. Align `MikeeApplication.initSdk()` with the demo's init sequence.
-3. Verify `SDK-DIAG` shows the connection succeeding; battery/person/nav callbacks
-   then fire and the bridge (`spine/battery-bridge.mjs`) can be retired.
+Note Alpha Map does NOT use this port: its data arrives via a **separate ROS/SLAM
+backend** (`CsjSlamCore` / `RosClientAgentCallback`), so Alpha Map being up does not
+start the SDK's cos server. The cos "message server" on 60002 (robot-state/commands)
+is a robot-side service that is simply not running on this unit right now.
 
-### Exact question for CSJBot
-> "Our app embeds `newSceneSDK` which connects to robot-core via MQTT at
-> 127.0.0.1:60002, but our Timo has no MQTT broker there — robot-core is reachable
-> via Netty/ROS (what Alpha Map / robotstation uses). Please provide the SDK
-> version + demo that matches this robot's firmware so a third-party app can
-> receive robot-state (battery, person detection) and drive the chassis."
+### Next steps to close it
+1. With the app now fixed, do a **clean reboot of the well-charged robot** — the cos
+   server may auto-start on a healthy boot (we have never had one: every prior boot
+   was at critically low battery). Then watch for `CosLogger … isSuccess` /
+   robot-state callbacks; battery should flip from `(android)` to `(sdk)`.
+2. If 60002 still never comes up, ask CSJBot/Vishal: *"what starts the cos message
+   server on 127.0.0.1:60002 that the SDK connects to? It isn't running on our Timo,
+   though the ROS/SLAM backend (Alpha Map) is."* Possibly the cos server runs on a
+   different port — if so, set it via `setIpAndrPort`.
 
-## What works without this (interim)
-`spine/battery-bridge.mjs` tails Alpha Map's robot-core logs over adb and feeds the
-real battery + charging to the admin. Dev stopgap only; not a production feed.
+## Interim
+`spine/battery-bridge.mjs` scrapes the real battery from Alpha Map's adb logs → admin
+only. Retire once the SDK connects.

@@ -58,6 +58,14 @@ android {
 dependencies {
     // CsjRobot SDK — bundled AAR (source lives at Timo/SdkDemoCsj/newSceneSDK locally)
     implementation files('../libs/newSceneSDK-release.aar')
+    // Netty — REQUIRED by the SDK's socket transport (HandlerMsgSocketService →
+    // CosClientAgent, the Netty cos client that connects to robot-core, the same
+    // path Alpha Map uses). The AAR doesn't bundle it and it was dropped when the
+    // SDK was converted from a project module to a bundled AAR, so the SDK silently
+    // couldn't reach robot-core (no battery/person/nav callbacks; socket mode
+    // crashed with ClassNotFoundException io.netty…). Version matches the vendor
+    // demo (Timo/SdkDemoCsj/app/build.gradle).
+    implementation 'io.netty:netty-all:4.1.23.Final'
     // Transitive deps the SDK needs (not bundled in the AAR)
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.code.gson:gson:2.8.1'

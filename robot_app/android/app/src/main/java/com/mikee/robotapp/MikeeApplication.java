@@ -48,10 +48,14 @@ public class MikeeApplication extends MultiDexApplication {
                 CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement
                 CsjRobot.setRobotType(CsjRobot.RobotType.TIMO);
 
-                // Remote flavor: point SDK at the robot over WiFi instead of localhost
-                if (!BuildConfig.SDK_IP.equals("127.0.0.1")) {
-                    CsjRobot.setIpAndrPort(BuildConfig.SDK_IP, BuildConfig.SDK_PORT);
-                }
+                // ALWAYS call setIpAndrPort — it does two things: sets the robot-core
+                // address AND flips the SDK to SOCKET transport (useSocket=true).
+                // Skipping it for 127.0.0.1 (the old guard) left the robot flavor on
+                // MQTT (HandlerMsgService → broker at 127.0.0.1:60002), which this
+                // robot has no broker for, so the SDK never connected and no
+                // robot-state callbacks fired (battery/person/nav all dead). The
+                // remote flavor already did this and worked → socket is the path.
+                CsjRobot.setIpAndrPort(BuildConfig.SDK_IP, BuildConfig.SDK_PORT);
 
                 // Person-detection sensors (laser + RGBD + ultrasonic), pre-init like
                 // the demo. PersonDetectPlugin only registers the listener now.
