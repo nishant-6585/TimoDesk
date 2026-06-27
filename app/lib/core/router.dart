@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -59,16 +58,26 @@ final _isLoggedInProvider = Provider<bool>((ref) {
   );
 });
 
+final flavorProvider = Provider<String>((ref) {
+  // This should be set during app initialization based on build flavor.
+  // In main.dart, set this via ref.read(flavorProvider.notifier).state = flavor;
+  // Defaults to 'prod' for safety if not explicitly set.
+  return const String.fromEnvironment('FLUTTER_APP_FLAVOR', defaultValue: 'prod');
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshStream = ref.watch(_goRouterRefreshStreamProvider);
   final isLoggedIn = ref.watch(_isLoggedInProvider);
-  
+  final flavor = ref.watch(flavorProvider);
+
   return GoRouter(
     refreshListenable: refreshStream,
     redirect: (context, state) {
-      // DEV ONLY: skip the login gate and boot straight to the dashboard.
-      // Only enabled in debug mode to prevent accidental production exposure.
-      final devSkipAuth = kDebugMode;
+      // DEV ONLY: skip the login gate in 'dev' flavor only.
+      // This auth bypass is ONLY enabled for true 'dev' flavor builds.
+      // 'staging' and 'prod' flavors always enforce authentication.
+      // NEVER bypass auth in staging or production builds.
+      final devSkipAuth = flavor == 'dev';
       if (devSkipAuth) {
         return state.matchedLocation == '/login' ? '/' : null;
       }
@@ -121,7 +130,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/gallery/:captureId',
             name: 'gallery_detail',
             builder: (context, state) {
-              final captureId = state.pathParameters['captureId']!;
+              final captureId = state.pathParameters['captureId'] ?? '';
+              if (captureId.isEmpty) {
+                return const ErrorScreen(message: 'Invalid capture ID');
+              }
               return GalleryScreen(captureId: captureId);
             },
           ),
@@ -150,3 +162,35 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+class ErrorScreen extends StatelessWidget {
+  final String message;
+
+  const ErrorScreen({Key? key, required this.message}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Error')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Go to Dashboard'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

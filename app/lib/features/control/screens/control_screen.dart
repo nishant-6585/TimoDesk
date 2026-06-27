@@ -28,7 +28,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   int _throttle = 0;
   bool _wasDriving = false;
   Timer? _headThrottleTimer;
-  DateTime? _lastOfflineSnackbar;
+  bool _isHeadThrottleActive = false;
+  bool _isSnackbarShowing = false;
+  Queue<Map<String, dynamic>> _commandQueue = Queue();
+  Timer? _commandQueueTimer;
+  int _stopDriveRetries = 0;
+  static const int _maxStopDriveRetries = 3;
+  static const int _stopDriveRetryIntervalMs = 500;
 
   @override
   void initState() {
@@ -39,18 +45,29 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   @override
   void dispose() {
     _headThrottleTimer?.cancel();
+    _commandQueueTimer?.cancel();
     super.dispose();
   }
 
   void _showOfflineSnackbar() {
-    final now = DateTime.now();
-    if (_lastOfflineSnackbar == null || now.difference(_lastOfflineSnackbar!).inSeconds >= 3) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
-        );
-      }
-      _lastOfflineSnackbar = now;
+    if (!_isSnackbarShowing && mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _isSnackbarShowing = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12)),
+          duration: const Duration(seconds: 4),
+          onVisible: () {
+            _isSnackbarShowing = true;
+          },
+        ),
+      ).closed.then((_) {
+        if (mounted) {
+          setState(() {
+            _isSnackbarShowing = false;
+          });
+        }
+      });
     }
   }
 
@@ -58,8 +75,42 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     return ref.read(spineProvider).status?.online ?? false;
   }
 
+  void _queueCommand(Map<String, dynamic> command) {
+    _commandQueue.add(command);
+    _processCommandQueue();
+  }
+
+  void _processCommandQueue() {
+    if (_commandQueue.isEmpty) {
+      _commandQueueTimer?.cancel();
+      _commandQueueTimer = null;
+      _stopDriveRetries = 0;
+      return;
+    }
+
+    final command = _commandQueue.removeFirst();
+    final notifier = ref.read(spineProvider.notifier);
+    
+    if (kDebugMode) {
+      print('[ControlScreen] Sending command: $command');
+    }
+    
+    notifier.sendIntent(command);
+
+    if (command['intent'] == 'stop_drive' && _stopDriveRetries < _maxStopDriveRetries) {
+      _stopDriveRetries++;
+      _commandQueue.addFirst(command);
+    } else if (command['intent'] == 'stop_drive') {
+      _stopDriveRetries = 0;
+    }
+
+    if (_commandQueue.isNotEmpty) {
+      _commandQueueTimer?.cancel();
+      _commandQueueTimer = Timer(const Duration(milliseconds: 50), _processCommandQueue);
+    }
+  }
+
   void _handleDriveJoystick(double x, double y, double mag) {
-    // Update UI state
     setState(() {
       _driveX = x;
       _driveY = y;
@@ -77,24 +128,26 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
-    // Cache online status once per action
     final isOnline = _isRobotOnline();
 
-    // Joystick returned to the deadzone (released or centered) → halt the wheels.
-    // The robot_app holds a moveSerial heartbeat until it receives stop, so we
-    // MUST send stop_drive on release or the robot keeps moving. Send unconditionally
-    // on moving→idle transition for safety; robot_app ignores redundant stops.
     if (_driveStatus == 'IDLE') {
       if (_wasDriving) {
         _wasDriving = false;
         if (isOnline) {
-          ref.read(spineProvider.notifier).sendIntent({'intent': 'stop_drive'});
+          _stopDriveRetries = 0;
+          _queueCommand({'intent': 'stop_drive'});
+          for (int i = 0; i < _maxStopDriveRetries - 1; i++) {
+            Future.delayed(Duration(milliseconds: _stopDriveRetryIntervalMs * (i + 1)), () {
+              if (mounted && _isRobotOnline()) {
+                _queueCommand({'intent': 'stop_drive'});
+              }
+            });
+          }
         }
       }
       return;
     }
 
-    // Send drive command ONLY if joystick is not in deadzone and robot is online
     if (!isOnline) {
       _showOfflineSnackbar();
       return;
@@ -105,8 +158,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 _driveStatus == 'RIGHT' ? 'right' : 'left';
 
     _wasDriving = true;
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': 'drive', 'dir': dir});
+    _queueCommand({'intent': 'drive', 'dir': dir});
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
@@ -121,12 +173,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
 
-    // Throttle head commands to prevent flooding WebSocket
+    if (_isHeadThrottleActive) {
+      return;
+    }
+
+    _isHeadThrottleActive = true;
+    final notifier = ref.read(spineProvider.notifier);
+    notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+
     _headThrottleTimer?.cancel();
-    _headThrottleTimer = Timer(joystickThrottleMs, () {
+    _headThrottleTimer = Timer(Duration(milliseconds: joystickThrottleMs), () {
       if (mounted) {
-        final notifier = ref.read(spineProvider.notifier);
-        notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+        _isHeadThrottleActive = false;
       }
     });
   }
@@ -187,7 +245,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final stopped = spine.stopped;
     final isBlocked = spine.status?.obstacleState == ObstacleState.blocked;
 
-    // Body-only: the AppShell supplies the top status bar + sidebar.
     return Stack(
       children: [
         SingleChildScrollView(
@@ -213,7 +270,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             ),
           ),
         ),
-        // Blocked overlay (obstacle detected)
         BlockedOverlay(visible: isBlocked),
       ],
     );
