@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'config.dart';
+import 'services/face_enroll.dart';
 import 'services/voice_agent.dart';
 
 const _orange = Color(0xFFFF6B35);
@@ -24,10 +25,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _kiosk;
   late final TextEditingController _elevenKey;
   late final TextEditingController _elevenAgent;
+  late final TextEditingController _enrollName;
   bool _saved = false;
 
   bool _testing = false;
   String? _testResult;
+
+  bool _enrolling = false;
+  String? _enrollResult;
 
   @override
   void initState() {
@@ -37,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _kiosk = TextEditingController(text: RobotConfig.kioskToken);
     _elevenKey = TextEditingController(text: RobotConfig.elevenLabsApiKey);
     _elevenAgent = TextEditingController(text: RobotConfig.elevenLabsAgentId);
+    _enrollName = TextEditingController();
   }
 
   @override
@@ -46,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _kiosk.dispose();
     _elevenKey.dispose();
     _elevenAgent.dispose();
+    _enrollName.dispose();
     super.dispose();
   }
 
@@ -101,6 +108,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _testing = false;
       _testResult = result;
     });
+  }
+
+  Future<void> _enroll() async {
+    final name = _enrollName.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a staff name first')),
+      );
+      return;
+    }
+    setState(() {
+      _enrolling = true;
+      _enrollResult = null;
+    });
+    final ok = await FaceEnroll.saveFace(name);
+    if (!mounted) return;
+    setState(() {
+      _enrolling = false;
+      _enrollResult = ok ? 'Enrolled "$name" ✓' : 'Enrollment failed — ensure face is visible';
+    });
+    if (ok) _enrollName.clear();
   }
 
   InputDecoration _dec(String label, String hint) => InputDecoration(
@@ -168,6 +196,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(
                       color: testOk ? const Color(0xFF4ADE80) : Colors.redAccent,
                       fontSize: 13),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 28),
+          const Text('STAFF FACE ENROLLMENT',
+              style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+          const SizedBox(height: 8),
+          Text(
+            'Stand the staff member in front of the robot camera, enter their name, then tap Enroll. '
+            'The robot captures and stores the face on-device. Recognised staff will be greeted by name.',
+            style: const TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _enrollName,
+            style: const TextStyle(fontSize: 16),
+            textCapitalization: TextCapitalization.words,
+            decoration: _dec('Staff name', 'e.g. Nishant — used in the greeting'),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            FilledButton.icon(
+              onPressed: _enrolling ? null : _enroll,
+              icon: _enrolling
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.face_retouching_natural),
+              label: Text(_enrolling ? 'Enrolling…' : 'Enroll Face'),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+            ),
+            const SizedBox(width: 12),
+            if (_enrollResult != null)
+              Expanded(
+                child: Text(
+                  _enrollResult!,
+                  style: TextStyle(
+                    color: _enrollResult!.endsWith('✓')
+                        ? const Color(0xFF4ADE80)
+                        : Colors.redAccent,
+                    fontSize: 13,
+                  ),
                 ),
               ),
           ]),
