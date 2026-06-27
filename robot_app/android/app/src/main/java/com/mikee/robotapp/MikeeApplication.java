@@ -6,6 +6,9 @@ import androidx.multidex.MultiDexApplication;
 
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnAuthenticationListener;
+import com.csjbot.coshandler.listener.OnRobotInitListener;
+import com.csjbot.coshandler.listener.OnMqttConnectStateListener;
+import com.csjbot.coshandler.listener.OnRobotConnectionStateListener;
 
 public class MikeeApplication extends MultiDexApplication {
 
@@ -53,6 +56,30 @@ public class MikeeApplication extends MultiDexApplication {
                 // Person-detection sensors (laser + RGBD + ultrasonic), pre-init like
                 // the demo. PersonDetectPlugin only registers the listener now.
                 CsjRobot.getInstance().setPersonCheckType(true, true, true);
+
+                // ── SDK ↔ robot-core CONNECTION DIAGNOSTICS ─────────────────────
+                // The SDK reaches robot-core over MQTT (init → connectToMqtt). When
+                // that link is down, NO robot-state callbacks fire — so battery
+                // falls back to the head/tablet value, person detection is silent,
+                // and chassis nav never becomes ready. These listeners make the
+                // connection state visible instead of inferring it from logcat.
+                Log.d(TAG, "SDK target: defaultIp=" + CsjRobot.getDefaultIpAddr()
+                        + " defaultPort=" + CsjRobot.getDefaultPort()
+                        + " (flavor ip=" + BuildConfig.SDK_IP + ":" + BuildConfig.SDK_PORT + ")");
+
+                CsjRobot.getInstance().setOnMqttConnectStateListener(connected ->
+                        Log.d(TAG, "SDK-DIAG mqttConnect=" + connected));
+
+                CsjRobot.getInstance().setRobotConnectionStateListener(connected ->
+                        Log.d(TAG, "SDK-DIAG robotConnectState=" + connected));
+
+                CsjRobot.getInstance().setOnInitListener(new OnRobotInitListener() {
+                    @Override public void onBasicInfoState(int s, String m)     { Log.d(TAG, "SDK-DIAG init.basicInfo=" + s + " " + m); }
+                    @Override public void onServerConnectState(int s, String m) { Log.d(TAG, "SDK-DIAG init.serverConnect=" + s + " " + m); }
+                    @Override public void onHardWareHealthState(int s, String m){ Log.d(TAG, "SDK-DIAG init.hardware=" + s + " " + m); }
+                    @Override public void onSlamState(int s, String m)          { Log.d(TAG, "SDK-DIAG init.slam=" + s + " " + m); }
+                    @Override public void onSoftWareState(int s, String m)      { Log.d(TAG, "SDK-DIAG init.software=" + s + " " + m); }
+                });
 
                 // Step 7: Init
                 CsjRobot.getInstance().init(MikeeApplication.this);
