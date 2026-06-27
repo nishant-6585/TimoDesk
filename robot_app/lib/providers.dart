@@ -333,6 +333,58 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
     } on PlatformException catch (e) { debugPrint('stopMove: $e'); }
   }
 
+  // ── Navigation / SLAM (nav_points screen) ──────────────────────────────────
+  // These map to the native chassis plugin methods added for the on-robot
+  // Navigation Points feature. Chassis control must be started first
+  // (startChassisControl) or the SDK calls no-op.
+
+  /// Read the robot's current SLAM pose. Returns `{x, y, z, rotation}` (doubles)
+  /// or `null` if the robot isn't localized / the SDK is absent / it timed out.
+  Future<Map<String, double>?> getPosition() async {
+    try {
+      final res = await _chassisMethodCh.invokeMethod<Map>('getPosition');
+      if (res == null) return null;
+      double d(Object? v) => (v as num?)?.toDouble() ?? 0.0;
+      return {
+        'x': d(res['x']),
+        'y': d(res['y']),
+        'z': d(res['z']),
+        'rotation': d(res['rotation']),
+      };
+    } on PlatformException catch (e) {
+      debugPrint('getPosition: $e');
+      return null;
+    }
+  }
+
+  /// Navigate the robot to a saved SLAM pose. Returns true if the SDK accepted
+  /// the request. Fire it after [startChassisControl].
+  Future<bool> naviTo(Map<String, double> pose) async {
+    try {
+      final ok = await _chassisMethodCh.invokeMethod<bool>('navi', {
+        'x': pose['x'] ?? 0.0,
+        'y': pose['y'] ?? 0.0,
+        'z': pose['z'] ?? 0.0,
+        'rotation': pose['rotation'] ?? 0.0,
+      });
+      return ok ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('navi: $e');
+      return false;
+    }
+  }
+
+  /// Cancel an in-flight navigation. Returns true if the SDK accepted it.
+  Future<bool> cancelNavi() async {
+    try {
+      final ok = await _chassisMethodCh.invokeMethod<bool>('cancelNavi');
+      return ok ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('cancelNavi: $e');
+      return false;
+    }
+  }
+
   void _applyStatus(Map<dynamic, dynamic> m) {
     state = state.copyWith(
       isRunning: m['isRunning'] as bool?,

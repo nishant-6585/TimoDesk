@@ -57,6 +57,14 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     private volatile int currentLinear = 0;
     private volatile int currentAngular = 0;
     private volatile int currentMoveCode = -1; // NAVI_ROBOT_MOVE direction: 0=fwd 1=back 2=left 3=right
+
+    // No-op navi callback for the startup cancelNavi (clears any leftover nav task).
+    private final OnNaviListener startupNaviCb = new OnNaviListener() {
+        @Override public void moveResult(String j) {}
+        @Override public void messageSendResult(String j) {}
+        @Override public void cancelResult(String j) { Log.d(TAG, "startup cancelNavi result: " + j); }
+        @Override public void goHome() {}
+    };
     private Set<ClientHandler> clients = new HashSet<>();
     private long lastCommandTime = 0;
     private EventChannel.EventSink eventSink;
@@ -98,6 +106,49 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 break;
             case "getChassisStatus":
                 result.success(buildStatus());
+                break;
+            case "getPosition":
+                // Capture the current SLAM pose for saving a nav point (from the
+                // robot's own UI). Async — getPosition's callback returns the result.
+                try {
+                    CsjRobot.getInstance().getAction().getPosition(posJson -> {
+                        try {
+                            JSONObject p = new JSONObject(posJson);
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("x", p.optDouble("x", 0));
+                            m.put("y", p.optDouble("y", 0));
+                            m.put("z", p.optDouble("z", 0));
+                            m.put("rotation", p.optDouble("rotation", 0));
+                            mainHandler.post(() -> result.success(m));
+                        } catch (JSONException e) {
+                            mainHandler.post(() -> result.error("parse", e.getMessage(), null));
+                        }
+                    });
+                } catch (Exception e) {
+                    result.error("getPosition", e.getMessage(), null);
+                }
+                break;
+            case "navi":
+                // Navigate to a saved point: args x,y,z,rotation.
+                try {
+                    JSONObject pt = new JSONObject();
+                    pt.put("x", ((Number) call.argument("x")).doubleValue());
+                    pt.put("y", ((Number) call.argument("y")).doubleValue());
+                    pt.put("z", call.argument("z") != null ? ((Number) call.argument("z")).doubleValue() : 0);
+                    pt.put("rotation", call.argument("rotation") != null ? ((Number) call.argument("rotation")).doubleValue() : 0);
+                    CsjRobot.getInstance().getAction().navi(pt.toString());
+                    result.success(true);
+                } catch (Exception e) {
+                    result.error("navi", e.getMessage(), null);
+                }
+                break;
+            case "cancelNavi":
+                try {
+                    CsjRobot.getInstance().getAction().cancelNavi(startupNaviCb);
+                    result.success(true);
+                } catch (Exception e) {
+                    result.error("cancelNavi", e.getMessage(), null);
+                }
                 break;
             default:
                 result.notImplemented();
@@ -379,6 +430,17 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 Log.d(TAG, "setNaviMode(1) sent unconditionally (manual movement mode for map-free teleop)");
             } catch (Exception e) {
                 Log.e(TAG, "setNaviMode(1) failed: " + e.getMessage());
+            }
+
+            // SAFETY: cancel any leftover autonomous nav task on startup. Robot-core
+            // persists a running nav route independent of the app, so a route started
+            // earlier (e.g. by the vendor Reception app) keeps executing — the robot
+            // moves/avoids on its own. Clear it so only our explicit commands move it.
+            try {
+                CsjRobot.getInstance().getAction().cancelNavi(startupNaviCb);
+                Log.d(TAG, "startup cancelNavi sent (clear any leftover nav task)");
+            } catch (Exception e) {
+                Log.e(TAG, "startup cancelNavi failed: " + e.getMessage());
             }
 
             // ── Diagnostics (read-only): surface WHY the chassis may refuse to move.
