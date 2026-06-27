@@ -61,12 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      // Auto-confirm the user (for dev/testing)
-      // In production, they'd need to verify their email
       if (mounted) {
-        setState(() => _isLoading = false);
-
-        // Show success message and switch to sign in
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Account created! Signing you in...'),
@@ -74,9 +69,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         );
 
-        // Auto sign in after signup without nested try-catch
         if (mounted) {
-          await _handleSignIn();
+          try {
+            await _handleSignIn();
+          } catch (signInError) {
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+                _error = 'Account created successfully, but sign-in failed. Please sign in manually: $signInError';
+              });
+            }
+          }
         }
       }
     } on AuthException catch (e) {
@@ -90,7 +93,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _error = 'An error occurred: $e';
+          _error = 'An error occurred during signup: $e';
         });
       }
     }
@@ -122,8 +125,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (mounted) {
         setState(() => _isLoading = false);
-
-        // Auto-navigate on successful login
         context.go('/');
       }
     } on AuthException catch (e) {
@@ -137,7 +138,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _error = 'An error occurred: $e';
+          _error = 'An error occurred during sign in: $e';
         });
       }
     }
