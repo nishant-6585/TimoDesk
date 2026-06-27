@@ -22,6 +22,8 @@ public class MainActivity extends FlutterActivity {
     private static final String AUDIO_PLAY_EVENT_CH = "com.mikee/audio_playback";
     private static final String WAKE_EVENT_CH      = "com.mikee/wake_events";
     private static final String PERSON_EVENT_CH    = "com.mikee/person_events";
+    private static final String FACE_EVENT_CH      = "com.mikee/face_events";
+    private static final String FACE_SAVE_METHOD_CH = "com.mikee/face_save";
 
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
@@ -115,5 +117,22 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 PERSON_EVENT_CH
         ).setStreamHandler(personPlugin);
+
+        // Staff face recognition → greet-by-name. The SDK listener is registered
+        // post-init in MikeeApplication (see registerWithSdk); here we only wire the
+        // EventChannel so the Dart sink is captured. Silent no-op on emulator.
+        FaceRecognitionPlugin facePlugin = new FaceRecognitionPlugin();
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                FACE_EVENT_CH
+        ).setStreamHandler(facePlugin);
+
+        // On-robot face enrollment (live-camera capture). MethodChannel only —
+        // saveFace registers the person currently in front of the camera.
+        FaceSavePlugin faceSavePlugin = new FaceSavePlugin();
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                FACE_SAVE_METHOD_CH
+        ).setMethodCallHandler(faceSavePlugin);
     }
 }

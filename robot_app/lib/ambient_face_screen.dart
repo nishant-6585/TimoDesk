@@ -12,6 +12,7 @@ import 'config.dart';
 import 'face_painter.dart';
 import 'services/elevenlabs_tts.dart';
 import 'services/person_detect.dart';
+import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
 import 'waving_hand_overlay.dart';
 import 'face_rig.dart';
@@ -55,6 +56,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<bool>? _presenceSub;
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
   bool _sdkPersonPresent = false; // rising-edge tracking for greet-on-approach
+  StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
+  String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
 
   bool _useLivePerception = true; // toggle in debug card; drives gaze when on
   bool _present = false; // a face box is currently visible
@@ -132,6 +135,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // On-device person sensors (laser/RGBD/ultrasonic) → same idle→active logic,
     // plus a greeting wave on a fresh approach. Works without cloud or mic.
     _sdkPersonSub = PersonDetect.presence.listen(_onSdkPerson);
+    // Staff face recognition (CSJBot SDK) → greet by name. Silent off-robot.
+    _faceRecgSub = FaceRecognition.events.listen(_onFaceRecognized);
     _gaze.start();
     _spine.start();
 
@@ -202,6 +207,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _faceSub?.cancel();
     _presenceSub?.cancel();
     _sdkPersonSub?.cancel();
+    _faceRecgSub?.cancel();
     _gaze.dispose();
     _spine.dispose();
     _repaint.dispose();
@@ -398,6 +404,51 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       _greetOnApproach(); // debounced — same overlay + voice as the ML Kit path
     }
     _sdkPersonPresent = present;
+  }
+
+  /// CSJBot staff face recognition → personalised greeting.
+  ///   • near present → wake the face (idle/sleepy → attentive).
+  ///   • recognized, confidence ≥ 60 → greet that staff member BY NAME via
+  ///     ElevenLabs (humorous, see the agent's STAFF_RECOGNIZED prompt).
+  ///   • recognized but uncertain (< 60) → treat as an anonymous visitor.
+  /// Never interrupts a live conversation.
+  void _onFaceRecognized(FaceEvent e) {
+    if (_voiceActive) return; // mid-conversation — don't greet over it
+    switch (e.type) {
+      case 'near':
+        if (e.present == true &&
+            (_face.state == FaceStateKind.idle ||
+                _face.state == FaceStateKind.sleepy)) {
+          _setStateKind(FaceStateKind.attentive);
+        }
+        return;
+      case 'recognized':
+        final name = e.name?.trim() ?? '';
+        if (e.confidence >= 60 && name.isNotEmpty) {
+          _greetStaff(name);
+        } else {
+          // Uncertain match → standard anonymous greeting (no name injection).
+          _greetOnApproach();
+        }
+        return;
+    }
+  }
+
+  // Greet a recognised staff member by name. The on-screen overlay shows the
+  // visual greeting; the SPOKEN, by-name, humorous line is delivered by
+  // ElevenLabs — we inject "STAFF_RECOGNIZED: <name>" as the first turn so the
+  // agent opens the conversation itself (no separate TTS greeting → no overlap).
+  // Shares the 10-minute _greetedAt debounce with the spine face_detected path.
+  void _greetStaff(String name) {
+    final now = DateTime.now();
+    final last = _greetedAt[name];
+    if (last != null && now.difference(last) < _regreetWindow) return; // debounce
+    _greetedAt[name] = now;
+    _pendingGreetName = name;
+    final lang = languageForCode(RobotConfig.voiceLanguageCode);
+    _showGreeting(lang.greetText(name)); // overlay + greeting face state
+    _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $_pendingGreetName');
+    _startVoice(auto: true); // opens the session → agent greets by name, then listens
   }
 
   void _setStateKind(FaceStateKind k) {
