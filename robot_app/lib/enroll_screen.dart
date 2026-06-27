@@ -29,6 +29,7 @@ class _StaffMember {
   final bool active;
   final int embeddingCount;
   final String createdAt;
+  final String? photoUrl;
   const _StaffMember({
     required this.id,
     required this.fullName,
@@ -37,6 +38,7 @@ class _StaffMember {
     required this.active,
     required this.embeddingCount,
     required this.createdAt,
+    this.photoUrl,
   });
   factory _StaffMember.fromJson(Map<String, dynamic> j) => _StaffMember(
         id: j['id'] as String,
@@ -46,6 +48,7 @@ class _StaffMember {
         active: j['active'] as bool? ?? true,
         embeddingCount: j['embedding_count'] as int? ?? 0,
         createdAt: j['created_at'] as String? ?? '',
+        photoUrl: j['photo_url'] as String?,
       );
 }
 
@@ -341,7 +344,7 @@ class _StaffCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Avatar circle
+              // Avatar — real face photo when enrolled, else colored initials
               Container(
                 width: 72,
                 height: 72,
@@ -351,9 +354,21 @@ class _StaffCard extends StatelessWidget {
                   border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
                 ),
                 alignment: Alignment.center,
-                child: Text(initials,
-                    style: TextStyle(
-                        color: color, fontSize: 24, fontWeight: FontWeight.w800)),
+                clipBehavior: Clip.antiAlias,
+                child: (staff.photoUrl != null && staff.photoUrl!.isNotEmpty)
+                    ? Image.network(
+                        staff.photoUrl!,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        // Fall back to initials if the signed URL fails / expires.
+                        errorBuilder: (_, __, ___) => Text(initials,
+                            style: TextStyle(
+                                color: color, fontSize: 24, fontWeight: FontWeight.w800)),
+                      )
+                    : Text(initials,
+                        style: TextStyle(
+                            color: color, fontSize: 24, fontWeight: FontWeight.w800)),
               ),
               const SizedBox(height: 12),
               // Name
@@ -732,6 +747,8 @@ class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClien
                 'consent': true,
                 'consent_ref': '$consentRef-pose-$i',
                 'image_base64': base64Encode(_frames[i]),
+                // Pose 0 is the Front shot — use it as the gallery thumbnail.
+                'set_thumbnail': i == 0,
               }),
             )
             .timeout(const Duration(seconds: 30));

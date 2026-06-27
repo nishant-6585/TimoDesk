@@ -2,22 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import '../../staff/providers/staff_list_provider.dart';
 
-class GalleryScreen extends ConsumerStatefulWidget {
-  /// Optional capture to deep-link to, from the `/gallery/:captureId` route.
+/// Face gallery — the enrolled staff, shown with their face thumbnails. Mirrors
+/// the robot chest-screen Gallery (same `/staff` data + signed photo URLs).
+class GalleryScreen extends ConsumerWidget {
+  /// Optional capture id from the `/gallery/:captureId` deep-link (unused for now).
   final String? captureId;
   const GalleryScreen({Key? key, this.captureId}) : super(key: key);
 
   @override
-  ConsumerState<GalleryScreen> createState() => _GalleryScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final staffAsync = ref.watch(staffListProvider);
 
-class _GalleryScreenState extends ConsumerState<GalleryScreen> {
-  String _filter = 'All';
-  int _snapshots = 12;
-
-  @override
-  Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -26,32 +23,56 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [Icon(Icons.image, size: 28, color: MikeeColors.primary), const SizedBox(width: 12), Text('Gallery', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold))]),
+                Row(children: [
+                  Icon(Icons.people_alt_rounded, size: 28, color: MikeeColors.primary),
+                  const SizedBox(width: 12),
+                  Text('Gallery', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold)),
+                ]),
                 const SizedBox(height: 4),
-                Text('$_snapshots snapshots captured', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
+                Text(
+                  staffAsync.maybeWhen(
+                    data: (s) => '${s.length} enrolled ${s.length == 1 ? 'member' : 'members'}',
+                    orElse: () => 'Enrolled staff',
+                  ),
+                  style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
+                ),
               ]),
+              IconButton(
+                tooltip: 'Refresh',
+                icon: Icon(Icons.refresh, color: MikeeColors.textSecondary),
+                onPressed: () => ref.invalidate(staffListProvider),
+              ),
             ]),
             const SizedBox(height: 24),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Row(children: [
-                _FilterChip('All', _filter == 'All', () => setState(() => _filter = 'All')),
-                const SizedBox(width: 8),
-                _FilterChip('Manual', _filter == 'Manual', () => setState(() => _filter = 'Manual')),
-                const SizedBox(width: 8),
-                _FilterChip('Face', _filter == 'Face', () => setState(() => _filter = 'Face')),
-                const SizedBox(width: 8),
-                _FilterChip('Visitor', _filter == 'Visitor', () => setState(() => _filter = 'Visitor')),
-              ]),
-              Text('${_snapshots} snapshots', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
-            ]),
-            const SizedBox(height: 20),
-            GridView.count(
-              crossAxisCount: 4,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: List.generate(_snapshots, (i) => _SnapshotTile(index: i)),
+            staffAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.only(top: 80),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => _GalleryMessage(
+                icon: Icons.cloud_off_rounded,
+                title: 'Failed to load staff',
+                detail: '$e',
+                onRetry: () => ref.invalidate(staffListProvider),
+              ),
+              data: (staff) {
+                if (staff.isEmpty) {
+                  return const _GalleryMessage(
+                    icon: Icons.people_outline_rounded,
+                    title: 'No staff enrolled yet',
+                    detail: 'Enroll staff to see their faces here.',
+                  );
+                }
+                return GridView.count(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.85,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [for (final m in staff) _FaceTile(member: m)],
+                );
+              },
             ),
           ]),
         ),
@@ -60,34 +81,131 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _FilterChip(this.label, this.active, this.onTap);
+/// One staff face — photo when available, colored initials otherwise.
+class _FaceTile extends StatelessWidget {
+  final StaffMember member;
+  const _FaceTile({required this.member});
+
+  static const _palette = [
+    Color(0xFF6366F1), Color(0xFFEC4899), Color(0xFF14B8A6),
+    Color(0xFFF59E0B), Color(0xFF10B981), Color(0xFF8B5CF6),
+    Color(0xFFEF4444), Color(0xFF3B82F6), Color(0xFFFF6B35),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: active ? MikeeColors.primary.withOpacity(0.15) : Colors.transparent, border: Border.all(color: active ? MikeeColors.primary : MikeeColors.border), borderRadius: BorderRadius.circular(20)), child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: active ? MikeeColors.primary : MikeeColors.textSecondary)))));
+    final name = member.fullName;
+    final color = name.isEmpty ? _palette[0] : _palette[name.codeUnitAt(0) % _palette.length];
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .take(2)
+        .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+        .join();
+    final url = member.photoUrl;
+    final hasPhoto = url != null && url.isNotEmpty;
+
+    final placeholder = Container(
+      color: color.withValues(alpha: 0.15),
+      alignment: Alignment.center,
+      child: Text(
+        initials.isEmpty ? '?' : initials,
+        style: GoogleFonts.inter(color: color, fontSize: 34, fontWeight: FontWeight.w800),
+      ),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF141414),
+        border: Border.all(color: MikeeColors.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          child: hasPhoto
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  // Fall back to initials if the signed URL fails / expires.
+                  errorBuilder: (_, __, ___) => placeholder,
+                )
+              : placeholder,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              name.isEmpty ? '—' : name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            Row(children: [
+              if (member.personType != null) ...[
+                _Badge(member.personType!, MikeeColors.primary),
+                const SizedBox(width: 6),
+              ],
+              Icon(Icons.face_rounded, size: 12,
+                  color: member.embeddingCount > 0 ? MikeeColors.success : MikeeColors.textMuted),
+              const SizedBox(width: 3),
+              Text('${member.embeddingCount}',
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: member.embeddingCount > 0 ? MikeeColors.success : MikeeColors.textMuted)),
+            ]),
+          ]),
+        ),
+      ]),
+    );
   }
 }
 
-class _SnapshotTile extends StatelessWidget {
-  final int index;
-  const _SnapshotTile({required this.index});
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge(this.label, this.color);
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(color: const Color(0xFF141414), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)),
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Colors.blue.withOpacity(0.2), Colors.purple.withOpacity(0.1)]),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Center(child: Icon(Icons.image, size: 48, color: Colors.white.withOpacity(0.15))),
-        ),
-        Positioned(top: 8, left: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(4)), child: Text('Manual', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w500)))),
-      ]),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(label,
+          style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+}
+
+class _GalleryMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback? onRetry;
+  const _GalleryMessage({required this.icon, required this.title, required this.detail, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 64),
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 64, color: MikeeColors.textMuted),
+          const SizedBox(height: 16),
+          Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: MikeeColors.textSecondary)),
+          const SizedBox(height: 6),
+          Text(detail, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textMuted)),
+          if (onRetry != null) ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh, size: 16), label: const Text('Retry')),
+          ],
+        ]),
+      ),
     );
   }
 }

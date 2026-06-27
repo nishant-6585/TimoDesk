@@ -28,6 +28,7 @@ export interface EnrollRequest {
   consent: boolean;
   consent_ref: string;
   image_base64: string; // Base64-encoded JPEG/PNG
+  set_thumbnail?: boolean; // True → use THIS photo as the gallery display thumbnail (the front-facing shot)
 }
 
 export interface EnrollResponse {
@@ -194,6 +195,32 @@ export async function handleEnroll(
         }
 
         const embeddingId = embeddingData?.id;
+
+        // 7b. UPLOAD DISPLAY THUMBNAIL (best-effort — never fail enrollment on this).
+        // Only the FRONT-facing photo is kept as the gallery image: the client sets
+        // set_thumbnail=true for that shot (single web capture, or pose 0 on the robot).
+        // Other poses skip this so a side/down pose never overwrites the front face.
+        // UI-only cropped JPEG; the embedding above is the record that matters.
+        if (embeddingResult.thumbnail && enrollReq.set_thumbnail === true) {
+          try {
+            const photoPath = `${staffId}.jpg`;
+            const { error: uploadErr } = await supabase.storage
+              .from('staff-photos')
+              .upload(photoPath, embeddingResult.thumbnail, {
+                contentType: 'image/jpeg',
+                upsert: true,
+              });
+            if (uploadErr) {
+              console.warn(`[Enroll] Thumbnail upload failed (continuing): ${uploadErr.message}`);
+            } else {
+              await supabase.from('staff').update({ photo_path: photoPath }).eq('id', staffId);
+            }
+          } catch (err) {
+            console.warn(
+              `[Enroll] Thumbnail step errored (continuing): ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
 
         // 8. AUDIT LOG (DPDP: record who enrolled whom, under what consent)
         await logEvent('staff_enrolled', {

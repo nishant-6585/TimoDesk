@@ -21,7 +21,7 @@ robot_app/          Flutter on the Mikee chest screen — MJPEG camera (:8080), 
                     motor-control WS receivers (:8081 head / :8082 chassis / :8083 arm),
                     staff enrollment, and the ambient "personality face" shell.
 spine/              ★ TypeScript broker (:4000) — the central safety + routing layer.
-                    MockRobotSDK (default) ↔ RealRobotSDK. Face recognition, host
+                    RealRobotSDK only (set ROBOT_IP). Face recognition, host
                     notifications, FCM push, JWKS auth. Vitest-covered.
 supabase/           8 migrations · RLS on every table · pgvector for face/KB embeddings ·
                     DPDP-compliant nightly purge.
@@ -35,7 +35,7 @@ signaling_server/   WebRTC signaling (:3000) + serves viewer_web.
 ### Key design decisions
 
 1. **Spine is the single broker.** All intents (`drive`, `head`, `arm`, `wave`, `stop`, `resume`, `snapshot`, `get_status`) flow through spine on :4000. Safety interlocks (STOP/RESUME) live in one place.
-2. **Mock-first.** The whole stack is built against `MockRobotSDK`; swap to real hardware via `ROBOT_MODE=real`. New features must work against the mock before hardware integration.
+2. **Real robot only.** The spine talks exclusively to the physical Mikee via `RealRobotSDK` (WS ports 8081/8082/8083 + HTTP snapshot/battery). Set `ROBOT_IP` and the spine connects on boot. The old `MockRobotSDK` / `ROBOT_MODE` swap was removed (June 2026); new hardware paths stay behind the spine intent layer so they fail safe.
 3. **Stateless client.** The app sends intents and receives status; spine + Supabase own state. Closing the app mid-session is safe.
 4. **DPDP compliance baked in.** Only **staff/employee** face data is stored, **opt-in with a consent timestamp**. The `visitor` table has **zero biometric fields**. Nightly auto-purge enforces retention.
 
@@ -43,7 +43,7 @@ signaling_server/   WebRTC signaling (:3000) + serves viewer_web.
 
 ## Current status
 
-**Working (against the real robot + MockRobotSDK):**
+**Working (against the real robot):**
 - ✅ Live MJPEG camera, joystick drive, head/arm control, battery telemetry — on real hardware.
 - ✅ **Staff face recognition** — enrollment (laptop webcam *or* robot chest screen) → spine `@vladmandic/face-api` 128-d embeddings → autonomous recognizer emits `face_detected` → live admin dashboard card. Margin-guard + temporal voting for precision.
 - ✅ **Duplicate-face guard** during enrollment; staff view/edit/delete (DPDP erasure).
@@ -65,7 +65,7 @@ See **`HANDOFF.md`** for the live, detailed state and the task pipeline.
 
 | Component | Commands |
 |---|---|
-| **Spine** (broker) | `cd spine && npm install && npm run dev` — MockRobotSDK by default |
+| **Spine** (broker) | `cd spine && npm install && npm run dev` — connects to `ROBOT_IP` |
 | **Spine tests** | `cd spine && npm test` |
 | **Admin app** (web) | `cd app && flutter pub get && flutter run -d chrome` |
 | **Admin app** (mobile) | `cd app && flutter run -d android` (or `-d ios`) |
@@ -73,7 +73,7 @@ See **`HANDOFF.md`** for the live, detailed state and the task pipeline.
 | **Viewer (web)** | open `viewer_web/index.html` in any browser |
 | **Viewer (mobile)** | `cd viewer_mobile && flutter pub get && flutter run` |
 
-**Spine env** (`spine/.env`): `SPINE_PORT` (4000), `ROBOT_MODE` (`mock`|`real`), `ROBOT_IP`, `SUPABASE_URL` + keys, `DEV_AUTH_BYPASS` (dev only — leave unset in prod with `NODE_ENV=production`). See `spine/.env.example`.
+**Spine env** (`spine/.env`): `SPINE_PORT` (4000), `ROBOT_IP` (required — the spine connects on boot), `SUPABASE_URL` + keys, `DEV_AUTH_BYPASS` (dev only — leave unset in prod with `NODE_ENV=production`). See `spine/.env.example`.
 
 ---
 
