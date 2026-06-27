@@ -3,6 +3,10 @@
  * Connects to the real robot → starts server
  */
 
+// MUST be first: restores util.is* helpers removed in Node 23+ that face-api/tfjs
+// still call at runtime. Without it, all face detection throws on Node 26.
+import './util-polyfill';
+
 import { RobotSDK } from './robot/interface';
 import { RealRobotSDK } from './robot/real';
 import { startServer } from './server';

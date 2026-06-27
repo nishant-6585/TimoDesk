@@ -6,6 +6,9 @@ import androidx.multidex.MultiDexApplication;
 
 import com.csjbot.coshandler.core.CsjRobot;
 import com.csjbot.coshandler.listener.OnAuthenticationListener;
+import com.csjbot.coshandler.listener.OnRobotInitListener;
+import com.csjbot.coshandler.listener.OnMqttConnectStateListener;
+import com.csjbot.coshandler.listener.OnRobotConnectionStateListener;
 
 public class MikeeApplication extends MultiDexApplication {
 
@@ -45,7 +48,14 @@ public class MikeeApplication extends MultiDexApplication {
                 CsjRobot.enableSlam(true);  // Enable SLAM for chassis movement
                 CsjRobot.setRobotType(CsjRobot.RobotType.TIMO);
 
-                // Remote flavor: point SDK at the robot over WiFi instead of localhost
+                // On-robot: do NOT call setIpAndrPort. With the RobotSDK service
+                // (com.csjbot.robotsdk.ten) installed, the SDK talks to it via AIDL
+                // (HandlerMsgService binds RobotSdkService, ISdkAppToAar/IAarToSdkApp)
+                // — the demo's default path (useSocket=false). This routes BOTH
+                // commands (move/NAVI_ROBOT_MOVE_REQ) AND robot-state NTFs. Calling
+                // setIpAndrPort flips to socket transport (useSocket=true), which only
+                // RECEIVES NTFs — move() never reaches robot-core, so the robot won't
+                // drive. (Remote flavor still needs setIpAndrPort for the WiFi socket.)
                 if (!BuildConfig.SDK_IP.equals("127.0.0.1")) {
                     CsjRobot.setIpAndrPort(BuildConfig.SDK_IP, BuildConfig.SDK_PORT);
                 }
@@ -53,6 +63,30 @@ public class MikeeApplication extends MultiDexApplication {
                 // Person-detection sensors (laser + RGBD + ultrasonic), pre-init like
                 // the demo. PersonDetectPlugin only registers the listener now.
                 CsjRobot.getInstance().setPersonCheckType(true, true, true);
+
+                // ── SDK ↔ robot-core CONNECTION DIAGNOSTICS ─────────────────────
+                // The SDK reaches robot-core over MQTT (init → connectToMqtt). When
+                // that link is down, NO robot-state callbacks fire — so battery
+                // falls back to the head/tablet value, person detection is silent,
+                // and chassis nav never becomes ready. These listeners make the
+                // connection state visible instead of inferring it from logcat.
+                Log.d(TAG, "SDK target: defaultIp=" + CsjRobot.getDefaultIpAddr()
+                        + " defaultPort=" + CsjRobot.getDefaultPort()
+                        + " (flavor ip=" + BuildConfig.SDK_IP + ":" + BuildConfig.SDK_PORT + ")");
+
+                CsjRobot.getInstance().setOnMqttConnectStateListener(connected ->
+                        Log.d(TAG, "SDK-DIAG mqttConnect=" + connected));
+
+                CsjRobot.getInstance().setRobotConnectionStateListener(connected ->
+                        Log.d(TAG, "SDK-DIAG robotConnectState=" + connected));
+
+                CsjRobot.getInstance().setOnInitListener(new OnRobotInitListener() {
+                    @Override public void onBasicInfoState(int s, String m)     { Log.d(TAG, "SDK-DIAG init.basicInfo=" + s + " " + m); }
+                    @Override public void onServerConnectState(int s, String m) { Log.d(TAG, "SDK-DIAG init.serverConnect=" + s + " " + m); }
+                    @Override public void onHardWareHealthState(int s, String m){ Log.d(TAG, "SDK-DIAG init.hardware=" + s + " " + m); }
+                    @Override public void onSlamState(int s, String m)          { Log.d(TAG, "SDK-DIAG init.slam=" + s + " " + m); }
+                    @Override public void onSoftWareState(int s, String m)      { Log.d(TAG, "SDK-DIAG init.software=" + s + " " + m); }
+                });
 
                 // Step 7: Init
                 CsjRobot.getInstance().init(MikeeApplication.this);

@@ -16,6 +16,7 @@ class StaffMember {
   final String? role;
   final int embeddingCount;
   final bool active;
+  final String? photoUrl;
 
   StaffMember({
     required this.id,
@@ -25,6 +26,7 @@ class StaffMember {
     this.role,
     required this.embeddingCount,
     required this.active,
+    this.photoUrl,
   });
 
   factory StaffMember.fromJson(Map<String, dynamic> j) => StaffMember(
@@ -35,6 +37,7 @@ class StaffMember {
         role: j['role'] as String?,
         embeddingCount: (j['embedding_count'] ?? 0) as int,
         active: (j['active'] ?? true) as bool,
+        photoUrl: j['photo_url'] as String?,
       );
 }
 

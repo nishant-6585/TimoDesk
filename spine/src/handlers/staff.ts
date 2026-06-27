@@ -14,6 +14,10 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 
+// Signed-URL lifetime for staff thumbnails. The Gallery re-fetches /staff on each
+// open/refresh, so a short TTL is fine and keeps face images from leaking via stale links.
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise(resolve => {
     let b = '';
@@ -38,7 +42,7 @@ export async function handleListStaff(
 
   const { data: staff, error } = await supabase
     .from('staff')
-    .select('id, full_name, phone, person_type, role, active, created_at')
+    .select('id, full_name, phone, person_type, role, active, created_at, photo_path')
     .order('created_at', { ascending: true });
   if (error) return json(res, 500, { ok: false, reason: error.message });
 
@@ -46,7 +50,29 @@ export async function handleListStaff(
   const counts: Record<string, number> = {};
   for (const e of embs ?? []) counts[e.staff_id] = (counts[e.staff_id] ?? 0) + 1;
 
-  const result = (staff ?? []).map(s => ({ ...s, embedding_count: counts[s.id] ?? 0 }));
+  // Mint short-lived signed URLs for the private display thumbnails so the robot
+  // Gallery + web admin can render faces without exposing the bucket publicly.
+  const paths = (staff ?? [])
+    .map(s => (s as { photo_path?: string }).photo_path)
+    .filter((p): p is string => !!p);
+  const signedByPath: Record<string, string> = {};
+  if (paths.length) {
+    const { data: signed } = await supabase.storage
+      .from('staff-photos')
+      .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+    for (const s of signed ?? []) {
+      if (s.path && s.signedUrl && !s.error) signedByPath[s.path] = s.signedUrl;
+    }
+  }
+
+  const result = (staff ?? []).map(s => {
+    const { photo_path, ...rest } = s as Record<string, unknown> & { photo_path?: string };
+    return {
+      ...rest,
+      embedding_count: counts[s.id] ?? 0,
+      photo_url: photo_path ? signedByPath[photo_path] ?? null : null,
+    };
+  });
   return json(res, 200, { ok: true, staff: result });
 }
 
@@ -102,6 +128,9 @@ export async function handleDeleteStaff(
 
   const { error } = await supabase.from('staff').delete().eq('id', id); // cascade deletes embeddings
   if (error) return json(res, 500, { ok: false, reason: error.message });
+
+  // Erase the display thumbnail too (best-effort — the DB record is already gone).
+  await supabase.storage.from('staff-photos').remove([`${id}.jpg`]).catch(() => {});
 
   await logEvent('staff_deleted', {
     actor: auth.userId,

@@ -807,11 +807,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             top: 12,
             right: 16,
             child: Opacity(
-              opacity: 0.65,
+              opacity: 0.9,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 SdkBadge(status: sdk),
-                const SizedBox(width: 10),
-                BatteryIndicator(state: battery),
+                const SizedBox(width: 12),
+                BatteryIndicator(state: battery, large: true),
               ]),
             ),
           ),

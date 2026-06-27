@@ -54,6 +54,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     private volatile boolean isChassisReady = false;
     private volatile int currentLinear = 0;
     private volatile int currentAngular = 0;
+    private volatile int currentMoveCode = -1; // NAVI_ROBOT_MOVE direction: 0=fwd 1=back 2=left 3=right
     private Set<ClientHandler> clients = new HashSet<>();
     private long lastCommandTime = 0;
     private EventChannel.EventSink eventSink;
@@ -198,79 +199,37 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         }
 
         try {
+            // The ONLY command that actually moves this Timo (12代小鱼) is
+            // getAction().move(direction) → NAVI_ROBOT_MOVE_REQ. Verified by
+            // sniffing the vendor Reception app: it sends {"msg_id":
+            // "NAVI_ROBOT_MOVE_REQ","direction":N} repeatedly (hold-to-drive) and
+            // the robot drives. moveForward()/moveBySerial()/moveSerial() send
+            // different commands this firmware ignores. Direction codes per the
+            // SDK (IChassisReq): 0=forward(前) 1=back(后) 2=left(左) 3=right(右).
+            int code = directionToCode(direction);
+            if (code < 0) return;
             currentDirection = direction;
             isMoving = true;
-            Log.d(TAG, "About to call SDK method for: " + direction + " (SLAM ready: " + isChassisReady + ")");
-
-            if (isChassisReady) {
-                // SLAM path (preferred)
-                switch (direction) {
-                    case "forward":
-                        Log.d(TAG, "Calling moveForward()");
-                        CsjRobot.getInstance().getAction().moveForward();
-                        Log.d(TAG, "moveForward() returned");
-                        break;
-                    case "back":
-                        Log.d(TAG, "Calling moveBack()");
-                        CsjRobot.getInstance().getAction().moveBack();
-                        Log.d(TAG, "moveBack() returned");
-                        break;
-                    case "left":
-                        Log.d(TAG, "Calling moveLeft()");
-                        CsjRobot.getInstance().getAction().moveLeft();
-                        Log.d(TAG, "moveLeft() returned");
-                        break;
-                    case "right":
-                        Log.d(TAG, "Calling moveRight()");
-                        CsjRobot.getInstance().getAction().moveRight();
-                        Log.d(TAG, "moveRight() returned");
-                        break;
-                }
-            } else {
-                // Direct serial path (bypasses SLAM — works without map)
-                Log.d(TAG, "Using moveBySerial (SLAM not ready)");
-                // moveBySerial takes a single int parameter (move code)
-                switch (direction) {
-                    case "forward":
-                        Log.d(TAG, "moveBySerial forward (0x01)");
-                        CsjRobot.getInstance().getAction().moveBySerial(0x01);
-                        break;
-                    case "back":
-                        Log.d(TAG, "moveBySerial back (0x02)");
-                        CsjRobot.getInstance().getAction().moveBySerial(0x02);
-                        break;
-                    case "left":
-                        Log.d(TAG, "moveBySerial left (0x03)");
-                        CsjRobot.getInstance().getAction().moveBySerial(0x03);
-                        break;
-                    case "right":
-                        Log.d(TAG, "moveBySerial right (0x04)");
-                        CsjRobot.getInstance().getAction().moveBySerial(0x04);
-                        break;
-                }
-            }
-
-            // Use new heartbeat approach for moveSerial
-            startMoving(directionToLinearAngular(direction)[0], directionToLinearAngular(direction)[1]);
+            Log.d(TAG, "executeMove " + direction + " → move(" + code + ") [NAVI_ROBOT_MOVE_REQ]");
+            startMoving(code);
         } catch (Exception e) {
             Log.e(TAG, "Move error: " + e.getMessage(), e);
             e.printStackTrace();
         }
     }
 
-    private int[] directionToLinearAngular(String direction) {
+    private int directionToCode(String direction) {
         switch (direction) {
-            case "forward": return new int[]{200, 0};
-            case "back": return new int[]{-200, 0};
-            case "left": return new int[]{0, 500};
-            case "right": return new int[]{0, -500};
-            default: return new int[]{0, 0};
+            case "forward": return 0;
+            case "back": return 1;
+            case "left": return 2;
+            case "right": return 3;
+            default: return -1;
         }
     }
 
-    private void startMoving(int linear, int angular) {
-        currentLinear = linear;
-        currentAngular = angular;
+    private void startMoving(int code) {
+        currentMoveCode = code;
 
         if (heartbeatTask != null) {
             heartbeatTask.cancel(false);
@@ -281,28 +240,28 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
             heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
         }
 
-        Log.d(TAG, "Scheduling 30ms heartbeat for moveSerial (executor=" + (heartbeatExecutor != null ? "OK" : "NULL") + ")");
+        // Resend move(dir) like the vendor app does (hold-to-drive). The robot
+        // sustains motion while these arrive and stops on its own watchdog when
+        // they cease (= stopMoving cancels this task). ~150ms matches the vendor.
         final int[] count = {0};
         try {
             heartbeatTask = heartbeatExecutor.scheduleAtFixedRate(() -> {
                 try {
                     count[0]++;
-                    if (count[0] % 10 == 0) {
-                        Log.d(TAG, "Heartbeat #" + count[0] + ": moveSerial(" + currentLinear + ", " + currentAngular + ")");
+                    if (count[0] % 5 == 0) {
+                        Log.d(TAG, "move heartbeat #" + count[0] + " dir=" + currentMoveCode);
                     }
-                    CsjRobot.getInstance().getAction().moveSerial(currentLinear, currentAngular);
+                    CsjRobot.getInstance().getAction().move(currentMoveCode);
                 } catch (Exception e) {
-                    Log.e(TAG, "moveSerial error: " + e.getMessage());
+                    Log.e(TAG, "move() error: " + e.getMessage());
                 }
-            }, 0, 30, TimeUnit.MILLISECONDS);
-            Log.d(TAG, "Heartbeat task scheduled successfully");
+            }, 0, 150, TimeUnit.MILLISECONDS);
+            Log.d(TAG, "move heartbeat scheduled (dir=" + code + ")");
         } catch (Exception e) {
             Log.e(TAG, "Failed to schedule heartbeat: " + e.getMessage());
         }
 
         isMoving = true;
-        currentDirection = linearAngularToDirection(linear, angular);
-        Log.d(TAG, "Started moving: " + currentDirection + " (linear=" + linear + ", angular=" + angular + ")");
         emitEvent(buildStatus());
     }
 
@@ -311,12 +270,9 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
             heartbeatTask.cancel(false);
             heartbeatTask = null;
         }
-
-        try {
-            CsjRobot.getInstance().getAction().moveSerial(0, 0);
-        } catch (Exception e) {
-            Log.e(TAG, "moveSerial stop error: " + e.getMessage());
-        }
+        // NAVI_ROBOT_MOVE has no zero/stop direction — the robot halts when move()
+        // requests stop arriving (watchdog). Just cancel the heartbeat.
+        currentMoveCode = -1;
 
         currentLinear = 0;
         currentAngular = 0;

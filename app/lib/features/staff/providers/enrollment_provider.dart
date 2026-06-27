@@ -53,6 +53,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
     required List<int> imageBytes, // Raw JPEG/PNG bytes
     String? phone,
     String? personType,
+    bool setThumbnail = false, // True → use this photo as the gallery thumbnail
   }) async {
     // Get JWT token from Supabase session (or use empty for testing)
     final session = Supabase.instance.client.auth.currentSession;
@@ -78,6 +79,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
         'image_base64': imageBase64,
         'phone': phone,
         'person_type': personType ?? 'Employee',
+        'set_thumbnail': setThumbnail,
       }),
     ).timeout(const Duration(seconds: 30));
 

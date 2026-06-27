@@ -90,14 +90,7 @@ class _StaffCard extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: MikeeColors.primary.withOpacity(0.15),
-            child: Text(
-              member.fullName.isNotEmpty ? member.fullName[0].toUpperCase() : '?',
-              style: GoogleFonts.inter(color: MikeeColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ),
+          _StaffAvatar(member: member),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -192,6 +185,39 @@ class _StaffCard extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
+  }
+}
+
+/// Round avatar — shows the enrolled face photo when available, otherwise the
+/// first initial. Falls back to the initial if the signed URL fails or expires.
+class _StaffAvatar extends StatelessWidget {
+  final StaffMember member;
+  const _StaffAvatar({required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = member.fullName.isNotEmpty ? member.fullName[0].toUpperCase() : '?';
+    final fallback = CircleAvatar(
+      radius: 24,
+      backgroundColor: MikeeColors.primary.withOpacity(0.15),
+      child: Text(
+        initial,
+        style: GoogleFonts.inter(color: MikeeColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
+      ),
+    );
+
+    final url = member.photoUrl;
+    if (url == null || url.isEmpty) return fallback;
+
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      ),
+    );
   }
 }
 
