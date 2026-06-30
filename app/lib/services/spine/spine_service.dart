@@ -19,6 +19,13 @@ class SpineService extends StateNotifier<SpineState> {
   int _reconnectAttempts = 0;
   static const int _maxReconnectDelay = 30000; // 30 seconds max
 
+  // Pending get_position request. The spine answers a {intent:'get_position'}
+  // with a single {type:'position', position:{x,y,z,rotation}} message. We hold
+  // the completer here and resolve it from _handleMessage. Only one round-trip
+  // is in flight at a time (the UI captures one point at a time).
+  Completer<Map<String, double>?>? _positionCompleter;
+  Timer? _positionTimeoutTimer;
+
   SpineService(Ref ref) : super(SpineState.initial()) {
     _ref = ref;
     // Fix 2: Use Future.microtask() instead of fire-and-forget async
@@ -159,10 +166,70 @@ class SpineService extends StateNotifier<SpineState> {
               ),
             );
       }
+    } else if (msgType == 'position') {
+      // Request-response reply to {intent:'get_position'}. Resolve the pending
+      // completer with the captured pose, then clear it. Ignore stray/late
+      // position messages when no request is in flight.
+      print('[SpineService] [POSITION] Received pose reply');
+      final pos = msg['position'] as Map<String, dynamic>?;
+      final completer = _positionCompleter;
+      _positionTimeoutTimer?.cancel();
+      _positionCompleter = null;
+      if (completer != null && !completer.isCompleted) {
+        if (pos == null) {
+          completer.complete(null);
+        } else {
+          completer.complete({
+            'x': (pos['x'] as num?)?.toDouble() ?? 0.0,
+            'y': (pos['y'] as num?)?.toDouble() ?? 0.0,
+            'z': (pos['z'] as num?)?.toDouble() ?? 0.0,
+            'rotation': (pos['rotation'] as num?)?.toDouble() ?? 0.0,
+          });
+        }
+      }
     } else if (msgType == 'ack') {
       print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
     }
     print('[SpineService] ======== END MESSAGE ========');
+  }
+
+  /// Request the robot's current SLAM pose. Sends {intent:'get_position'} and
+  /// completes when the next {type:'position'} message arrives. Returns null on
+  /// a ~7s timeout, if not connected, or if a disconnect aborts the request, so
+  /// the caller never hangs.
+  Future<Map<String, double>?> getPosition() async {
+    if (!state.connected) {
+      print('[SpineService] getPosition: not connected');
+      return null;
+    }
+    // Abort any prior in-flight request (resolve it null) before starting a new one.
+    _positionTimeoutTimer?.cancel();
+    final prior = _positionCompleter;
+    if (prior != null && !prior.isCompleted) prior.complete(null);
+
+    final completer = Completer<Map<String, double>?>();
+    _positionCompleter = completer;
+    _positionTimeoutTimer = Timer(const Duration(seconds: 7), () {
+      if (_positionCompleter == completer && !completer.isCompleted) {
+        print('[SpineService] getPosition: timed out');
+        _positionCompleter = null;
+        completer.complete(null);
+      }
+    });
+
+    sendIntent({'intent': 'get_position'});
+    return completer.future;
+  }
+
+  /// Navigate the robot to a saved pose. Fire-and-forget — the spine acks
+  /// {type:'ack', intent:'navi'} and may emit navi_event lifecycle messages.
+  void naviTo(Map<String, dynamic> point) {
+    sendIntent({'intent': 'navi', 'point': point});
+  }
+
+  /// Cancel an in-progress navigation. Spine acks {type:'ack', intent:'cancel_navi'}.
+  void cancelNavi() {
+    sendIntent({'intent': 'cancel_navi'});
   }
 
   void sendIntent(Map<String, dynamic> intent) {
@@ -182,6 +249,12 @@ class SpineService extends StateNotifier<SpineState> {
   void _onDisconnect() {
     print('[SpineService] Disconnected');
     _connectionTimeoutTimer?.cancel();
+    // Abort any pending get_position so the UI doesn't hang waiting for a reply
+    // that will never come on a dead socket.
+    _positionTimeoutTimer?.cancel();
+    final pending = _positionCompleter;
+    _positionCompleter = null;
+    if (pending != null && !pending.isCompleted) pending.complete(null);
     state = state.copyWith(connected: false);
     _scheduleReconnect();
   }
@@ -212,6 +285,10 @@ class SpineService extends StateNotifier<SpineState> {
   void dispose() {
     _reconnectTimer?.cancel();
     _connectionTimeoutTimer?.cancel();
+    _positionTimeoutTimer?.cancel();
+    final pending = _positionCompleter;
+    _positionCompleter = null;
+    if (pending != null && !pending.isCompleted) pending.complete(null);
     _channel?.sink.close();
     super.dispose();
   }

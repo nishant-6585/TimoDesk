@@ -6,7 +6,7 @@
 
 import { WebSocket } from 'ws';
 import { RobotSDK } from './interface';
-import { RobotStatus, RobotEvent, SensorEvent } from '../types';
+import { RobotStatus, RobotEvent, SensorEvent, RobotPosition } from '../types';
 
 export interface RealRobotSDKOptions {
   robotIP: string;
@@ -31,6 +31,10 @@ export class RealRobotSDK implements RobotSDK {
   // -1 = no bridge data yet; when >= 0 it overrides the head/tablet battery that
   // the robot_app 8090 endpoint reports.
   private realBattery = -1;
+
+  // Resolver for an in-flight getPosition() — the chassis WS replies async with
+  // {type:'position', x,y,z,rotation}.
+  private pendingPosition: ((pos: RobotPosition) => void) | null = null;
 
   private status: RobotStatus = {
     online: false,
@@ -193,6 +197,25 @@ export class RealRobotSDK implements RobotSDK {
         };
         console.log('[Real SDK] Emitting battery event:', event);
         this.eventHandlers.forEach(h => h(event));
+      } else if (msg.type === 'position') {
+        // Response to get_position — resolve the pending request.
+        if (this.pendingPosition) {
+          this.pendingPosition({
+            x: msg.x ?? 0,
+            y: msg.y ?? 0,
+            z: msg.z ?? 0,
+            rotation: msg.rotation ?? 0,
+          });
+          this.pendingPosition = null;
+        }
+      } else if (msg.type === 'navi') {
+        // Navigation lifecycle event (move_result / arrived / cancel) → admin.
+        const event: RobotEvent = {
+          type: 'navi_event',
+          payload: { event: msg.event, data: msg.data },
+          timestamp: Date.now(),
+        };
+        this.eventHandlers.forEach(h => h(event));
       }
     } catch (err) {
       console.error('[Real SDK] Failed to parse robot message:', err);
@@ -219,6 +242,43 @@ export class RealRobotSDK implements RobotSDK {
     const command = { cmd: 'stop' };
     console.log(`[Real SDK] Translating stopDrive → robot command:`, command);
     ws.send(JSON.stringify(command));
+    this.status.isMoving = false;
+  }
+
+  /**
+   * Capture the robot's current SLAM pose (for saving a navigation point).
+   * Sends {cmd:get_position}; the chassis WS replies async with {type:position}.
+   */
+  async getPosition(): Promise<RobotPosition> {
+    const ws = await this.ensureConnected('chassis');
+    return new Promise<RobotPosition>((resolve, reject) => {
+      this.pendingPosition = resolve;
+      ws.send(JSON.stringify({ cmd: 'get_position' }));
+      setTimeout(() => {
+        if (this.pendingPosition === resolve) {
+          this.pendingPosition = null;
+          reject(new Error('get_position timed out'));
+        }
+      }, 6000);
+    });
+  }
+
+  /**
+   * Navigate to a saved point. Needs a loaded+localized SLAM map and the robot
+   * off the dock. navi lifecycle events come back as 'navi_event' robot events.
+   */
+  async navi(point: RobotPosition): Promise<void> {
+    const ws = await this.ensureConnected('chassis');
+    const command = { cmd: 'navi', x: point.x, y: point.y, z: point.z, rotation: point.rotation };
+    console.log('[Real SDK] navi →', command);
+    ws.send(JSON.stringify(command));
+    this.status.isMoving = true;
+  }
+
+  /** Cancel an in-progress navigation. */
+  async cancelNavi(): Promise<void> {
+    const ws = await this.ensureConnected('chassis');
+    ws.send(JSON.stringify({ cmd: 'cancel_navi' }));
     this.status.isMoving = false;
   }
 

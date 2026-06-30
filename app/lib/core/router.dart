@@ -10,6 +10,7 @@ import '../features/live_feed/screens/live_feed_screen.dart';
 import '../features/gallery/screens/gallery_screen.dart';
 import '../features/events/screens/event_log_screen.dart';
 import '../features/patrol_routes/screens/patrol_routes_screen.dart';
+import '../features/navigation/screens/navigation_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
 import '../features/shared/layouts/app_shell.dart';
@@ -151,6 +152,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/event-log',
             name: 'events',
             builder: (context, state) => const EventLogScreen(),
+          ),
+          GoRoute(
+            path: '/navigation',
+            name: 'navigation',
+            builder: (context, state) => const NavigationScreen(),
           ),
           GoRoute(
             path: '/patrol-routes',

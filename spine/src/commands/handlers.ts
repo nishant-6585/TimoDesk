@@ -40,6 +40,33 @@ export async function handleIntent(
         return { type: 'ack', intent: 'stop_drive', ok: true };
       }
 
+      case 'get_position': {
+        // Capture the robot's current SLAM pose (for saving a nav point).
+        if (!sdk.getPosition) return { type: 'error', message: 'get_position not supported' };
+        console.log('[Handlers] Capturing robot position');
+        const position = await sdk.getPosition();
+        await logEvent('get_position', { session_id: sessionId, ...position });
+        return { type: 'position', position };
+      }
+
+      case 'navi': {
+        // Navigate to a saved point.
+        const point = intent.point;
+        if (!point) return { type: 'error', message: 'navi intent missing point' };
+        if (!sdk.navi) return { type: 'error', message: 'navi not supported' };
+        console.log('[Handlers] navi to point:', point);
+        await sdk.navi(point);
+        await logEvent('command_navi', { session_id: sessionId, ...point });
+        return { type: 'ack', intent: 'navi', ok: true };
+      }
+
+      case 'cancel_navi': {
+        if (!sdk.cancelNavi) return { type: 'error', message: 'cancel_navi not supported' };
+        console.log('[Handlers] cancel_navi');
+        await sdk.cancelNavi();
+        return { type: 'ack', intent: 'cancel_navi', ok: true };
+      }
+
       case 'head': {
         const lr = intent.lr;
         const ud = intent.ud;

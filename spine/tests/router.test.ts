@@ -37,6 +37,16 @@ class MockTestSDK implements RobotSDK {
   async takeSnapshot() {
     return Buffer.from('fake');
   }
+  async getPosition() {
+    this.calls.push({ method: 'getPosition', args: [] });
+    return { x: 1.5, y: 2.25, z: 0, rotation: -109.35 };
+  }
+  async navi(point: any) {
+    this.calls.push({ method: 'navi', args: [point] });
+  }
+  async cancelNavi() {
+    this.calls.push({ method: 'cancelNavi', args: [] });
+  }
   async getStatus() {
     return {
       online: true,
@@ -91,6 +101,36 @@ describe('Command Router', () => {
       expect(response.ok).toBe(true);
       expect(sdk.calls).toHaveLength(1);
       expect(sdk.calls[0].method).toBe('stopDrive');
+    });
+
+    it('get_position intent → returns the captured pose', async () => {
+      const res = await routeMessage(
+        { type: 'intent', intent: { intent: 'get_position' } },
+        sessionId, userId, sdk
+      );
+      expect(res.type).toBe('position');
+      expect(res.position).toEqual({ x: 1.5, y: 2.25, z: 0, rotation: -109.35 });
+      expect(sdk.calls.some((c) => c.method === 'getPosition')).toBe(true);
+    });
+
+    it('navi intent → calls sdk.navi(point), ack', async () => {
+      const point = { x: 1.5, y: 2.25, z: 0, rotation: -109.35 };
+      const res = await routeMessage(
+        { type: 'intent', intent: { intent: 'navi', point } },
+        sessionId, userId, sdk
+      );
+      expect(res.type).toBe('ack');
+      expect(res.ok).toBe(true);
+      expect(sdk.calls.find((c) => c.method === 'navi')?.args[0]).toEqual(point);
+    });
+
+    it('navi intent without point → error', async () => {
+      const res = await routeMessage(
+        { type: 'intent', intent: { intent: 'navi' } },
+        sessionId, userId, sdk
+      );
+      expect(res.type).toBe('error');
+      expect(res.message).toContain('point');
     });
 
     it('head intent → calls sdk.setHeadPosition(lr, ud)', async () => {

@@ -8,6 +8,9 @@ export interface Intent {
   intent:
     | 'drive'
     | 'stop_drive' // halt the wheels on joystick release — does NOT latch the global STOP interlock
+    | 'get_position' // capture current SLAM pose (for saving a nav point)
+    | 'navi' // navigate to a saved point
+    | 'cancel_navi' // cancel an in-progress navigation
     | 'head'
     | 'arm'
     | 'wave'
@@ -26,6 +29,15 @@ export interface Intent {
   voiceState?: 'listening' | 'thinking' | 'speaking' | 'idle'; // for voice_state
   transcript?: { role: 'user' | 'assistant'; text: string; ts: string }[]; // for voice_log
   resolvedBy?: 'elevenlabs';
+  point?: RobotPosition; // for navi
+}
+
+// A SLAM pose / navigation point.
+export interface RobotPosition {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
 }
 
 // ── Sensor / obstacle awareness (Phase 1A) ──────────────────────────────────
@@ -76,6 +88,7 @@ export interface RobotEvent {
     | 'battery_update'
     | 'robot_online'
     | 'robot_offline'
+    | 'navi_event'
     | 'visitor_arrived'
     // Voice phase, broadcast to the admin app (#80)
     | 'voice_listening'
@@ -95,11 +108,12 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position';
   ok?: boolean;
   message?: string;
   intent?: string; // for ack
   status?: RobotStatus; // for robot_status
+  position?: RobotPosition; // for get_position response
   event?: string; // for event — the event type name (e.g. 'face_detected')
   eventPayload?: Record<string, any>; // for event — the event payload fields
 }

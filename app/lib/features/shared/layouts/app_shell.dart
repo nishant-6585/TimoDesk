@@ -22,6 +22,7 @@ class AppShell extends ConsumerWidget {
     'enroll': '/live-feed',
     'gallery': '/gallery',
     'events': '/event-log',
+    'navigation': '/navigation',
     'patrol_routes': '/patrol-routes',
     'settings': '/settings',
   };
@@ -32,6 +33,7 @@ class AppShell extends ConsumerWidget {
     if (location.startsWith('/live-feed') || location.startsWith('/enroll-staff')) return 'enroll';
     if (location.startsWith('/gallery')) return 'gallery';
     if (location.startsWith('/event-log')) return 'events';
+    if (location.startsWith('/navigation')) return 'navigation';
     if (location.startsWith('/patrol-routes')) return 'patrol_routes';
     if (location.startsWith('/settings')) return 'settings';
     return 'dashboard';
@@ -221,6 +223,7 @@ class _ShellSidebar extends StatelessWidget {
               _NavItem('Enrol Staff', Icons.person_add, active == 'enroll', () => onNav('enroll')),
               _NavItem('Gallery', Icons.photo_library, active == 'gallery', () => onNav('gallery')),
               _NavItem('Event Log', Icons.receipt_long, active == 'events', () => onNav('events')),
+              _NavItem('Navigation', Icons.pin_drop, active == 'navigation', () => onNav('navigation')),
               _NavItem('Patrol Routes', Icons.route, active == 'patrol_routes', () => onNav('patrol_routes')),
               _NavItem('Settings', Icons.settings, active == 'settings', () => onNav('settings')),
             ],

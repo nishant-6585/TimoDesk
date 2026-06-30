@@ -43,30 +43,56 @@ public class BatteryPlugin implements EventChannel.StreamHandler, MethodChannel.
         this.context = context;
     }
 
-    /** Register the SDK battery listener + start the fallback poll. Idempotent. */
+    // Handles both the push registration AND the active poll responses. The robot's
+    // real charge comes back here as getBattery(int)/getCharge(int).
+    private final OnRobotStateListener stateListener = new OnRobotStateListener() {
+        @Override
+        public void getBattery(int battery) {
+            if (battery >= 0 && battery <= 100) {
+                sdkBattery = battery;
+                emit(battery, "sdk");
+            }
+        }
+
+        @Override
+        public void getCharge(int c) {
+            charge = c;
+        }
+    };
+
+    /** Register the SDK battery listener + start the SDK poll + Android fallback. Idempotent. */
     void register() {
         if (registered) return;
         registered = true;
         try {
-            CsjRobot.getInstance().setOnRobotStateBatteryListener(new OnRobotStateListener() {
-                @Override
-                public void getBattery(int battery) {
-                    if (battery >= 0 && battery <= 100) {
-                        sdkBattery = battery;
-                        emit(battery, "sdk");
-                    }
-                }
-
-                @Override
-                public void getCharge(int c) {
-                    charge = c;
-                }
-            });
+            CsjRobot.getInstance().setOnRobotStateBatteryListener(stateListener);
             Log.d(TAG, "SDK battery listener registered");
         } catch (Throwable t) {
             Log.e(TAG, "SDK battery listener failed, will rely on Android fallback: " + t);
         }
+        startSdkPoll();
         startFallbackPoll();
+    }
+
+    // The robot does NOT auto-push battery to SDK clients (ROBOT_SDK_AGENT_ENABLE only
+    // enables asr/slam/face), so we actively poll robot-core every 20s. getState()
+    // .getBattery/getCharge issue ROBOT_GET_BATTERY/CHARGE_REQ; the response fires
+    // stateListener with the REAL chassis charge — making the head/tablet fallback
+    // and the spine/battery-bridge stopgap unnecessary.
+    private void startSdkPoll() {
+        final Handler h = new Handler(Looper.getMainLooper());
+        h.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    CsjRobot.getInstance().getState().getBattery(stateListener);
+                    CsjRobot.getInstance().getState().getCharge(stateListener);
+                } catch (Throwable t) {
+                    Log.e(TAG, "SDK battery poll failed: " + t);
+                }
+                h.postDelayed(this, 20_000);
+            }
+        }, 8_000); // let the SDK finish init/connect first
     }
 
     // If the SDK hasn't reported, emit the chest device's real battery every 30s.

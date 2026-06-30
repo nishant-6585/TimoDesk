@@ -16,6 +16,7 @@ import 'services/voice_command_handler.dart';
 import 'screens/language_selection_screen.dart';
 import 'config.dart';
 import 'enroll_screen.dart';
+import 'nav_points_screen.dart';
 import 'status_screen.dart';
 import 'control_screen.dart';
 import 'settings_screen.dart';
@@ -692,6 +693,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             onTap: () => _open(const RobotStatusScreen())),
         _NavItem(icon: Icons.sports_esports_rounded, label: 'Manual Control',
             onTap: () => _open(const ManualControlScreen())),
+        _NavItem(icon: Icons.pin_drop_rounded, label: 'Navigation Points',
+            onTap: () => _open(const NavPointsScreen())),
         _NavItem(icon: Icons.settings_rounded, label: 'Settings',
             onTap: () => _open(const SettingsScreen())),
         const Padding(
@@ -701,7 +704,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _navLabel('Services'),
         const _NavItem(icon: Icons.mic_rounded, label: 'Voice Q&A', soon: true),
         const _NavItem(icon: Icons.payments_rounded, label: 'Pay', soon: true),
-        const _NavItem(icon: Icons.navigation_rounded, label: 'Navigate', soon: true),
         const _NavItem(icon: Icons.menu_book_rounded, label: 'Directory', soon: true),
         const Spacer(),
         // Live perception toggle
