@@ -112,6 +112,7 @@ export interface SpineMessage {
   ok?: boolean;
   message?: string;
   intent?: string; // for ack
+  captureId?: string; // for snapshot ack — the stored capture row id
   status?: RobotStatus; // for robot_status
   position?: RobotPosition; // for get_position response
   event?: string; // for event — the event type name (e.g. 'face_detected')
