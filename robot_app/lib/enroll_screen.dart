@@ -5,9 +5,11 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
+import 'providers.dart'; // chassisProvider (native getPosition for desk capture)
 import 'services/face_enroll.dart';
 
 const _orange = Color(0xFFFF6B35);
@@ -454,14 +456,14 @@ class _StaffCard extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════════════════
 // REGISTER TAB  (the original enrollment flow, self-contained)
 // ══════════════════════════════════════════════════════════════════════════════
-class _RegisterTab extends StatefulWidget {
+class _RegisterTab extends ConsumerStatefulWidget {
   const _RegisterTab();
 
   @override
-  State<_RegisterTab> createState() => _RegisterTabState();
+  ConsumerState<_RegisterTab> createState() => _RegisterTabState();
 }
 
-class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClientMixin {
+class _RegisterTabState extends ConsumerState<_RegisterTab> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -484,6 +486,10 @@ class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClien
   final _phoneCtr = TextEditingController();
   String _personType = 'Employee';
   bool _consent = false;
+  // Optional desk/location pose — capture the robot's SLAM position so Timo can
+  // navigate to this person's desk later (#71). Park the robot at the desk first.
+  Map<String, double>? _deskPose;
+  bool _capturingDesk = false;
 
   // Capture
   final FaceDetector _detector = FaceDetector(
@@ -533,6 +539,30 @@ class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClien
     });
     _pollTimer = Timer.periodic(_pollEvery, (_) => _tick());
     _startPose();
+  }
+
+  /// Capture the robot's current SLAM pose as this person's desk. Ensures chassis
+  /// control is running first (native getPosition no-ops otherwise), mirroring the
+  /// nav-points capture flow. Requires the robot to be localized on its map.
+  Future<void> _captureDesk() async {
+    setState(() => _capturingDesk = true);
+    try {
+      final chassis = ref.read(chassisProvider);
+      if (!chassis.isRunning) {
+        await ref.read(chassisProvider.notifier).startChassisControl();
+      }
+      final pose = await ref.read(chassisProvider.notifier).getPosition();
+      if (!mounted) return;
+      if (pose == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not read position — make sure the robot is localized on its map.'),
+        ));
+      } else {
+        setState(() => _deskPose = pose);
+      }
+    } finally {
+      if (mounted) setState(() => _capturingDesk = false);
+    }
   }
 
   void _startPose() {
@@ -749,6 +779,8 @@ class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClien
                 'image_base64': base64Encode(_frames[i]),
                 // Pose 0 is the Front shot — use it as the gallery thumbnail.
                 'set_thumbnail': i == 0,
+                // Send the desk pose once (with pose 0); spine writes it to staff.
+                if (i == 0 && _deskPose != null) 'desk_pose': _deskPose,
               }),
             )
             .timeout(const Duration(seconds: 30));
@@ -852,6 +884,47 @@ class _RegisterTabState extends State<_RegisterTab> with AutomaticKeepAliveClien
           controlAffinity: ListTileControlAffinity.leading,
           title: const Text('I consent to enroll my face for identification'),
           onChanged: (v) => setState(() => _consent = v ?? false),
+        ),
+        const SizedBox(height: 12),
+        // Desk location (optional) — capture the robot's SLAM pose so Timo can
+        // navigate to this person's desk later. Park the robot at the desk first.
+        Container(
+          decoration: BoxDecoration(
+            color: _panel2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white12),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(children: [
+            Icon(_deskPose != null ? Icons.place : Icons.place_outlined,
+                color: _deskPose != null ? _orange : Colors.white38),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Desk location (optional)',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  _deskPose != null
+                      ? 'Captured: x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
+                      : 'Park the robot at the desk, then capture.',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ]),
+            ),
+            if (_deskPose != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+                onPressed: _capturingDesk ? null : () => setState(() => _deskPose = null),
+              ),
+            TextButton.icon(
+              onPressed: _capturingDesk ? null : _captureDesk,
+              icon: _capturingDesk
+                  ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.my_location, size: 16, color: _orange),
+              label: Text(_deskPose != null ? 'Recapture' : 'Capture',
+                  style: const TextStyle(color: _orange)),
+            ),
+          ]),
         ),
         const SizedBox(height: 20),
         FilledButton.icon(

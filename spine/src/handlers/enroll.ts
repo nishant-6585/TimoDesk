@@ -29,6 +29,31 @@ export interface EnrollRequest {
   consent_ref: string;
   image_base64: string; // Base64-encoded JPEG/PNG
   set_thumbnail?: boolean; // True → use THIS photo as the gallery display thumbnail (the front-facing shot)
+  desk_pose?: DeskPose; // Optional SLAM pose of the person's desk, captured during enrollment (#71)
+}
+
+/** A staff member's desk location — SLAM pose from getPosition(). */
+export interface DeskPose {
+  x: number;
+  y: number;
+  z?: number;
+  rotation?: number;
+}
+
+/**
+ * Map a desk pose to the staff table's desk_* columns, or null if the pose is
+ * absent/invalid (x & y are required and must be finite). Shared by /enroll and
+ * PATCH /staff so both write the pose identically.
+ */
+export function deskColumns(pose: DeskPose | undefined | null): Record<string, unknown> | null {
+  if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.y)) return null;
+  return {
+    desk_x: pose.x,
+    desk_y: pose.y,
+    desk_z: Number.isFinite(pose.z) ? pose.z : 0,
+    desk_rotation: Number.isFinite(pose.rotation) ? pose.rotation : 0,
+    desk_captured_at: new Date().toISOString(),
+  };
 }
 
 export interface EnrollResponse {
@@ -172,6 +197,15 @@ export async function handleEnroll(
 
           staffId = newStaff.id;
           console.log(`[Enroll] Created new staff: ${staffId}`);
+        }
+
+        // 6b. DESK POSE (optional) — record where this person sits, captured during
+        // enrollment. Written whenever provided (create or repeat pose call).
+        const desk = deskColumns(enrollReq.desk_pose);
+        if (desk) {
+          const { error: deskErr } = await supabase.from('staff').update(desk).eq('id', staffId);
+          if (deskErr) console.warn(`[Enroll] desk pose update failed (continuing): ${deskErr.message}`);
+          else console.log(`[Enroll] desk pose saved for ${staffId}`);
         }
 
         // 7. INSERT EMBEDDING (pgvector: pass as string array)

@@ -11,6 +11,7 @@ import '../../../core/constants.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/visitor_arrived_provider.dart';
 import '../../settings/providers/settings_provider.dart';
+import '../../../services/spine/spine_provider.dart';
 import '../../staff/providers/enrollment_provider.dart';
 import '../../staff/providers/staff_list_provider.dart';
 import '../../staff/screens/staff_list_screen.dart';
@@ -760,6 +761,10 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
   String _personType = 'Employee';
   bool _consent = false;
   bool _enrolling = false;
+  // Optional desk/location pose captured from the robot's current SLAM position,
+  // saved with the staff row so Timo can later navigate to this person's desk (#71).
+  Map<String, double>? _deskPose;
+  bool _capturingDesk = false;
 
   @override
   void dispose() {
@@ -767,6 +772,27 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
     _phoneCtr.dispose();
     _roleCtr.dispose();
     super.dispose();
+  }
+
+  /// Capture the robot's live SLAM pose as this person's desk location. The robot
+  /// must be parked at the desk (drive it there first). Optional — skip to enroll
+  /// without a location.
+  Future<void> _captureDesk() async {
+    setState(() => _capturingDesk = true);
+    try {
+      final pose = await ref.read(spineProvider.notifier).getPosition();
+      if (!mounted) return;
+      if (pose == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not read robot position (offline or timed out)'),
+          backgroundColor: Colors.red,
+        ));
+      } else {
+        setState(() => _deskPose = pose);
+      }
+    } finally {
+      if (mounted) setState(() => _capturingDesk = false);
+    }
   }
 
   Future<void> _submitEnrollment() async {
@@ -791,6 +817,7 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
           imageBytes: widget.capturedFrames[i],
           phone: _phoneCtr.text,
           personType: _personType,
+          deskPose: i == 0 ? _deskPose : null, // send once; spine writes it to the staff row
         );
 
         if (result.ok) {
@@ -946,6 +973,53 @@ class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
                   labelText: 'Role',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 ),
+              ),
+              const SizedBox(height: 16),
+              // Desk location (optional) — capture the robot's current SLAM pose so
+              // Timo can navigate to this person's desk later. Park the robot at the
+              // desk first. Skip to enroll without a location.
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(children: [
+                  Icon(
+                    _deskPose != null ? Icons.place : Icons.place_outlined,
+                    size: 20,
+                    color: _deskPose != null ? MikeeColors.success : MikeeColors.textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Desk location (optional)',
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text(
+                          _deskPose != null
+                              ? 'Captured: x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
+                              : 'Park the robot at the desk, then capture.',
+                          style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_deskPose != null)
+                    IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: _capturingDesk ? null : () => setState(() => _deskPose = null),
+                    ),
+                  TextButton.icon(
+                    onPressed: _capturingDesk ? null : _captureDesk,
+                    icon: _capturingDesk
+                        ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.my_location, size: 16),
+                    label: Text(_deskPose != null ? 'Recapture' : 'Capture'),
+                  ),
+                ]),
               ),
               const SizedBox(height: 24),
               // Consent checkbox
