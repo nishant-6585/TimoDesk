@@ -35,27 +35,36 @@ These need no new infra and bank the features that are 85% there.
 - **Done when:** raw mic audio (or a transcript event) reaches our code on the device.
 - **Note:** Do **not** let this block T7–T9 (the brain builds text-first without it).
 
-### T2 · 🟡 F7 — Remote photo capture → Supabase Storage → gallery
+### T2 · ✅ F7 — Remote photo capture → Supabase Storage → gallery  *(code DONE `65e8753`)*
 - **Why:** Blueprint F7 (LOW effort, MVP). Snapshot intent + `capture` table exist;
   verify the full chain to cloud storage + reviewable gallery with attribution.
-- **Steps:** confirm `snapshot` intent → SDK capture → upload to Supabase Storage →
-  `capture` row (kind=`admin_snapshot`, `taken_by`, `purge_after`) → admin gallery.
-- **Done when:** an admin-tapped photo is saved to cloud and viewable later, attributed.
+- **Done:** snapshot handler uploads to the `snapshots` bucket + inserts a `capture`
+  row (kind=`admin_snapshot`, `actor`); `GET /captures` (signed URLs); Gallery is now
+  two tabs (Snapshots / Staff). Migration 012. `spine/src/captures.ts` (5 tests).
+- **⬜ Left:** apply migration 012 + run the loop on the real robot/Supabase.
 
-### T3 · 🟡 F3 — Recognition robustness pass
+### T3 · 🟡 F3 — Recognition robustness pass  *(code-half DONE `183e4ee`; bench owed)*
 - **Why:** Nearest-neighbour gap is OVERLAPPING at 6 enrolled people (threshold dropped
   to 0.53 for precision; gap ~0.014). Brittle as staff grows.
-- **Steps:** re-enroll the loose/short captures (sharper, frontal) → re-run
-  `scripts/enroll/calibrate.js` → raise threshold toward the gap midpoint. Confirm
-  consent fields (`consent_at`/`consent_ref`) are written on every enrol (DPDP).
-- **Done when:** enrolled staff greeted reliably; non-enrolled never falsely matched.
+- **Done (code):** `calibrate.js` now prints a per-person re-enrollment worklist
+  (THIN/LOOSE flags + closest impostor pair + precision threshold). Stale comments
+  fixed. Consent fields (`consent_at`/`consent_ref`) confirmed written on enrol.
+- **⬜ Left (bench, needs robot):** re-enroll the flagged people sharper/frontal →
+  re-run `calibrate.js` → raise threshold toward the restored gap midpoint.
 
-### T4 · 🟡 F1 (notification half) — Host handoff hardening
+### T4 · ✅ F1 (notification half) — Host handoff hardening  *(code DONE)*
 - **Why:** #70 ships visitor row + notify, but email is **log-only** and most hosts
   have NULL `notify_channel`. Blueprint requires a working triple-channel handoff.
-- **Steps:** wire real SMTP sender; test WhatsApp/Interakt against a live key; set real
-  `notify_channel` (`slack:` / `whatsapp:` / `email:`) on all hosts.
-- **Done when:** a visitor check-in actually reaches the host on all three channels.
+- **Done:** real email via Resend HTTP API (gated on `RESEND_API_KEY`+`NOTIFY_EMAIL_FROM`,
+  log-only fallback); fixed silent send-failure (now throws on non-2xx). 5 tests.
+- **⬜ Left (ops):** set real `notify_channel` on hosts; test WhatsApp/Interakt live key.
+
+### T2.5 · ✅ NEW — Capture staff desk/location during enrollment  *(DONE, both apps)*
+- **Why:** Groundwork for #71 (navigate-to-desk): record where each staff member sits.
+- **Done:** migration 013 (`staff.desk_*`); `/enroll` + `PATCH /staff` accept `desk_pose`;
+  `GET /staff` returns it; a "Desk location" capture tile in **both** the admin and robot
+  enroll flows (via `getPosition()`). Park robot at desk → Capture → enroll.
+- **⬜ Left:** the "go to desk" consumer action (part of #71).
 
 ---
 
