@@ -104,17 +104,23 @@ To purge all test embeddings before go-live, run:
 
 ## Calibration (after enrollment)
 
-After enrolling test/real faces, calibrate the L2 distance threshold:
+After enrolling real faces, calibrate the L2 distance threshold:
 
 ```bash
-npx ts-node calibrate.ts
+node --env-file=.env scripts/enroll/calibrate.js
 ```
 
-This will:
-1. Measure self-match distances (same person, different photos) → lower bound
-2. Measure cross-match distances (different people) → upper bound
-3. Find the optimal threshold that separates them
-4. Output recommended threshold (typically 0.50-0.60)
+This measures distances with the SAME nearest-neighbour rule the recognizer uses
+(leave-one-out), excludes TEST rows, and prints:
+
+1. Per-person **enrollment health** — pose count + worst self-distance, flagging
+   `THIN` (<5 poses) and `LOOSE` enrollments, plus the closest impostor pair —
+   i.e. an explicit **re-enrollment worklist** (who to re-capture sharper).
+2. Genuine vs impostor nearest-neighbour distributions + the gap (SEPARATED/OVERLAP).
+3. A recommended threshold: the gap midpoint when separated, or a precision value
+   (just below the closest impostor) when the distributions overlap.
+
+Apply the result in `spine/src/config/face-recognition.ts` → `FACE_CONFIG.threshold`.
 
 ## Purge Test Data (before go-live)
 
