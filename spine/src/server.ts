@@ -18,6 +18,7 @@ import { handleVisit } from './handlers/visit';
 import { handleVoiceLog } from './handlers/voice';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { handleListCaptures } from './handlers/captures';
+import { handleAsk } from './handlers/ask';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -122,6 +123,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/captures' && req.method === 'GET') {
         await handleListCaptures(req, res, supabase);
+        return;
+      }
+
+      if (url === '/ask' && req.method === 'POST') {
+        await handleAsk(req, res, supabase);
         return;
       }
 

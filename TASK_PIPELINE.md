@@ -73,27 +73,28 @@ These need no new infra and bank the features that are 85% there.
 > Blueprint rule: *"Build a text-only version first. Prove the brain before the ears."*
 > This entire phase is **independent of the T1 mic blocker.**
 
-### T5 · 🔴 KB content + ingestion pipeline
+### T5 · ✅ KB content + ingestion pipeline  *(code DONE)*
 - **Why:** F4 needs a knowledge base. `kb_chunk` table exists but embeddings are NULL.
-- **Steps:** Vishal supplies curated Q&A/topic content (brand voice) → chunk it →
-  embed each chunk (1536-d to match schema) → populate `kb_chunk.embedding`, set
-  `is_faq=true` on high-frequency ones. Embed-on-write helper in spine.
-- **Done when:** KB chunks are stored with embeddings; a cosine query returns sane hits.
+- **Done:** embedding provider = **Voyage voyage-3.5 (1024-dim)**; migration 014
+  re-dimensions `kb_chunk.embedding` 1536→1024 + `match_kb_chunk` cosine RPC.
+  `services/kb-embedding.ts` (asymmetric query/document), `services/kb.ts`
+  (searchKb/upsertChunk/backfillEmbeddings), `scripts/kb/ingest.js` (embed seeded
+  rows + import from JSON).
+- **⬜ Left:** apply migration 014; **Vishal supplies real KB content**; run `ingest.js`.
 
-### T6 · 🔴 F4 — FAQ fast-path (retrieval, text in → answer out)
+### T6 · ✅ F4 — FAQ fast-path  *(code DONE)*
 - **Why:** Blueprint F4. Sub-2s cached answers from KB.
-- **Steps:** embed query → pgvector cosine search → if `is_faq` && score > 0.85 →
-  return cached answer. Text endpoint in spine, no audio yet.
-- **Done when:** typed FAQ question returns the right KB answer < 1.5s.
+- **Done:** `pickFaqAnswer()` — embed query → `match_kb_chunk` → if top hit `is_faq`
+  && similarity > 0.85 → return cached content, skip the LLM. `POST /ask` endpoint.
+- **⬜ Left:** verify < 1.5s latency on real data.
 
-### T7 · 🔴 F5 — Open Q&A Claude fallback (grounded RAG)
+### T7 · ✅ F5 — Open Q&A Claude fallback (grounded RAG)  *(code DONE)*
 - **Why:** Blueprint F5. KB miss → grounded Claude answer.
-- **Steps:** on miss → build grounded prompt (top-k KB chunks + company-context block +
-  strict rules: 2–3 spoken sentences, Indian/British English, no pricing → route to
-  handoff) → call **Claude** (`claude-opus-4-8`, read the `claude-api` skill first) →
-  stream answer. Log to `conversation` (PII-scrubbed, retention-bound).
-- **Done when:** typed novel question gets a sensible grounded answer; out-of-scope
-  routes to handoff. (Greeting already proves TTS-out.)
+- **Done:** `services/rag.ts` — on miss, grounded prompt (top-k chunks + spoken-answer
+  rules: 2–3 sentences, Indian/British English, no pricing → handoff) → **Claude
+  `claude-opus-4-8`** (thinking off + effort low + final-answer-only for voice
+  latency). Dependency-injected → unit-tested without hitting the API.
+- **⬜ Left:** wire STT/TTS (T8/T9); optional `conversation` logging (PII-scrubbed).
 
 ---
 
