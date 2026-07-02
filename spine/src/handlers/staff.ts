@@ -13,6 +13,7 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
+import { deskColumns } from './enroll';
 
 // Signed-URL lifetime for staff thumbnails. The Gallery re-fetches /staff on each
 // open/refresh, so a short TTL is fine and keeps face images from leaking via stale links.
@@ -42,7 +43,7 @@ export async function handleListStaff(
 
   const { data: staff, error } = await supabase
     .from('staff')
-    .select('id, full_name, phone, person_type, role, active, created_at, photo_path')
+    .select('id, full_name, phone, person_type, role, active, created_at, photo_path, desk_x, desk_y, desk_z, desk_rotation, desk_captured_at')
     .order('created_at', { ascending: true });
   if (error) return json(res, 500, { ok: false, reason: error.message });
 
@@ -98,6 +99,17 @@ export async function handleUpdateStaff(
   if (body.phone !== undefined) update.phone = body.phone;
   if (body.person_type !== undefined) update.person_type = body.person_type;
   if (body.role !== undefined) update.role = body.role;
+  // Desk pose: set from a captured SLAM pose, or clear it with desk_pose: null.
+  if (body.desk_pose !== undefined) {
+    const desk = deskColumns(body.desk_pose);
+    if (desk) {
+      Object.assign(update, desk);
+    } else if (body.desk_pose === null) {
+      Object.assign(update, {
+        desk_x: null, desk_y: null, desk_z: null, desk_rotation: null, desk_captured_at: null,
+      });
+    }
+  }
   if (Object.keys(update).length === 0) {
     return json(res, 400, { ok: false, reason: 'No updatable fields provided' });
   }

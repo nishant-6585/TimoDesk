@@ -15,7 +15,7 @@ import { handleIntent } from './handlers';
 export async function routeMessage(
   raw: unknown,
   sessionId: string,
-  _userId: string,
+  userId: string,
   sdk: RobotSDK
 ): Promise<SpineMessage> {
   // 1. Parse and validate message
@@ -66,7 +66,7 @@ export async function routeMessage(
 
     // 4. Route to handler
     console.log('[Router] Routing to handler...');
-    const response = await handleIntent(intent, sessionId, sdk);
+    const response = await handleIntent(intent, sessionId, userId, sdk);
     console.log(`[Router] Handler response type: ${response.type}`);
     console.log(`[Router] ======== INTENT COMPLETE ========`);
     return response;

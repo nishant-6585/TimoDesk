@@ -135,18 +135,30 @@ async function main() {
   const genuine = [];
   const impostor = [];
   let rank1Correct = 0;
+  // Per-person worst (max) genuine NN — how loosely a person's own poses cohere.
+  const worstSelfByName = {};
+  // The single closest impostor pair anywhere — the collision that caps precision.
+  let closestImpostor = { a: null, b: null, d: Infinity };
   for (let i = 0; i < flat.length; i++) {
     let gMin = Infinity;
     let iMin = Infinity;
+    let iMinName = null;
     for (let j = 0; j < flat.length; j++) {
       if (i === j) continue;
       const d = l2Distance(flat[i].v, flat[j].v);
-      if (flat[i].name === flat[j].name) gMin = Math.min(gMin, d);
-      else iMin = Math.min(iMin, d);
+      if (flat[i].name === flat[j].name) {
+        gMin = Math.min(gMin, d);
+      } else if (d < iMin) {
+        iMin = d;
+        iMinName = flat[j].name;
+      }
     }
     genuine.push(gMin);
     impostor.push(iMin);
     if (gMin < iMin) rank1Correct++;
+    if (Number.isFinite(gMin))
+      worstSelfByName[flat[i].name] = Math.max(worstSelfByName[flat[i].name] ?? 0, gMin);
+    if (iMin < closestImpostor.d) closestImpostor = { a: flat[i].name, b: iMinName, d: iMin };
   }
   const genS = stats(genuine);
   const impS = stats(impostor);
@@ -163,6 +175,43 @@ async function main() {
   const nnGap = impS.min - genS.max;
   const nnSeparated = nnGap > 0;
 
+  // ── Per-person enrollment health + re-enrollment worklist ─────────────────
+  // Turns "recapture the loosest enrollment" into an explicit list. Two flags:
+  //   THIN  — fewer than MIN_POSES poses (weak coverage of angles/lighting).
+  //   LOOSE — this person's own poses are as far apart as the closest impostor,
+  //           i.e. their worst self-distance ≥ impostor.min (they blur the gap).
+  const MIN_POSES = 5;
+  console.log('════════════════════════════════════════════════════════════');
+  console.log('ENROLLMENT HEALTH (who to re-capture)');
+  console.log('════════════════════════════════════════════════════════════\n');
+  console.log(`  ${'person'.padEnd(24)} ${'poses'.padEnd(6)} ${'worst-self'.padEnd(11)} flags`);
+  const reEnroll = new Set();
+  for (const g of [...groups].sort((x, y) => (worstSelfByName[y.name] ?? 0) - (worstSelfByName[x.name] ?? 0))) {
+    const poses = g.vecs.length;
+    const worst = worstSelfByName[g.name];
+    const thin = poses < MIN_POSES;
+    const loose = Number.isFinite(worst) && worst >= impS.min;
+    const flags = [thin ? 'THIN' : '', loose ? 'LOOSE' : ''].filter(Boolean).join(',') || 'ok';
+    if (thin || loose) reEnroll.add(g.name);
+    const worstStr = Number.isFinite(worst) ? worst.toFixed(4) : '  —  ';
+    console.log(`  ${g.name.padEnd(24)} ${String(poses).padEnd(6)} ${worstStr.padEnd(11)} ${flags}`);
+  }
+  console.log('');
+  if (closestImpostor.a) {
+    console.log(
+      `Closest impostor pair: ${closestImpostor.a} ↔ ${closestImpostor.b} @ ${closestImpostor.d.toFixed(4)}`
+    );
+    // The two people in the closest collision are always worth re-capturing sharper.
+    reEnroll.add(closestImpostor.a);
+    reEnroll.add(closestImpostor.b);
+  }
+  if (reEnroll.size) {
+    console.log(`\n👉 Re-enroll (sharper, more frontal, ≥${MIN_POSES} poses): ${[...reEnroll].join(', ')}`);
+    console.log('   Then re-run this script — the goal is a POSITIVE gap so the threshold has room.\n');
+  } else {
+    console.log('\n✅ All enrollments look healthy (enough poses, tight self-distance).\n');
+  }
+
   console.log('════════════════════════════════════════════════════════════');
   console.log('THRESHOLD');
   console.log('════════════════════════════════════════════════════════════\n');
@@ -171,12 +220,19 @@ async function main() {
   console.log(`gap (impostor.min − genuine.max): ${nnGap.toFixed(4)}  → ${nnSeparated ? 'SEPARATED ✅' : 'OVERLAP ❌'}\n`);
 
   if (!nnSeparated) {
-    console.log('❌ Even nearest-neighbour OVERLAPS — a query could match the wrong person.');
-    console.log('   Recapture the loosest enrollment (check per-person self-match) and re-run.\n');
+    // Overlapping: no threshold cleanly separates. Recommend the PRECISION choice
+    // (just below the closest impostor) so we never emit a wrong name — the same
+    // trade-off currently in the config. The margin guard + voting cover the rest.
+    const precision = Math.floor((impS.min - 0.001) * 100) / 100; // 2dp, just below impostor.min
+    console.log('❌ Distributions OVERLAP — a global threshold cannot cleanly separate.');
+    console.log('   Fix the enrollments above to open a positive gap. Meanwhile, for PRECISION');
+    console.log(`   (reject the collision → occasional "unknown" over a wrong name), set:`);
+    console.log(`     FACE_CONFIG.threshold = ${precision.toFixed(2)}   (just below impostor.min ${impS.min.toFixed(4)})`);
+    console.log('   Keep the margin guard + temporal voting on — they carry the overlap.\n');
     process.exit(2);
   }
 
-  // Threshold sits in the gap between the worst genuine and the closest impostor.
+  // Separated: threshold sits in the gap between worst genuine and closest impostor.
   const recommended = (genS.max + impS.min) / 2;
   console.log(`RECOMMENDED THRESHOLD (gap midpoint): ${recommended.toFixed(4)}`);
   console.log(`Round for config: ${recommended.toFixed(2)}\n`);

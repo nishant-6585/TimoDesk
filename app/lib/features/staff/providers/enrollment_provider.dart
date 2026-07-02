@@ -54,6 +54,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
     String? phone,
     String? personType,
     bool setThumbnail = false, // True → use this photo as the gallery thumbnail
+    Map<String, dynamic>? deskPose, // Optional {x,y,z,rotation} — the person's desk (#71)
   }) async {
     // Get JWT token from Supabase session (or use empty for testing)
     final session = Supabase.instance.client.auth.currentSession;
@@ -80,6 +81,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
         'phone': phone,
         'person_type': personType ?? 'Employee',
         'set_thumbnail': setThumbnail,
+        if (deskPose != null) 'desk_pose': deskPose,
       }),
     ).timeout(const Duration(seconds: 30));
 

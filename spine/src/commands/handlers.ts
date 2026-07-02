@@ -6,11 +6,14 @@
 import { Intent, SpineMessage } from '../types';
 import { RobotSDK } from '../robot/interface';
 import { logEvent } from '../supabase/events';
+import { getSupabaseClient } from '../supabase/client';
+import { saveSnapshot } from '../captures';
 import { handleStop, handleResume } from './interlocks';
 
 export async function handleIntent(
   intent: Intent,
   sessionId: string,
+  userId: string,
   sdk: RobotSDK
 ): Promise<SpineMessage> {
   const intentType = intent.intent;
@@ -120,14 +123,26 @@ export async function handleIntent(
       case 'snapshot': {
         console.log(`[Handlers] Executing snapshot`);
         const buffer = await sdk.takeSnapshot();
-        // In a real system, upload to cloud storage and return URL
-        // For now, just log it
+
+        // Persist to Supabase Storage + a `capture` row so it shows up in the
+        // admin Gallery, attributed to whoever took it. If Supabase isn't
+        // configured (dev), fall back to just logging so the ack still succeeds.
+        const supabase = getSupabaseClient();
+        if (!supabase) {
+          await logEvent('snapshot', { session_id: sessionId, actor: userId, size_bytes: buffer.length });
+          console.log(`[Handlers] Snapshot taken (${buffer.length} bytes) — Supabase off, not stored`);
+          return { type: 'ack', intent: 'snapshot', ok: true };
+        }
+
+        const { captureId, path } = await saveSnapshot(supabase, buffer, userId);
         await logEvent('snapshot', {
           session_id: sessionId,
+          actor: userId,
+          capture_id: captureId,
           size_bytes: buffer.length,
         });
-        console.log(`[Handlers] Snapshot complete (${buffer.length} bytes)`);
-        return { type: 'ack', intent: 'snapshot', ok: true };
+        console.log(`[Handlers] Snapshot saved (${buffer.length} bytes → ${path}, capture ${captureId})`);
+        return { type: 'ack', intent: 'snapshot', ok: true, captureId };
       }
 
       case 'get_status': {

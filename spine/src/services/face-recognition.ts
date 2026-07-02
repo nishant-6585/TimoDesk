@@ -1,11 +1,11 @@
 /**
  * Face Recognition Service — autonomous spine-side recognizer.
  *
- * Loop (no browser): every ~1.5s grab a clean JPEG from the robot's /snapshot
+ * Loop (no browser): every ~0.5s grab a clean JPEG from the robot's /snapshot
  * endpoint → run the SHARED extractEmbedding (the exact face-api path enrollment
  * uses) → find the NEAREST enrolled embedding by L2 → if nearest < threshold
- * (FACE_CONFIG.threshold, calibrated 0.57) emit face_detected{staff} else
- * face_detected{unknown}.
+ * (FACE_CONFIG.threshold, calibrated 0.53 — precision-biased) emit
+ * face_detected{staff} else face_detected{unknown}.
  *
  * Matching MUST mirror calibration: nearest-neighbour, NOT averaged / all-pairwise.
  * One face-api pipeline only (services/face-embedding.ts) — no divergent path.
@@ -55,11 +55,11 @@ function parseEmbedding(raw: unknown): number[] | null {
 export class FaceRecognitionService {
   private readonly robotIP: string;
   private readonly cameraPort = FACE_CONFIG.camera_port; // 8080
-  private readonly threshold = FACE_CONFIG.threshold; // 0.57, calibrated
+  private readonly threshold = FACE_CONFIG.threshold; // 0.53, calibrated (precision-biased)
   private readonly margin = FACE_CONFIG.match_margin; // 0.06 second-place gap
-  private readonly voteWindow = FACE_CONFIG.vote_window; // last N frames
-  private readonly voteMin = FACE_CONFIG.vote_min; // need this many agreeing
-  private readonly cadenceMs = FACE_CONFIG.detection_cadence_ms; // 1000
+  private readonly voteWindow = FACE_CONFIG.vote_window; // last N frames (3)
+  private readonly voteMin = FACE_CONFIG.vote_min; // need this many agreeing (2)
+  private readonly cadenceMs = FACE_CONFIG.detection_cadence_ms; // 500
   private readonly reloadMs = 30_000; // refresh enrolled set so new staff are picked up
   private readonly reEmitMs = 5_000; // re-confirm the same identity at most this often
 
