@@ -41,8 +41,13 @@ jobs:
             -t lib/main.dart
 
       - name: Upload debug APK
+        # Only keep artifacts for main-branch pushes (skip PRs/develop), never fail
+        # the job on upload — the build already passed; storage quota is not a code issue.
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: mikee-debug-${{ github.sha }}
           path: robot_app/build/app/outputs/flutter-apk/app-robot-debug.apk
-          retention-days: 7
+          retention-days: 3
+          overwrite: true
