@@ -176,7 +176,13 @@ class _SnapshotTile extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Expanded(
           child: hasImage
-              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder)
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  cacheHeight: 400,
+                  cacheWidth: 400,
+                  errorBuilder: (_, __, ___) => placeholder,
+                )
               : placeholder,
         ),
         Padding(
@@ -194,7 +200,7 @@ class _SnapshotTile extends StatelessWidget {
               const SizedBox(width: 3),
               Expanded(
                 child: Text(
-                  snapshot.actor ?? 'autonomous',
+                  snapshot.actor ?? '[system-captured]',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
@@ -254,6 +260,8 @@ class _FaceTile extends StatelessWidget {
               ? Image.network(
                   url,
                   fit: BoxFit.cover,
+                  cacheHeight: 400,
+                  cacheWidth: 400,
                   // Fall back to initials if the signed URL fails / expires.
                   errorBuilder: (_, __, ___) => placeholder,
                 )
