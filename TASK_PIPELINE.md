@@ -12,10 +12,12 @@
 ## Where we are (one line)
 
 Vision + control half of the MVP (**F2, F3, F6**) works on real hardware. The voice
-half (**F1-intake, F4, F5**) is the missing core and is partly blocked by the vendor
-mic-firmware wall. V2 (F8, F9) has only a nav foundation.
+loop (mic + ASR + TTS) also works — **the mic-wall was resolved** (ElevenLabs
+Conversational AI). The remaining voice gap is **grounding** that loop in the xboom
+KB so answers follow the blueprint's rules (the T5/T6/T7 RAG is built for this).
+V2 (F8, F9) has only a nav foundation.
 
-**MVP completion ≈ 55–60%.** This pipeline closes the gap.
+**MVP completion ≈ 70%.** This pipeline closes the gap.
 
 ---
 
@@ -23,17 +25,18 @@ mic-firmware wall. V2 (F8, F9) has only a nav foundation.
 
 These need no new infra and bank the features that are 85% there.
 
-### T1 · ⛔ Resolve the audio I/O vendor wall  — *gates the entire voice layer*
-- **Why:** Blueprint Gate Zero "Audio I/O" was only *verbally* confirmed; in practice
-  the robot transcribes internally but won't forward mic audio/text to a 3rd-party app
-  (see memory `robot-mic-vendor-wall`). This blocks F1 voice intake, F4, F5.
-- **Action (not pure code — Vishal/procurement):**
-  1. Escalate to Alpha Robotics / CSJBot: get programmatic mic PCM stream OR a
-     forward-transcript API in writing (contractual annexure per blueprint §02).
-  2. Fallback decision: mount an **external USB mic** on the Android chest device and
-     capture via Flutter — bypasses the firmware wall entirely.
-- **Done when:** raw mic audio (or a transcript event) reaches our code on the device.
-- **Note:** Do **not** let this block T7–T9 (the brain builds text-first without it).
+### T1 · ✅ Audio I/O vendor wall — RESOLVED (2026-06-22)
+- **Was:** the CSJBot firmware forwarded empty ASR results (`result:""`) to any
+  3rd-party app — even the vendor's own demo got 28/28 empty on this robot. Looked
+  like a hard blocker. (memory `robot-mic-vendor-wall`.)
+- **Fix:** `CsjRobot.enableFace(true)` before `init()` (`MikeeApplication.java`)
+  starts the AIUI/CAE engine **in our process**, so beamformed mic PCM reaches
+  `AudioBridgePlugin.onAudio` — bypassing the system-service path. The live voice
+  loop is **ElevenLabs Conversational AI** (its ASR + LLM + TTS) via
+  `voice_agent.dart` (WS `convai/conversation`). Committed `967e55e`.
+- **⚠️ Consequence:** the voice brain is now ElevenLabs' hosted LLM (Claude Haiku +
+  a dashboard prompt), **NOT KB-grounded**. The remaining voice work is grounding it
+  in the xboom KB — see T8-reframed below, not "unblock the mic".
 
 ### T2 · ✅ F7 — Remote photo capture → Supabase Storage → gallery  *(code DONE `65e8753`)*
 - **Why:** Blueprint F7 (LOW effort, MVP). Snapshot intent + `capture` table exist;
@@ -98,24 +101,33 @@ These need no new infra and bank the features that are 85% there.
 
 ---
 
-## P2 — Wire the ears + mouth (needs T1 unblocked)
+## P2 — Ground the voice loop in the KB (mic + TTS already work via ElevenLabs)
 
-### T8 · ⛔ STT integration  — *blocked by T1*
-- **Why:** Blueprint §6. Stream mic → managed STT (Deepgram/Google), wake on face-detect,
-  stop on silence (cost control). Evaluate Indian-English accuracy.
-- **Done when:** spoken question becomes text feeding T6/T7.
+> The ears + mouth are DONE (ElevenLabs Conversational AI, `voice_agent.dart`).
+> The gap is that ElevenLabs answers with its own generic LLM, not the xboom KB —
+> so the remaining work is connecting the T5/T6/T7 grounded brain to the voice loop.
 
-### T9 · 🟡 TTS + latency tuning + fillers
-- **Why:** ElevenLabs greeting works; extend to full answers. Add the filler-line trick
-  on the Claude-fallback path; stream TTS (start speaking before full synthesis).
-- **Done when:** end-to-end voice loop feels conversational (FAQ <1.5s, fallback covered
-  by filler).
+### T8 · 🟡 STT — DONE via ElevenLabs (Indian-English ASR in-platform)
+- ElevenLabs does STT server-side; `user_transcript` events already reach the app
+  (`voice_agent.dart`), including for on-device voice-commands. No separate STT needed.
 
-### T10 · ⛔ F1 (intake half) — Voice visitor capture  — *blocked by T1*
+### T9 · ✅ TTS — DONE via ElevenLabs (pcm_16000, barge-in, tuned voice)
+- ElevenLabs streams `pcm_16000` back → `AudioBridgePlugin` plays it; on-device
+  barge-in + Chinese-TTS mute done. Voice tuned server-side (eleven_v3).
+
+### T10 · 🟡 Ground the ElevenLabs agent in the xboom KB — *the real remaining voice task*
+- **Why:** ElevenLabs' hosted LLM isn't bound by the blueprint's grounding rules
+  (KB-only, no invented pricing/specs). Wire it to the T5/T6/T7 RAG. Three options
+  (see the 2026-07-02 research below / HANDOFF): (A) ElevenLabs built-in KB upload,
+  (B) **server-tool webhook → spine `/ask`** (reuses our RAG — recommended), (C)
+  custom-LLM endpoint on spine. **Decision pending.**
+- **Done when:** a spoken question returns a KB-grounded answer; out-of-scope → handoff.
+
+### T11-voice · 🟡 F1 (intake half) — Voice visitor capture
 - **Why:** Completes F1's DoD: scripted intake (name → company → host) by voice, entity
-  parse, visitor row — **no keyboard**. Manual check-in (T4) is the interim path.
-- **Done when:** a walk-in is greeted, gives details by voice, correct visitor record
-  appears in Supabase within seconds.
+  parse, visitor row. The voice loop exists; this is a conversation-design + parse task
+  on top of it (or an ElevenLabs tool that POSTs `/visit`). Manual check-in (T4) interim.
+- **Done when:** a walk-in gives details by voice, correct visitor record appears in Supabase.
 
 ---
 
@@ -159,15 +171,18 @@ These need no new infra and bank the features that are 85% there.
 ## Critical path (the spine of the plan)
 
 ```
-T1 (mic unblock) ──────────────┐
+✅ T1 mic wall (resolved) · ✅ T8 STT · ✅ T9 TTS   (ElevenLabs loop, live)
+✅ T5 → T6 → T7  (grounded brain, text)  — built, needs KB content + keys applied
+                               │
                                ▼
-T5 → T6 → T7  (brain, text)   T8 → T9 → T10  (voice I/O)  → T14 (demo) → T13 (go-live)
-   (no blocker — start now)      (needs T1)
+        T10 (ground ElevenLabs in the KB)  → T11-voice (voice intake) → T14 (demo) → T13 (go-live)
+        (DECISION PENDING: option A / B / C)
 
-T2, T3, T4 (finish vision MVP) — parallel, start now
-T11, T12 (deploy/CI) — parallel, T12 anytime
+✅ T2 · 🟡 T3 (bench) · ✅ T4 — vision MVP, largely done
+T11 (#91 IPs), T12 (#92 CI) — parallel, T12 anytime
 T15, T16 (V2) — after MVP
 ```
 
-**Recommended start this session:** T2, T3, T4 (bank the near-done MVP) +
-T5/T6 (start the brain text-first) — none are blocked. Escalate T1 to Vishal in parallel.
+**Next unblocked work:** apply migrations 012–014 + set VOYAGE/ANTHROPIC keys →
+run `ingest.js` → smoke-test `/ask`. Then T10: pick option A/B/C to ground the voice
+loop. Vision-side: T3 bench re-enrollment when at the robot.
