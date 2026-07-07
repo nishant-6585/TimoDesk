@@ -32,6 +32,7 @@ class LiveFeedScreen extends ConsumerStatefulWidget {
 class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   bool _enrollmentMode = false;
   bool _streaming = false;
+  bool _processing = false;
   // Default to this device's webcam in the browser so the person, the camera,
   // and the on-screen guidance are all in one place.
   _EnrollSource _enrollSource = _EnrollSource.device;
@@ -71,7 +72,12 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     }
     // Enrollment over the robot stream reads frames back for face-api, so it
     // needs crossOrigin; plain viewing must not set it (breaks MJPEG render).
-    if (_streaming) return MjpegView(url: url, crossOrigin: _enrollmentMode && _enrollSource == _EnrollSource.robot);
+    if (_streaming) {
+      return MjpegView(
+        url: url,
+        crossOrigin: _enrollmentMode && _enrollSource == _EnrollSource.robot,
+      );
+    }
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -89,6 +95,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 
   void _onFramesCaptured(List<Uint8List> frames) {
+    if (_processing) return;
     setState(() => _enrollmentMode = false);
     _showEnrollmentForm(frames);
   }
@@ -96,39 +103,55 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   /// Called after the first pose. Returns true to keep capturing, false to abort.
   /// If the face matches an enrolled person, asks the user whether to continue.
   Future<bool> _checkDuplicateDuringCapture(Uint8List firstFrame) async {
-    final check = await ref.read(enrollmentProvider.notifier).checkFace(firstFrame);
-    if (!check.match || !mounted) return true; // new face → keep going
+    try {
+      final check = await ref.read(enrollmentProvider.notifier).checkFace(firstFrame);
+      if (!check.match || !mounted) return true; // new face → keep going
 
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: MikeeColors.surface,
-        title: const Text('Already enrolled'),
-        content: Text(
-          'This face looks like ${check.name} is already enrolled'
-          '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
-          'Stop, or continue enrolling anyway?',
-          style: GoogleFonts.inter(color: MikeeColors.textSecondary),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Stop')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Continue anyway'),
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: MikeeColors.surface,
+          title: const Text('Already enrolled'),
+          content: Text(
+            'This face looks like ${check.name} is already enrolled'
+            '${check.distance != null ? ' (L2 ${check.distance!.toStringAsFixed(3)})' : ''}.\n\n'
+            'Stop, or continue enrolling anyway?',
+            style: GoogleFonts.inter(color: MikeeColors.textSecondary),
           ),
-        ],
-      ),
-    );
-    return proceed == true;
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Stop')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Continue anyway'),
+            ),
+          ],
+        ),
+      );
+      return proceed == true;
+    } catch (err) {
+      print('[LiveFeedScreen] checkDuplicateDuringCapture error: $err');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Error checking duplicate: please try again'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false; // abort on error
+    }
   }
 
   void _showEnrollmentForm(List<Uint8List> capturedFrames) {
+    setState(() => _processing = true);
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
         child: _EnrollmentFormModal(capturedFrames: capturedFrames),
       ),
-    );
+    ).then((_) {
+      if (mounted) setState(() => _processing = false);
+    });
   }
 
   @override
@@ -167,96 +190,97 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
           const _VisitorArrivalBanner(),
           Expanded(
             child: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
-          decoration: BoxDecoration(
-            color: Colors.black,
-            border: Border.all(color: MikeeColors.border),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Stack(
-            children: [
-              // Live camera feed
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Column(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Stack(
                   children: [
-                    // Header
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      color: Colors.black87,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Live camera feed
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Column(
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                          // Header
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            color: Colors.black87,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _streaming ? 'LIVE' : 'OFFLINE',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _streaming ? 'LIVE' : 'OFFLINE',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                // Camera-source toggle (enrollment only).
+                                if (_enrollmentMode)
+                                  _SourceToggle(
+                                    source: _enrollSource,
+                                    onChanged: (s) => setState(() {
+                                      _enrollSource = s;
+                                      if (s == _EnrollSource.robot) _streaming = true;
+                                    }),
+                                  ),
+                                InkWell(
+                                  onTap: () => setState(() => _streaming = !_streaming),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4),
+                                    child: Icon(
+                                      _streaming ? Icons.stop_circle : Icons.play_circle,
+                                      size: 24,
+                                      color: _streaming ? MikeeColors.error : MikeeColors.primary,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          // Camera-source toggle (enrollment only).
-                          if (_enrollmentMode)
-                            _SourceToggle(
-                              source: _enrollSource,
-                              onChanged: (s) => setState(() {
-                                _enrollSource = s;
-                                if (s == _EnrollSource.robot) _streaming = true;
-                              }),
-                            ),
-                          InkWell(
-                            onTap: () => setState(() => _streaming = !_streaming),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                _streaming ? Icons.stop_circle : Icons.play_circle,
-                                size: 24,
-                                color: _streaming ? MikeeColors.error : MikeeColors.primary,
-                              ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    // Camera view
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          _buildCameraLayer(url),
-                          // Enrollment detection overlay — target the webcam <video>
-                          // (device) or the MJPEG <img> (robot).
-                          if (_overlayActive)
-                            _EnrollmentDetectionOverlay(
-                              elementSelector: _enrollSource == _EnrollSource.device
-                                  ? '#$kEnrollWebcamId'
-                                  : 'img[src*="$url"]',
-                              onFramesCaptured: _onFramesCaptured,
-                              onCheckDuplicate: _checkDuplicateDuringCapture,
-                              onAbort: () => setState(() => _enrollmentMode = false),
+                          // Camera view
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                _buildCameraLayer(url),
+                                // Enrollment detection overlay — target the webcam <video>
+                                // (device) or the MJPEG <img> (robot).
+                                // Web-only guard to prevent widget instantiation on native.
+                                if (kIsWeb && _overlayActive)
+                                  _EnrollmentDetectionOverlay(
+                                    elementSelector: _enrollSource == _EnrollSource.device
+                                        ? '#$kEnrollWebcamId'
+                                        : 'img[src*="$url"]',
+                                    onFramesCaptured: _onFramesCaptured,
+                                    onCheckDuplicate: _checkDuplicateDuringCapture,
+                                    onAbort: () => setState(() => _enrollmentMode = false),
+                                  ),
+                              ],
                             ),
+                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
             ),
           ),
           // Visitor self-check-in → notify host (#70).
@@ -493,52 +517,52 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     // Works for both <img> (MJPEG) and <video> (webcam). The dart:js detail lives
     // behind the web_face_api seam — this screen stays native-compilable.
     faceApiDetect(widget.elementSelector).then((r) {
-        if (!mounted) return;
+      if (!mounted) return;
 
-        final faces = r['faces'] as int? ?? 0;
-        final faceH = r['faceHeight'] as double? ?? 0.0;
-        final cx = r['centerX'] as double? ?? 0.0;
-        final cy = r['centerY'] as double? ?? 0.0;
-        final yaw = r['yaw'] as double? ?? 0.0;
-        final noseRel = r['noseRel'] as double? ?? 0.0;
+      final faces = r['faces'] as int? ?? 0;
+      final faceH = r['faceHeight'] as double? ?? 0.0;
+      final cx = r['centerX'] as double? ?? 0.0;
+      final cy = r['centerY'] as double? ?? 0.0;
+      final yaw = r['yaw'] as double? ?? 0.0;
+      final noseRel = r['noseRel'] as double? ?? 0.0;
 
-        // Geometry gates shared by all poses.
-        final sized = faceH >= _minFaceHeight && faceH <= _maxFaceHeight;
-        final centered = cx > 0.25 && cx < 0.75 && cy > 0.2 && cy < 0.8;
-        final orientationOk = _poseOrientationMatches(_currentPose.name, yaw, noseRel);
-        final ready = faces == 1 && sized && centered && orientationOk;
+      // Geometry gates shared by all poses.
+      final sized = faceH >= _minFaceHeight && faceH <= _maxFaceHeight;
+      final centered = cx > 0.25 && cx < 0.75 && cy > 0.2 && cy < 0.8;
+      final orientationOk = _poseOrientationMatches(_currentPose.name, yaw, noseRel);
+      final ready = faces == 1 && sized && centered && orientationOk;
 
-        // Build the live hint.
-        String hint;
-        if (faces == 0) {
-          hint = 'No face detected';
-        } else if (faces > 1) {
-          hint = 'Only one face allowed';
-        } else if (!sized) {
-          hint = faceH < _minFaceHeight ? 'Move closer' : 'Move back';
-        } else if (!centered) {
-          hint = 'Center your face';
-        } else if (!orientationOk) {
-          hint = _currentPose.instruction;
+      // Build the live hint.
+      String hint;
+      if (faces == 0) {
+        hint = 'No face detected';
+      } else if (faces > 1) {
+        hint = 'Only one face allowed';
+      } else if (!sized) {
+        hint = faceH < _minFaceHeight ? 'Move closer' : 'Move back';
+      } else if (!centered) {
+        hint = 'Center your face';
+      } else if (!orientationOk) {
+        hint = _currentPose.instruction;
+      } else {
+        hint = 'Hold still…';
+      }
+
+      setState(() {
+        _faceDetected = ready;
+        _detectedOrientation = faces == 1 ? _describeOrientation(yaw, noseRel) : '';
+        _status = hint;
+        // Only accumulate stability while actively detecting this pose.
+        if (_phase == 'detecting' && ready) {
+          _stableFrames++;
         } else {
-          hint = 'Hold still…';
+          _stableFrames = 0;
         }
+      });
 
-        setState(() {
-          _faceDetected = ready;
-          _detectedOrientation = faces == 1 ? _describeOrientation(yaw, noseRel) : '';
-          _status = hint;
-          // Only accumulate stability while actively detecting this pose.
-          if (_phase == 'detecting' && ready) {
-            _stableFrames++;
-          } else {
-            _stableFrames = 0;
-          }
-        });
-
-        if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
-          _captureFrame();
-        }
+      if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
+        _captureFrame();
+      }
     }).catchError((err) {
       print('[EnrollmentDetection] Detection error: $err');
     });
@@ -748,477 +772,3 @@ class _EnrollmentFormModal extends ConsumerStatefulWidget {
   final List<Uint8List> capturedFrames;
 
   const _EnrollmentFormModal({required this.capturedFrames});
-
-  @override
-  ConsumerState<_EnrollmentFormModal> createState() => _EnrollmentFormModalState();
-}
-
-class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtr = TextEditingController();
-  final _phoneCtr = TextEditingController();
-  final _roleCtr = TextEditingController();
-  String _personType = 'Employee';
-  bool _consent = false;
-  bool _enrolling = false;
-  // Optional desk/location pose captured from the robot's current SLAM position,
-  // saved with the staff row so Timo can later navigate to this person's desk (#71).
-  Map<String, double>? _deskPose;
-  bool _capturingDesk = false;
-
-  @override
-  void dispose() {
-    _nameCtr.dispose();
-    _phoneCtr.dispose();
-    _roleCtr.dispose();
-    super.dispose();
-  }
-
-  /// Capture the robot's live SLAM pose as this person's desk location. The robot
-  /// must be parked at the desk (drive it there first). Optional — skip to enroll
-  /// without a location.
-  Future<void> _captureDesk() async {
-    setState(() => _capturingDesk = true);
-    try {
-      final pose = await ref.read(spineProvider.notifier).getPosition();
-      if (!mounted) return;
-      if (pose == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not read robot position (offline or timed out)'),
-          backgroundColor: Colors.red,
-        ));
-      } else {
-        setState(() => _deskPose = pose);
-      }
-    } finally {
-      if (mounted) setState(() => _capturingDesk = false);
-    }
-  }
-
-  Future<void> _submitEnrollment() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _enrolling = true);
-
-    final notifier = ref.read(enrollmentProvider.notifier);
-    // (Duplicate detection runs live during pose capture, not here.)
-    final consentRef = 'consent-${DateTime.now().toIso8601String()}';
-    int successCount = 0;
-    int failureCount = 0;
-
-    // Upload each captured frame (from each pose)
-    for (int i = 0; i < widget.capturedFrames.length; i++) {
-      try {
-        final result = await notifier.enrollOnePhoto(
-          fullName: _nameCtr.text,
-          role: _roleCtr.text,
-          notifyChannel: '',
-          consentRef: '$consentRef-pose-$i',
-          imageBytes: widget.capturedFrames[i],
-          phone: _phoneCtr.text,
-          personType: _personType,
-          deskPose: i == 0 ? _deskPose : null, // send once; spine writes it to the staff row
-        );
-
-        if (result.ok) {
-          successCount++;
-        } else {
-          failureCount++;
-          if (mounted) {
-            print('Frame $i error: ${result.reason}');
-          }
-        }
-      } catch (err) {
-        failureCount++;
-        if (mounted) {
-          print('Frame $i exception: $err');
-        }
-      }
-    }
-
-    setState(() => _enrolling = false);
-
-    if (mounted) {
-      if (successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ ${_nameCtr.text} enrolled! ($successCount/${widget.capturedFrames.length} poses)'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Enrollment failed ($failureCount poses)'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 500,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: MikeeColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Enroll Staff Member',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              // Captured frames preview grid
-              Text(
-                'Captured ${widget.capturedFrames.length} poses:',
-                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 100,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: widget.capturedFrames.length,
-                  itemBuilder: (ctx, idx) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Container(
-                      width: 100,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: MikeeColors.border),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Stack(
-                        children: [
-                          Image.memory(
-                            widget.capturedFrames[idx],
-                            fit: BoxFit.cover,
-                          ),
-                          Positioned(
-                            bottom: 4,
-                            left: 4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                const ['Front', 'Left', 'Right', 'Up', 'Down'][idx],
-                                style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Form fields
-              TextFormField(
-                controller: _nameCtr,
-                decoration: InputDecoration(
-                  labelText: 'Full Name *',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _phoneCtr,
-                decoration: InputDecoration(
-                  labelText: 'Phone',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _personType,
-                decoration: InputDecoration(
-                  labelText: 'Person Type *',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'Employee', child: Text('Employee')),
-                  DropdownMenuItem(value: 'Staff', child: Text('Staff')),
-                ]
-                    .map((item) => DropdownMenuItem(value: item.value, child: item.child))
-                    .toList(),
-                onChanged: (v) => setState(() => _personType = v ?? 'Employee'),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _roleCtr,
-                decoration: InputDecoration(
-                  labelText: 'Role',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Desk location (optional) — capture the robot's current SLAM pose so
-              // Timo can navigate to this person's desk later. Park the robot at the
-              // desk first. Skip to enroll without a location.
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: MikeeColors.border),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(children: [
-                  Icon(
-                    _deskPose != null ? Icons.place : Icons.place_outlined,
-                    size: 20,
-                    color: _deskPose != null ? MikeeColors.success : MikeeColors.textSecondary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Desk location (optional)',
-                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-                        Text(
-                          _deskPose != null
-                              ? 'Captured: x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
-                              : 'Park the robot at the desk, then capture.',
-                          style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_deskPose != null)
-                    IconButton(
-                      tooltip: 'Clear',
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: _capturingDesk ? null : () => setState(() => _deskPose = null),
-                    ),
-                  TextButton.icon(
-                    onPressed: _capturingDesk ? null : _captureDesk,
-                    icon: _capturingDesk
-                        ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.my_location, size: 16),
-                    label: Text(_deskPose != null ? 'Recapture' : 'Capture'),
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 24),
-              // Consent checkbox
-              CheckboxListTile(
-                value: _consent,
-                onChanged: (v) => setState(() => _consent = v ?? false),
-                title: const Text('I consent to enroll my face for identification'),
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
-              const SizedBox(height: 24),
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _consent && _formKey.currentState?.validate() == true && !_enrolling
-                          ? _submitEnrollment
-                          : null,
-                      child: _enrolling
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Enroll'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: MikeeColors.cardTop,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Visitor self-check-in card — "who are you here to see?" → POST /visit.
-class _VisitorCheckInCard extends ConsumerStatefulWidget {
-  const _VisitorCheckInCard();
-  @override
-  ConsumerState<_VisitorCheckInCard> createState() => _VisitorCheckInCardState();
-}
-
-class _VisitorCheckInCardState extends ConsumerState<_VisitorCheckInCard> {
-  final _nameCtr = TextEditingController();
-  String? _hostId;
-  bool _sending = false;
-
-  @override
-  void dispose() {
-    _nameCtr.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final name = _nameCtr.text.trim();
-    if (name.isEmpty || _hostId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter your name and pick who you are visiting')),
-      );
-      return;
-    }
-    setState(() => _sending = true);
-    try {
-      final token = Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
-      final res = await http
-          .post(
-            Uri.parse('http://localhost:4000/visit'),
-            headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-            body: jsonEncode({'visitor_name': name, 'host_staff_id': _hostId}),
-          )
-          .timeout(const Duration(seconds: 15));
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (!mounted) return;
-      if (data['ok'] == true) {
-        final hostName = (data['host']?['full_name'] as String?) ?? 'the host';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Notification sent to $hostName'), backgroundColor: Colors.green),
-        );
-        setState(() {
-          _nameCtr.clear();
-          _hostId = null;
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Check-in failed: ${data['reason'] ?? 'unknown error'}')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Check-in error: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final staffAsync = ref.watch(staffListProvider);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      decoration: BoxDecoration(
-        color: MikeeColors.surface,
-        border: Border.all(color: MikeeColors.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          leading: const Icon(Icons.how_to_reg, color: MikeeColors.primary),
-          title: Text('Visitor check-in',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-          subtitle: Text('Who are you here to see?',
-              style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            TextField(
-              controller: _nameCtr,
-              decoration: InputDecoration(
-                labelText: 'Your name',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            staffAsync.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('Could not load staff: $e',
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-              data: (staff) => DropdownButtonFormField<String>(
-                value: _hostId,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: 'Host (who you are visiting)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                items: staff
-                    .map((s) => DropdownMenuItem(value: s.id, child: Text(s.fullName)))
-                    .toList(),
-                onChanged: (v) => setState(() => _hostId = v),
-              ),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _sending ? null : _submit,
-                icon: _sending
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.notifications_active),
-                label: Text(_sending ? 'Sending…' : 'Notify host'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Dismissible banner shown when a visitor_arrived event arrives over the WS.
-class _VisitorArrivalBanner extends ConsumerWidget {
-  const _VisitorArrivalBanner();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final v = ref.watch(visitorArrivedProvider);
-    if (v == null) return const SizedBox.shrink();
-    return Material(
-      color: MikeeColors.primary.withOpacity(0.12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            const Icon(Icons.how_to_reg, color: MikeeColors.primary, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '👋 ${v.visitorName} is here to see ${v.hostName} · notified via ${v.channel}',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: () => ref.read(visitorArrivedProvider.notifier).clear(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
