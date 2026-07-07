@@ -24,9 +24,9 @@ class Snapshot {
 
   factory Snapshot.fromJson(Map<String, dynamic> j) => Snapshot(
         id: j['id'] as String,
-        takenAt: j['taken_at'] != null ? DateTime.tryParse(j['taken_at'] as String)?.toLocal() : null,
-        actor: j['actor'] as String?,
-        imageUrl: j['image_url'] as String?,
+        takenAt: j['taken_at'] is String ? DateTime.tryParse(j['taken_at'] as String)?.toLocal() : null,
+        actor: j['actor'] is String ? j['actor'] as String : null,
+        imageUrl: j['image_url'] is String ? j['image_url'] as String : null,
       );
 }
 

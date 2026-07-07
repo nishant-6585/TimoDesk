@@ -32,6 +32,7 @@ class LiveFeedScreen extends ConsumerStatefulWidget {
 class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   bool _enrollmentMode = false;
   bool _streaming = false;
+  bool _processing = false;
   // Default to this device's webcam in the browser so the person, the camera,
   // and the on-screen guidance are all in one place.
   _EnrollSource _enrollSource = _EnrollSource.device;
@@ -71,7 +72,12 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
     }
     // Enrollment over the robot stream reads frames back for face-api, so it
     // needs crossOrigin; plain viewing must not set it (breaks MJPEG render).
-    if (_streaming) return MjpegView(url: url, crossOrigin: _enrollmentMode && _enrollSource == _EnrollSource.robot);
+    if (_streaming) {
+      return MjpegView(
+        url: url,
+        crossOrigin: _enrollmentMode && _enrollSource == _EnrollSource.robot,
+      );
+    }
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -89,6 +95,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 
   void _onFramesCaptured(List<Uint8List> frames) {
+    if (_processing) return;
     setState(() => _enrollmentMode = false);
     _showEnrollmentForm(frames);
   }
@@ -136,12 +143,15 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   }
 
   void _showEnrollmentForm(List<Uint8List> capturedFrames) {
+    setState(() => _processing = true);
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
         child: _EnrollmentFormModal(capturedFrames: capturedFrames),
       ),
-    );
+    ).then((_) {
+      if (mounted) setState(() => _processing = false);
+    });
   }
 
   @override
@@ -180,96 +190,97 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
           const _VisitorArrivalBanner(),
           Expanded(
             child: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
-          decoration: BoxDecoration(
-            color: Colors.black,
-            border: Border.all(color: MikeeColors.border),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Stack(
-            children: [
-              // Live camera feed
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Column(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 700),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Stack(
                   children: [
-                    // Header
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      color: Colors.black87,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Live camera feed
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Column(
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                          // Header
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            color: Colors.black87,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _streaming ? 'LIVE' : 'OFFLINE',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _streaming ? 'LIVE' : 'OFFLINE',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: _streaming ? MikeeColors.error : MikeeColors.textMuted,
+                                // Camera-source toggle (enrollment only).
+                                if (_enrollmentMode)
+                                  _SourceToggle(
+                                    source: _enrollSource,
+                                    onChanged: (s) => setState(() {
+                                      _enrollSource = s;
+                                      if (s == _EnrollSource.robot) _streaming = true;
+                                    }),
+                                  ),
+                                InkWell(
+                                  onTap: () => setState(() => _streaming = !_streaming),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4),
+                                    child: Icon(
+                                      _streaming ? Icons.stop_circle : Icons.play_circle,
+                                      size: 24,
+                                      color: _streaming ? MikeeColors.error : MikeeColors.primary,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          // Camera-source toggle (enrollment only).
-                          if (_enrollmentMode)
-                            _SourceToggle(
-                              source: _enrollSource,
-                              onChanged: (s) => setState(() {
-                                _enrollSource = s;
-                                if (s == _EnrollSource.robot) _streaming = true;
-                              }),
-                            ),
-                          InkWell(
-                            onTap: () => setState(() => _streaming = !_streaming),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                _streaming ? Icons.stop_circle : Icons.play_circle,
-                                size: 24,
-                                color: _streaming ? MikeeColors.error : MikeeColors.primary,
-                              ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    // Camera view
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          _buildCameraLayer(url),
-                          // Enrollment detection overlay — target the webcam <video>
-                          // (device) or the MJPEG <img> (robot).
-                          if (_overlayActive)
-                            _EnrollmentDetectionOverlay(
-                              elementSelector: _enrollSource == _EnrollSource.device
-                                  ? '#$kEnrollWebcamId'
-                                  : 'img[src*="$url"]',
-                              onFramesCaptured: _onFramesCaptured,
-                              onCheckDuplicate: _checkDuplicateDuringCapture,
-                              onAbort: () => setState(() => _enrollmentMode = false),
+                          // Camera view
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                _buildCameraLayer(url),
+                                // Enrollment detection overlay — target the webcam <video>
+                                // (device) or the MJPEG <img> (robot).
+                                // Web-only guard to prevent widget instantiation on native.
+                                if (kIsWeb && _overlayActive)
+                                  _EnrollmentDetectionOverlay(
+                                    elementSelector: _enrollSource == _EnrollSource.device
+                                        ? '#$kEnrollWebcamId'
+                                        : 'img[src*="$url"]',
+                                    onFramesCaptured: _onFramesCaptured,
+                                    onCheckDuplicate: _checkDuplicateDuringCapture,
+                                    onAbort: () => setState(() => _enrollmentMode = false),
+                                  ),
+                              ],
                             ),
+                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
             ),
           ),
           // Visitor self-check-in → notify host (#70).
@@ -506,52 +517,52 @@ class _EnrollmentDetectionOverlayState extends State<_EnrollmentDetectionOverlay
     // Works for both <img> (MJPEG) and <video> (webcam). The dart:js detail lives
     // behind the web_face_api seam — this screen stays native-compilable.
     faceApiDetect(widget.elementSelector).then((r) {
-        if (!mounted) return;
+      if (!mounted) return;
 
-        final faces = r['faces'] as int? ?? 0;
-        final faceH = r['faceHeight'] as double? ?? 0.0;
-        final cx = r['centerX'] as double? ?? 0.0;
-        final cy = r['centerY'] as double? ?? 0.0;
-        final yaw = r['yaw'] as double? ?? 0.0;
-        final noseRel = r['noseRel'] as double? ?? 0.0;
+      final faces = r['faces'] as int? ?? 0;
+      final faceH = r['faceHeight'] as double? ?? 0.0;
+      final cx = r['centerX'] as double? ?? 0.0;
+      final cy = r['centerY'] as double? ?? 0.0;
+      final yaw = r['yaw'] as double? ?? 0.0;
+      final noseRel = r['noseRel'] as double? ?? 0.0;
 
-        // Geometry gates shared by all poses.
-        final sized = faceH >= _minFaceHeight && faceH <= _maxFaceHeight;
-        final centered = cx > 0.25 && cx < 0.75 && cy > 0.2 && cy < 0.8;
-        final orientationOk = _poseOrientationMatches(_currentPose.name, yaw, noseRel);
-        final ready = faces == 1 && sized && centered && orientationOk;
+      // Geometry gates shared by all poses.
+      final sized = faceH >= _minFaceHeight && faceH <= _maxFaceHeight;
+      final centered = cx > 0.25 && cx < 0.75 && cy > 0.2 && cy < 0.8;
+      final orientationOk = _poseOrientationMatches(_currentPose.name, yaw, noseRel);
+      final ready = faces == 1 && sized && centered && orientationOk;
 
-        // Build the live hint.
-        String hint;
-        if (faces == 0) {
-          hint = 'No face detected';
-        } else if (faces > 1) {
-          hint = 'Only one face allowed';
-        } else if (!sized) {
-          hint = faceH < _minFaceHeight ? 'Move closer' : 'Move back';
-        } else if (!centered) {
-          hint = 'Center your face';
-        } else if (!orientationOk) {
-          hint = _currentPose.instruction;
+      // Build the live hint.
+      String hint;
+      if (faces == 0) {
+        hint = 'No face detected';
+      } else if (faces > 1) {
+        hint = 'Only one face allowed';
+      } else if (!sized) {
+        hint = faceH < _minFaceHeight ? 'Move closer' : 'Move back';
+      } else if (!centered) {
+        hint = 'Center your face';
+      } else if (!orientationOk) {
+        hint = _currentPose.instruction;
+      } else {
+        hint = 'Hold still…';
+      }
+
+      setState(() {
+        _faceDetected = ready;
+        _detectedOrientation = faces == 1 ? _describeOrientation(yaw, noseRel) : '';
+        _status = hint;
+        // Only accumulate stability while actively detecting this pose.
+        if (_phase == 'detecting' && ready) {
+          _stableFrames++;
         } else {
-          hint = 'Hold still…';
+          _stableFrames = 0;
         }
+      });
 
-        setState(() {
-          _faceDetected = ready;
-          _detectedOrientation = faces == 1 ? _describeOrientation(yaw, noseRel) : '';
-          _status = hint;
-          // Only accumulate stability while actively detecting this pose.
-          if (_phase == 'detecting' && ready) {
-            _stableFrames++;
-          } else {
-            _stableFrames = 0;
-          }
-        });
-
-        if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
-          _captureFrame();
-        }
+      if (_phase == 'detecting' && ready && _stableFrames >= _stabilityThreshold) {
+        _captureFrame();
+      }
     }).catchError((err) {
       print('[EnrollmentDetection] Detection error: $err');
     });

@@ -199,7 +199,7 @@ class _SnapshotTile extends StatelessWidget {
               const SizedBox(width: 3),
               Expanded(
                 child: Text(
-                  snapshot.actor ?? 'autonomous',
+                  snapshot.actor ?? '[system-captured]',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
