@@ -24,16 +24,39 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
   /// a legitimate enrollment.
   Future<FaceCheckResult> checkFace(List<int> imageBytes) async {
     try {
+      if (imageBytes.isEmpty) {
+        return FaceCheckResult(match: false);
+      }
+
       final session = Supabase.instance.client.auth.currentSession;
-      final token = session?.accessToken ?? 'test-token';
+      final token = session?.accessToken ?? (throw Exception('Not authenticated'));
+
+      String imageBase64;
+      try {
+        imageBase64 = base64Encode(imageBytes);
+      } on FormatException catch (e) {
+        throw Exception('Failed to encode image: $e');
+      }
+
       final response = await http
           .post(
             Uri.parse('http://localhost:4000/check-face'),
             headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-            body: jsonEncode({'image_base64': base64Encode(imageBytes)}),
+            body: jsonEncode({'image_base64': imageBase64}),
           )
           .timeout(const Duration(seconds: 20));
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (e) {
+        throw Exception('Invalid JSON: $e');
+      }
+
       if (data['ok'] != true) return FaceCheckResult(match: false);
       return FaceCheckResult(
         match: data['match'] == true,
@@ -56,12 +79,21 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
     bool setThumbnail = false, // True → use this photo as the gallery thumbnail
     Map<String, dynamic>? deskPose, // Optional {x,y,z,rotation} — the person's desk (#71)
   }) async {
-    // Get JWT token from Supabase session (or use empty for testing)
+    // Get JWT token from Supabase session
     final session = Supabase.instance.client.auth.currentSession;
-    final token = session?.accessToken ?? 'test-token'; // Use test token if no session
+    final token = session?.accessToken ?? (throw Exception('Not authenticated'));
 
-    // Base64 encode image
-    final imageBase64 = base64Encode(imageBytes);
+    // Validate and encode image
+    if (imageBytes.isEmpty) {
+      throw Exception('Image bytes cannot be empty');
+    }
+
+    String imageBase64;
+    try {
+      imageBase64 = base64Encode(imageBytes);
+    } on FormatException catch (e) {
+      throw Exception('Failed to encode image: $e');
+    }
 
     // POST to Spine /enroll endpoint (one photo at a time)
     final spineUrl = 'http://localhost:4000/enroll';
@@ -85,15 +117,25 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
       }),
     ).timeout(const Duration(seconds: 30));
 
+    // Check HTTP status
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('HTTP ${response.statusCode}');
+    }
+
     // Parse response
-    final responseData = jsonDecode(response.body);
+    Map<String, dynamic> responseData;
+    try {
+      responseData = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('Invalid JSON: $e');
+    }
 
     final result = EnrollmentResponse(
-      ok: responseData['ok'] ?? false,
-      staffId: responseData['staff_id'],
-      embeddingId: responseData['embeddingId'],
-      facesFound: responseData['facesFound'],
-      reason: responseData['reason'],
+      ok: responseData['ok'] as bool? ?? false,
+      staffId: responseData['staff_id'] as String?,
+      embeddingId: responseData['embeddingId'] as String?,
+      facesFound: responseData['facesFound'] as int?,
+      reason: responseData['reason'] as String?,
     );
 
     return result;

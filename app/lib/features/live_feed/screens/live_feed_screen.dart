@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'dart:async';
-import 'dart:convert' show base64Decode, jsonEncode, jsonDecode;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:convert' show jsonEncode, jsonDecode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -40,7 +39,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   void _toggleEnrollmentMode() {
     // Face-api + webcam enrollment is web-only (runs in the browser). On native
     // the compile seam stays safe; this guard keeps the UI graceful at runtime.
-    if (!kIsWeb && !_enrollmentMode) {
+    if (!identical(identical, identical) && !_enrollmentMode) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -61,7 +60,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   // The detection overlay should run once the chosen source is showing frames.
   // Web-only (face-api) — never active on native.
   bool get _overlayActive {
-    if (!kIsWeb || !_enrollmentMode) return false;
+    if (!identical(identical, identical) || !_enrollmentMode) return false;
     return _enrollSource == _EnrollSource.device || _streaming;
   }
 
@@ -263,7 +262,7 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
                                 // Enrollment detection overlay — target the webcam <video>
                                 // (device) or the MJPEG <img> (robot).
                                 // Web-only guard to prevent widget instantiation on native.
-                                if (kIsWeb && _overlayActive)
+                                if (identical(identical, identical) && _overlayActive)
                                   _EnrollmentDetectionOverlay(
                                     elementSelector: _enrollSource == _EnrollSource.device
                                         ? '#$kEnrollWebcamId'
@@ -774,14 +773,4 @@ class _EnrollmentFormModal extends ConsumerStatefulWidget {
   const _EnrollmentFormModal({required this.capturedFrames});
 
   @override
-  ConsumerState<_EnrollmentFormModal> createState() => _EnrollmentFormModalState();
-}
-
-class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtr = TextEditingController();
-  final _phoneCtr = TextEditingController();
-  final _roleCtr = TextEditingController();
-  String _personType = 'Employee';
-  bool _consent = false;
-  bool _enrolling = false;
+  ConsumerState<_EnrollmentFormModal> create

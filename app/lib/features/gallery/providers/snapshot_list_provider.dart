@@ -9,7 +9,7 @@ const String _spineBase = 'http://localhost:4000';
 
 String _authToken() {
   final token = Supabase.instance.client.auth.currentSession?.accessToken;
-  if (token == null) throw Exception('Not authenticated');
+  if (token == null) throw Exception('Authentication required');
   return token;
 }
 
@@ -41,10 +41,21 @@ final snapshotListProvider = FutureProvider.autoDispose<List<Snapshot>>((ref) as
     throw Exception('HTTP ${res.statusCode}: ${res.body}');
   }
   
-  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.body.isEmpty) {
+    throw Exception('Empty response body');
+  }
+  
+  late final Map<String, dynamic> data;
+  try {
+    data = jsonDecode(res.body) as Map<String, dynamic>;
+  } on FormatException {
+    throw Exception('Invalid JSON response');
+  }
+  
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'Failed to load snapshots');
   
   final captures = data['captures'];
+  if (captures == null) throw Exception('Missing captures data');
   if (captures is! List) throw Exception('invalid captures');
   
   return captures.map((e) => Snapshot.fromJson(e as Map<String, dynamic>)).toList();

@@ -151,18 +151,34 @@ class _GalleryTabState extends State<_GalleryTab> with AutomaticKeepAliveClientM
             headers: {'Authorization': 'Bearer ${RobotConfig.authToken}'},
           )
           .timeout(const Duration(seconds: 10));
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['ok'] == true) {
-        final list = (data['staff'] as List)
-            .map((e) => _StaffMember.fromJson(e as Map<String, dynamic>))
-            .toList();
+      
+      if (res.statusCode < 200 || res.statusCode >= 300) {
         setState(() {
-          _staff = list;
+          _error = 'Server error: ${res.statusCode}';
           _loading = false;
         });
-      } else {
+        return;
+      }
+
+      try {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if (data['ok'] == true) {
+          final list = (data['staff'] as List)
+              .map((e) => _StaffMember.fromJson(e as Map<String, dynamic>))
+              .toList();
+          setState(() {
+            _staff = list;
+            _loading = false;
+          });
+        } else {
+          setState(() {
+            _error = data['reason'] as String? ?? 'Server error';
+            _loading = false;
+          });
+        }
+      } catch (e) {
         setState(() {
-          _error = data['reason'] as String? ?? 'Server error';
+          _error = 'Invalid JSON response';
           _loading = false;
         });
       }
@@ -203,7 +219,24 @@ class _GalleryTabState extends State<_GalleryTab> with AutomaticKeepAliveClientM
         Uri.parse('${RobotConfig.spineBaseUrl}/staff/${Uri.encodeComponent(s.id)}'),
         headers: {'Authorization': 'Bearer ${RobotConfig.authToken}'},
       ).timeout(const Duration(seconds: 10));
-      final ok = (jsonDecode(res.body) as Map<String, dynamic>)['ok'] == true;
+      
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Delete failed: ${res.statusCode}'), backgroundColor: Colors.redAccent),
+          );
+        }
+        return;
+      }
+
+      bool ok = false;
+      try {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        ok = data['ok'] == true;
+      } catch (e) {
+        ok = false;
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(ok ? '${s.fullName} removed' : 'Delete failed'),
@@ -784,359 +817,5 @@ class _RegisterTabState extends ConsumerState<_RegisterTab> with AutomaticKeepAl
               }),
             )
             .timeout(const Duration(seconds: 30));
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        if (data['ok'] == true) ok++;
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    setState(() {
-      _phase = 'done';
-      _doneError = ok == 0 ? 'Enrollment failed — could not reach spine.' : null;
-      _uploadMsg = 'Saved $ok of ${_frames.length} poses';
-    });
-  }
-
-  Future<void> _enrollSdk() async {
-    setState(() {
-      _sdkEnrolling = true;
-      _sdkResult = null;
-    });
-    final ok = await FaceEnroll.saveFace(_nameCtr.text.trim());
-    if (!mounted) return;
-    setState(() {
-      _sdkEnrolling = false;
-      _sdkResult = ok
-          ? 'Registered with Mikee ✓ — will be greeted by name'
-          : 'Robot not reachable — try again while on the robot';
-    });
-  }
-
-  void _reset() {
-    setState(() {
-      _phase = 'form';
-      _sdkResult = null;
-      _sdkEnrolling = false;
-      _nameCtr.clear();
-      _phoneCtr.clear();
-      _personType = 'Employee';
-      _consent = false;
-      _frames.clear();
-    });
-  }
-
-  // ── UI ───────────────────────────────────────────────────────────────────
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return switch (_phase) {
-      'form' => _buildForm(),
-      'capture' => _buildCapture(),
-      'uploading' => _buildUploading(),
-      _ => _buildDone(),
-    };
-  }
-
-  InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: _panel2,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      );
-
-  Widget _buildForm() {
-    final canStart = _nameCtr.text.trim().isNotEmpty && _consent;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Text('Enter details, then capture 5 quick poses.',
-            style: TextStyle(color: Colors.white70)),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _nameCtr,
-          style: const TextStyle(fontSize: 18),
-          textCapitalization: TextCapitalization.words,
-          decoration: _dec('Full name *'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _phoneCtr,
-          keyboardType: TextInputType.phone,
-          style: const TextStyle(fontSize: 18),
-          decoration: _dec('Phone'),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          initialValue: _personType,
-          dropdownColor: _panel2,
-          decoration: _dec('Person type'),
-          items: const [
-            DropdownMenuItem(value: 'Employee', child: Text('Employee')),
-            DropdownMenuItem(value: 'Staff', child: Text('Staff')),
-          ],
-          onChanged: (v) => setState(() => _personType = v ?? 'Employee'),
-        ),
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          value: _consent,
-          activeColor: _orange,
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('I consent to enroll my face for identification'),
-          onChanged: (v) => setState(() => _consent = v ?? false),
-        ),
-        const SizedBox(height: 12),
-        // Desk location (optional) — capture the robot's SLAM pose so Timo can
-        // navigate to this person's desk later. Park the robot at the desk first.
-        Container(
-          decoration: BoxDecoration(
-            color: _panel2,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white12),
-          ),
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Row(children: [
-            Icon(_deskPose != null ? Icons.place : Icons.place_outlined,
-                color: _deskPose != null ? _orange : Colors.white38),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Desk location (optional)',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                Text(
-                  _deskPose != null
-                      ? 'Captured: x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
-                      : 'Park the robot at the desk, then capture.',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ]),
-            ),
-            if (_deskPose != null)
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: Colors.white54),
-                onPressed: _capturingDesk ? null : () => setState(() => _deskPose = null),
-              ),
-            TextButton.icon(
-              onPressed: _capturingDesk ? null : _captureDesk,
-              icon: _capturingDesk
-                  ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.my_location, size: 16, color: _orange),
-              label: Text(_deskPose != null ? 'Recapture' : 'Capture',
-                  style: const TextStyle(color: _orange)),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: canStart ? _startCapture : null,
-          icon: const Icon(Icons.camera_alt_rounded),
-          label: const Text('START FACE CAPTURE',
-              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-          style: FilledButton.styleFrom(
-            backgroundColor: _orange,
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            textStyle: const TextStyle(fontSize: 16),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _buildCapture() {
-    final border = _capPhase == 'captured' || _faceReady ? _green : _orange;
-    return Column(children: [
-      Expanded(
-        child: Container(
-          margin: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.black,
-            border: Border.all(color: border, width: 3),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(fit: StackFit.expand, children: [
-              if (_latestFrame != null)
-                Image.memory(_latestFrame!, fit: BoxFit.cover, gaplessPlayback: true)
-              else
-                const Center(child: CircularProgressIndicator()),
-              Container(color: Colors.black.withValues(alpha: 0.2)),
-              Center(child: _captureCenter()),
-            ]),
-          ),
-        ),
-      ),
-    ]);
-  }
-
-  Widget _captureCenter() {
-    if (_capPhase == 'getReady') {
-      return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text('Step ${_poseIndex + 1} of ${_posePlan.length}',
-            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        const SizedBox(height: 8),
-        Text(_pose.name.toUpperCase(),
-            style: const TextStyle(
-                color: _orange, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1)),
-        const SizedBox(height: 12),
-        Text(_pose.instruction,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 20),
-        CircleAvatar(
-          radius: 34,
-          backgroundColor: Colors.black45,
-          child: Text('$_getReadyLeft',
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold)),
-        ),
-      ]);
-    }
-    if (_capPhase == 'checking') {
-      return const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        SizedBox(width: 48, height: 48, child: CircularProgressIndicator()),
-        SizedBox(height: 16),
-        Text('Checking if already enrolled…',
-            style: TextStyle(
-                color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-      ]);
-    }
-    if (_capPhase == 'captured') {
-      return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const Icon(Icons.check_circle, size: 80, color: _green),
-        const SizedBox(height: 12),
-        Text('Captured ${_pose.name}',
-            style: const TextStyle(
-                color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-      ]);
-    }
-    return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text('Step ${_poseIndex + 1} of ${_posePlan.length}',
-          style: const TextStyle(color: Colors.white70, fontSize: 14)),
-      const SizedBox(height: 8),
-      Text(_pose.instruction,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 16),
-      Icon(_faceReady ? Icons.check_circle : Icons.face,
-          size: 72, color: _faceReady ? _green : _orange),
-      const SizedBox(height: 14),
-      Text(_hint,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-      if (_faceReady) ...[
-        const SizedBox(height: 10),
-        SizedBox(
-          width: 160,
-          child: LinearProgressIndicator(
-            value: (_stable / _stableNeeded).clamp(0.0, 1.0),
-            backgroundColor: Colors.white24,
-            valueColor: const AlwaysStoppedAnimation(_green),
-          ),
-        ),
-      ],
-    ]);
-  }
-
-  Widget _buildUploading() => Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const CircularProgressIndicator(color: _orange),
-          const SizedBox(height: 20),
-          Text(_uploadMsg,
-              style: const TextStyle(color: Colors.white, fontSize: 16)),
-        ]),
-      );
-
-  Widget _buildDone() {
-    final ok = _doneError == null;
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(ok ? Icons.check_circle : Icons.error,
-              size: 96, color: ok ? _green : Colors.redAccent),
-          const SizedBox(height: 20),
-          Text(ok ? 'Enrolled!' : 'Enrollment failed',
-              style: const TextStyle(
-                  color: _ink, fontSize: 24, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(_doneError ?? '${_nameCtr.text} · $_uploadMsg',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70)),
-
-          if (ok) ...[
-            const SizedBox(height: 24),
-            const Divider(color: Color(0xFF262626)),
-            const SizedBox(height: 16),
-            const Text('Register with Mikee Robot',
-                style: TextStyle(
-                    color: _ink, fontSize: 15, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            const Text(
-              'Stay in front of the robot camera and tap below.\nMikee will capture and remember your face on-device for instant recognition.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _muted, fontSize: 12),
-            ),
-            const SizedBox(height: 14),
-            if (_sdkResult != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  _sdkResult!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _sdkResult!.contains('✓') ? _green : Colors.orangeAccent,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            FilledButton.icon(
-              onPressed:
-                  _sdkEnrolling || _sdkResult?.contains('✓') == true ? null : _enrollSdk,
-              icon: _sdkEnrolling
-                  ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : Icon(_sdkResult?.contains('✓') == true
-                      ? Icons.check_circle
-                      : Icons.face_retouching_natural),
-              label: Text(_sdkEnrolling
-                  ? 'Capturing…'
-                  : _sdkResult?.contains('✓') == true
-                      ? 'Registered with Mikee'
-                      : 'Register with Mikee Robot'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _indigo,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            OutlinedButton.icon(
-              onPressed: _reset,
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
-              label: const Text('Enroll Another'),
-            ),
-            const SizedBox(width: 12),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: FilledButton.styleFrom(
-                  backgroundColor: _orange,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 32, vertical: 14)),
-              child: const Text('DONE',
-                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-            ),
-          ]),
-        ]),
-      ),
-    );
-  }
-}
+        
+        if (
