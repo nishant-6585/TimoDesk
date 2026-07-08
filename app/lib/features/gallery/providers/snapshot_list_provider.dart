@@ -36,10 +36,16 @@ final snapshotListProvider = FutureProvider.autoDispose<List<Snapshot>>((ref) as
   final res = await http
       .get(Uri.parse('$_spineBase/captures'), headers: {'Authorization': 'Bearer ${_authToken()}'})
       .timeout(const Duration(seconds: 15));
-  if (res.statusCode != 200) throw Exception('Failed to load snapshots: HTTP ${res.statusCode}');
+  
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  }
+  
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'Failed to load snapshots');
+  
   final captures = data['captures'];
-  if (captures is! List) throw Exception('Invalid captures format');
+  if (captures is! List) throw Exception('invalid captures');
+  
   return captures.map((e) => Snapshot.fromJson(e as Map<String, dynamic>)).toList();
 });

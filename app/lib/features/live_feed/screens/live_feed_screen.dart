@@ -104,7 +104,8 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   /// If the face matches an enrolled person, asks the user whether to continue.
   Future<bool> _checkDuplicateDuringCapture(Uint8List firstFrame) async {
     try {
-      final check = await ref.read(enrollmentProvider.notifier).checkFace(firstFrame);
+      final check = await ref.read(enrollmentProvider.notifier).checkFace(firstFrame)
+          .timeout(const Duration(seconds: 10));
       if (!check.match || !mounted) return true; // new face → keep going
 
       final proceed = await showDialog<bool>(
@@ -127,18 +128,17 @@ class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
           ],
         ),
       );
-      return proceed == true;
-    } catch (err) {
-      print('[LiveFeedScreen] checkDuplicateDuringCapture error: $err');
+      return proceed ?? false;
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Error checking duplicate: please try again'),
+            content: Text('Duplicate check failed: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
-      return false; // abort on error
+      return true; // on error, continue enrollment to avoid blocking UX
     }
   }
 
@@ -772,3 +772,16 @@ class _EnrollmentFormModal extends ConsumerStatefulWidget {
   final List<Uint8List> capturedFrames;
 
   const _EnrollmentFormModal({required this.capturedFrames});
+
+  @override
+  ConsumerState<_EnrollmentFormModal> createState() => _EnrollmentFormModalState();
+}
+
+class _EnrollmentFormModalState extends ConsumerState<_EnrollmentFormModal> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtr = TextEditingController();
+  final _phoneCtr = TextEditingController();
+  final _roleCtr = TextEditingController();
+  String _personType = 'Employee';
+  bool _consent = false;
+  bool _enrolling = false;

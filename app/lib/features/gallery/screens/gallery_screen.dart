@@ -9,9 +9,7 @@ import '../providers/snapshot_list_provider.dart';
 /// robot camera) and enrolled staff faces. Both read the spine over HTTP and
 /// render private images via short-lived signed URLs.
 class GalleryScreen extends ConsumerWidget {
-  /// Optional capture id from the `/gallery/:captureId` deep-link (unused for now).
-  final String? captureId;
-  const GalleryScreen({Key? key, this.captureId}) : super(key: key);
+  const GalleryScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -179,9 +177,10 @@ class _SnapshotTile extends StatelessWidget {
               ? Image.network(
                   url,
                   fit: BoxFit.cover,
-                  cacheHeight: 400,
-                  cacheWidth: 400,
-                  errorBuilder: (_, __, ___) => placeholder,
+                  errorBuilder: (_, e, st) {
+                    debugPrint('Image error: $e');
+                    return placeholder;
+                  },
                 )
               : placeholder,
         ),
@@ -260,10 +259,10 @@ class _FaceTile extends StatelessWidget {
               ? Image.network(
                   url,
                   fit: BoxFit.cover,
-                  cacheHeight: 400,
-                  cacheWidth: 400,
-                  // Fall back to initials if the signed URL fails / expires.
-                  errorBuilder: (_, __, ___) => placeholder,
+                  errorBuilder: (_, e, st) {
+                    debugPrint('Image error: $e');
+                    return placeholder;
+                  },
                 )
               : placeholder,
         ),
