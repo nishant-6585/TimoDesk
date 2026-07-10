@@ -91,6 +91,7 @@ class ChassisState {
   final bool   isMoving;
   final double speed;
   final String direction;
+  final bool   isNaviReady; // SLAM map loaded + robot localized → go-to enabled
 
   const ChassisState({
     this.isRunning = false,
@@ -98,6 +99,7 @@ class ChassisState {
     this.isMoving = false,
     this.speed = 0.5,
     this.direction = 'none',
+    this.isNaviReady = false,
   });
 
   ChassisState copyWith({
@@ -106,13 +108,38 @@ class ChassisState {
     bool? isMoving,
     double? speed,
     String? direction,
+    bool? isNaviReady,
   }) => ChassisState(
     isRunning: isRunning ?? this.isRunning,
     clientCount: clientCount ?? this.clientCount,
     isMoving: isMoving ?? this.isMoving,
     speed: speed ?? this.speed,
     direction: direction ?? this.direction,
+    isNaviReady: isNaviReady ?? this.isNaviReady,
   );
+}
+
+/// A navigation lifecycle event forwarded from the native chassis plugin
+/// (OnNaviListener). [kind] is 'move_result' | 'cancel_result' |
+/// 'message_send_result' | 'go_home'; [data] is the raw SDK JSON payload.
+class NaviEvent {
+  final String kind;
+  final String data;
+  const NaviEvent(this.kind, this.data);
+
+  /// Heuristic: does this event signal the robot reached its destination?
+  /// The CSJBot `moveResult` payload shape is not fully documented — match a few
+  /// likely arrival markers. HARDWARE TODO: confirm the exact arrival JSON on the
+  /// real robot and tighten this (see device checklist).
+  bool get isArrival {
+    if (kind != 'move_result') return false;
+    final d = data.toLowerCase();
+    return d.contains('arriv') ||
+        d.contains('"status":1') ||
+        d.contains('"result":1') ||
+        d.contains('complete') ||
+        d.contains('success');
+  }
 }
 
 // ── Arm control state ──────────────────────────────────────────────────────
@@ -278,14 +305,29 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
 
   StreamSubscription? _sub;
 
+  // Navi lifecycle events (arrival/cancel/etc.) from the native OnNaviListener.
+  // Broadcast so the nav-points provider and any screen can listen independently.
+  final StreamController<NaviEvent> _naviEvents = StreamController<NaviEvent>.broadcast();
+  Stream<NaviEvent> get naviEvents => _naviEvents.stream;
+
   void _onEvent(dynamic raw) {
     final m = Map<String, dynamic>.from(raw as Map);
+    // Navi lifecycle events are tagged type:"navi" — route them to the stream
+    // rather than treating them as a status update.
+    if (m['type'] == 'navi') {
+      _naviEvents.add(NaviEvent(
+        (m['naviEvent'] as String?) ?? 'unknown',
+        (m['data'] as String?) ?? '{}',
+      ));
+      return;
+    }
     state = state.copyWith(
       isRunning: m['isRunning'] as bool?,
       clientCount: m['clientCount'] as int?,
       isMoving: m['isMoving'] as bool?,
       speed: (m['speed'] as num?)?.toDouble(),
       direction: m['direction'] as String?,
+      isNaviReady: m['isNaviReady'] as bool?,
     );
   }
 
@@ -392,11 +434,12 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
       isMoving: m['isMoving'] as bool?,
       speed: (m['speed'] as num?)?.toDouble(),
       direction: m['direction'] as String?,
+      isNaviReady: m['isNaviReady'] as bool?,
     );
   }
 
   @override
-  void dispose() { _sub?.cancel(); super.dispose(); }
+  void dispose() { _sub?.cancel(); _naviEvents.close(); super.dispose(); }
 }
 
 final chassisProvider =

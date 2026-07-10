@@ -65,6 +65,29 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         @Override public void cancelResult(String j) { Log.d(TAG, "startup cancelNavi result: " + j); }
         @Override public void goHome() {}
     };
+
+    // Navi callback for the on-robot "Go" (MethodChannel navi/cancelNavi). Forwards
+    // the SDK's navigation lifecycle to Dart over the chassis EventChannel so the
+    // nav-points screen can show progress, arrival, and errors — parity with the
+    // WebSocket/admin path (ClientHandler.naviCb). Previously the MethodChannel navi
+    // used the no-callback overload, so the robot's own Go button got zero feedback.
+    private final OnNaviListener methodNaviCb = new OnNaviListener() {
+        @Override public void moveResult(String j)        { emitNavi("move_result", j); }
+        @Override public void messageSendResult(String j) { emitNavi("message_send_result", j); }
+        @Override public void cancelResult(String j)      { emitNavi("cancel_result", j); }
+        @Override public void goHome()                    { emitNavi("go_home", "{}"); }
+    };
+
+    // Emit a navi lifecycle event to Dart. Tagged type:"navi" so the chassis
+    // event listener can route it separately from the periodic status maps.
+    private void emitNavi(String naviEvent, String dataJson) {
+        Log.d(TAG, "navi event: " + naviEvent + " → " + dataJson);
+        Map<String, Object> m = new HashMap<>();
+        m.put("type", "navi");
+        m.put("naviEvent", naviEvent);
+        m.put("data", dataJson != null ? dataJson : "{}");
+        emitEvent(m);
+    }
     private Set<ClientHandler> clients = new HashSet<>();
     private long lastCommandTime = 0;
     private EventChannel.EventSink eventSink;
@@ -136,7 +159,9 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     pt.put("y", ((Number) call.argument("y")).doubleValue());
                     pt.put("z", call.argument("z") != null ? ((Number) call.argument("z")).doubleValue() : 0);
                     pt.put("rotation", call.argument("rotation") != null ? ((Number) call.argument("rotation")).doubleValue() : 0);
-                    CsjRobot.getInstance().getAction().navi(pt.toString());
+                    // Use the callback overload so arrival/progress/errors flow back to
+                    // Dart via methodNaviCb → EventChannel (was the no-callback overload).
+                    CsjRobot.getInstance().getAction().navi(pt.toString(), methodNaviCb);
                     result.success(true);
                 } catch (Exception e) {
                     result.error("navi", e.getMessage(), null);
@@ -144,7 +169,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 break;
             case "cancelNavi":
                 try {
-                    CsjRobot.getInstance().getAction().cancelNavi(startupNaviCb);
+                    CsjRobot.getInstance().getAction().cancelNavi(methodNaviCb);
                     result.success(true);
                 } catch (Exception e) {
                     result.error("cancelNavi", e.getMessage(), null);
@@ -372,6 +397,11 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         m.put("isMoving", isMoving);
         m.put("speed", currentSpeed);
         m.put("direction", currentDirection);
+        // SLAM/navi readiness — true once setonRobotNaviStatesListener reports
+        // naviReady (a map is loaded and the robot is localized). Drives the
+        // "map ready / go enabled" indicator on the nav-points screen. On units
+        // with no map this stays false and go-to is gated in the UI.
+        m.put("isNaviReady", isChassisReady);
         return m;
     }
 
