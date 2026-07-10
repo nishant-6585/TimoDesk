@@ -50,6 +50,16 @@ jobs:
             ISSUE_COUNT=$(echo "$FILE_ISSUES" | jq 'length')
             echo "=== Fixing $file ($ISSUE_COUNT issues) ==="
 
+            # Guard: a full-file single-shot rewrite can't reliably reproduce a large
+            # file within the token budget — a truncated reply corrupts the file. Skip
+            # anything too big and leave it for a human. ~1100 lines ≈ the 8k-token wall
+            # that mangled enroll_screen.dart; 700 lines is a safe ceiling.
+            LINE_COUNT=$(wc -l < "$file")
+            if [ "$LINE_COUNT" -gt 700 ]; then
+              echo "Skipping $file — $LINE_COUNT lines exceeds safe single-shot limit (700)"
+              continue
+            fi
+
             ISSUE_LIST=$(echo "$FILE_ISSUES" | jq -r \
               '.[] | "- [" + .severity + "] Line " + (.line_number | tostring) + ": " + .message + "\n  Fix: " + (.suggestion // "apply best practice")')
 
@@ -67,7 +77,7 @@ jobs:
             } > /tmp/fix_prompt.txt
 
             jq -n --rawfile prompt /tmp/fix_prompt.txt \
-              '{model:"claude-haiku-4-5-20251001",max_tokens:8192,messages:[{role:"user",content:$prompt}]}' \
+              '{model:"claude-haiku-4-5-20251001",max_tokens:16384,messages:[{role:"user",content:$prompt}]}' \
               > /tmp/fix_request.json
 
             curl -s -X POST https://api.anthropic.com/v1/messages \
@@ -77,10 +87,27 @@ jobs:
               -d @/tmp/fix_request.json > /tmp/fix_response.json
 
             FIXED=$(jq -r '.content[0].text // ""' /tmp/fix_response.json)
+            STOP_REASON=$(jq -r '.stop_reason // ""' /tmp/fix_response.json)
 
             if [ -z "$FIXED" ]; then
               echo "No response for $file — skipping"
               jq '.error // "unknown"' /tmp/fix_response.json
+              continue
+            fi
+
+            # Guard: a max_tokens stop means the reply was cut off mid-file — writing it
+            # would truncate/corrupt the source. Never write a truncated rewrite.
+            if [ "$STOP_REASON" = "max_tokens" ]; then
+              echo "Skipping $file — model hit max_tokens (response truncated, would corrupt file)"
+              continue
+            fi
+
+            # Guard: reject a suspiciously short rewrite (>40% smaller than the original
+            # usually means the model dropped code rather than fixing it).
+            NEW_LINES=$(printf '%s\n' "$FIXED" | wc -l)
+            MIN_LINES=$(( LINE_COUNT * 60 / 100 ))
+            if [ "$NEW_LINES" -lt "$MIN_LINES" ]; then
+              echo "Skipping $file — rewrite shrank $LINE_COUNT → $NEW_LINES lines (>40% smaller; likely dropped code)"
               continue
             fi
 
