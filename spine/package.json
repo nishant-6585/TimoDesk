@@ -10,7 +10,9 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "secrets:pull": "sops -d --input-type dotenv --output-type dotenv .env.enc > .env && echo 'Decrypted .env.enc -> .env'",
+    "secrets:push": "sops -e --input-type dotenv --output-type dotenv .env > .env.enc && echo 'Encrypted .env -> .env.enc (commit it)'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",

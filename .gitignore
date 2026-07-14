@@ -1,11 +1,15 @@
-# Environment / secrets — never commit real .env files (repo-wide).
-# Templates (.env.example) stay committed so vars are documented.
+# Environment / secrets — never commit plaintext .env files (repo-wide).
 .env
 .env.*
 **/.env
 **/.env.*
+# Templates stay committed so vars are documented.
 !.env.example
 !**/.env.example
+# SOPS-encrypted secrets ARE committed (ciphertext, safe to share) and are
+# decrypted locally to .env via `npm run secrets:pull`. See SECRETS.md.
+!.env.enc
+!**/.env.enc
 
 # Miscellaneous
 *.class
