@@ -26,7 +26,7 @@ class VoiceLanguage {
 
   /// Spoken greeting phrase (fed to TTS). [name] localises the named greet.
   String greetSpeech([String? name]) =>
-      name == null ? '$hello! $welcome!' : '$hello $name! $welcome!';
+      name == null ? '$hello!' : '$hello $name! $welcome!';
 }
 
 /// The 8 languages Mikee supports (matches the ElevenLabs agent config).
