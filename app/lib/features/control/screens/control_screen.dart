@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -196,7 +197,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
 
     _headThrottleTimer?.cancel();
-    _headThrottleTimer = Timer(Duration(milliseconds: joystickThrottleMs), () {
+    _headThrottleTimer = Timer(joystickThrottleMs, () {
       if (mounted) {
         _isHeadThrottleActive = false;
       }

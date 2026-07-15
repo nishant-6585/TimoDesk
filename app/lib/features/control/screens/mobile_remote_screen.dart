@@ -238,7 +238,7 @@ class _CameraPanel extends ConsumerStatefulWidget {
 }
 
 class _CameraPanelState extends ConsumerState<_CameraPanel> {
-  late MjpegViewController _mjpegController;
+  final MjpegViewController _mjpegController = MjpegViewController();
 
   @override
   void dispose() {
@@ -257,7 +257,6 @@ class _CameraPanelState extends ConsumerState<_CameraPanel> {
         if (widget.streaming)
           MjpegView(
             url: widget.url,
-            onCreated: (controller) => _mjpegController = controller,
           )
         else
           Center(
