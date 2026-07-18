@@ -142,6 +142,10 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     pt.put("z", call.argument("z") != null ? ((Number) call.argument("z")).doubleValue() : 0);
                     pt.put("rotation", call.argument("rotation") != null ? ((Number) call.argument("rotation")).doubleValue() : 0);
                     naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
+                    // Autonomous nav needs mode 0 — in manual/teleop mode (1, set at
+                    // startup for the d-pad) the planner accepts move_to but fails it
+                    // instantly (action_status -1) and never drives.
+                    CsjRobot.getInstance().getAction().setNaviMode(0);
                     CsjRobot.getInstance().getAction().navi(pt.toString());
                     result.success(true);
                 } catch (Exception e) {
@@ -256,9 +260,17 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         if (now - lastCommandTime < RATE_LIMIT_MS) return;
         lastCommandTime = now;
 
-        // A manual teleop command overrides any autonomous navi — allow the
-        // naviReady listener to restore teleop mode (mode 1) again.
-        naviInProgress = false;
+        // A manual teleop command overrides any autonomous navi — restore teleop
+        // mode (1) immediately rather than waiting for the next naviReady NTF.
+        if (naviInProgress) {
+            naviInProgress = false;
+            try {
+                CsjRobot.getInstance().getAction().setNaviMode(1);
+                Log.d(TAG, "teleop after navi → setNaviMode(1) restored");
+            } catch (Exception e) {
+                Log.e(TAG, "setNaviMode(1) restore failed: " + e.getMessage());
+            }
+        }
 
         if (stopTimer != null) {
             stopTimer.cancel(false);
@@ -684,6 +696,8 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                         point.put("rotation", json.optDouble("rotation", 0));
                         Log.d(TAG, "navi to: " + point);
                         naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
+                        // Autonomous nav needs mode 0 (see MethodChannel navi case).
+                        CsjRobot.getInstance().getAction().setNaviMode(0);
                         CsjRobot.getInstance().getAction().navi(point.toString(), naviCb);
                     } catch (Exception e) {
                         naviInProgress = false;
