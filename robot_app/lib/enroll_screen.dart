@@ -26,31 +26,50 @@ const _indigo = Color(0xFF6366F1);
 class _StaffMember {
   final String id;
   final String fullName;
+  final String? phone;
   final String personType;
   final String? role;
   final bool active;
   final int embeddingCount;
   final String createdAt;
   final String? photoUrl;
+  // Desk/location SLAM pose (migration 013). Null = not captured.
+  final double? deskX;
+  final double? deskY;
+  final double? deskZ;
+  final double? deskRotation;
   const _StaffMember({
     required this.id,
     required this.fullName,
+    this.phone,
     required this.personType,
     this.role,
     required this.active,
     required this.embeddingCount,
     required this.createdAt,
     this.photoUrl,
+    this.deskX,
+    this.deskY,
+    this.deskZ,
+    this.deskRotation,
   });
+
+  bool get hasDesk => deskX != null && deskY != null;
+
   factory _StaffMember.fromJson(Map<String, dynamic> j) => _StaffMember(
         id: j['id'] as String,
         fullName: j['full_name'] as String? ?? '—',
+        phone: j['phone'] as String?,
         personType: j['person_type'] as String? ?? 'Staff',
         role: j['role'] as String?,
         active: j['active'] as bool? ?? true,
         embeddingCount: j['embedding_count'] as int? ?? 0,
         createdAt: j['created_at'] as String? ?? '',
         photoUrl: j['photo_url'] as String?,
+        deskX: (j['desk_x'] as num?)?.toDouble(),
+        deskY: (j['desk_y'] as num?)?.toDouble(),
+        deskZ: (j['desk_z'] as num?)?.toDouble(),
+        deskRotation: (j['desk_rotation'] as num?)?.toDouble(),
       );
 }
 
@@ -174,6 +193,14 @@ class _GalleryTabState extends State<_GalleryTab> with AutomaticKeepAliveClientM
         _loading = false;
       });
     }
+  }
+
+  Future<void> _edit(_StaffMember s) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _EditStaffDialog(staff: s),
+    );
+    if (saved == true && mounted) _load();
   }
 
   Future<void> _delete(_StaffMember s) async {
@@ -306,7 +333,10 @@ class _GalleryTabState extends State<_GalleryTab> with AutomaticKeepAliveClientM
                 mainAxisSpacing: 12,
               ),
               delegate: SliverChildBuilderDelegate(
-                (_, i) => _StaffCard(staff: staff[i], onDelete: () => _delete(staff[i])),
+                (_, i) => _StaffCard(
+                    staff: staff[i],
+                    onEdit: () => _edit(staff[i]),
+                    onDelete: () => _delete(staff[i])),
                 childCount: staff.length,
               ),
             ),
@@ -320,8 +350,9 @@ class _GalleryTabState extends State<_GalleryTab> with AutomaticKeepAliveClientM
 // ── Staff card ────────────────────────────────────────────────────────────────
 class _StaffCard extends StatelessWidget {
   final _StaffMember staff;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
-  const _StaffCard({required this.staff, required this.onDelete});
+  const _StaffCard({required this.staff, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -411,26 +442,45 @@ class _StaffCard extends StatelessWidget {
             ],
           ),
         ),
-        // Delete button — top-right
+        // Edit + delete buttons — top-right
         Positioned(
           top: 6,
           right: 6,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(99),
-              onTap: onDelete,
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(99),
+                onTap: onEdit,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit_rounded, size: 14, color: _muted),
                 ),
-                child: const Icon(Icons.close_rounded, size: 15, color: Colors.redAccent),
               ),
             ),
-          ),
+            const SizedBox(width: 4),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(99),
+                onTap: onDelete,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded, size: 15, color: Colors.redAccent),
+                ),
+              ),
+            ),
+          ]),
         ),
         // Active dot — top-left
         Positioned(
@@ -449,6 +499,227 @@ class _StaffCard extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// ── Edit staff dialog ────────────────────────────────────────────────────────
+// Edit name / phone / type / role plus the desk location: park the robot at the
+// person's desk and capture its SLAM pose (same flow as the Register tab).
+class _EditStaffDialog extends ConsumerStatefulWidget {
+  final _StaffMember staff;
+  const _EditStaffDialog({required this.staff});
+
+  @override
+  ConsumerState<_EditStaffDialog> createState() => _EditStaffDialogState();
+}
+
+class _EditStaffDialogState extends ConsumerState<_EditStaffDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+  late final TextEditingController _role;
+  late String _personType;
+  bool _saving = false;
+
+  Map<String, double>? _deskPose;
+  bool _deskDirty = false;
+  bool _capturingDesk = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.staff;
+    _name = TextEditingController(text: s.fullName == '—' ? '' : s.fullName);
+    _phone = TextEditingController(text: s.phone ?? '');
+    _role = TextEditingController(text: s.role ?? '');
+    _personType = s.personType == 'Staff' ? 'Staff' : 'Employee';
+    if (s.hasDesk) {
+      _deskPose = {
+        'x': s.deskX!,
+        'y': s.deskY!,
+        'z': s.deskZ ?? 0,
+        'rotation': s.deskRotation ?? 0,
+      };
+    }
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _role.dispose();
+    super.dispose();
+  }
+
+  Future<void> _captureDesk() async {
+    setState(() => _capturingDesk = true);
+    try {
+      final chassis = ref.read(chassisProvider);
+      if (!chassis.isRunning) {
+        await ref.read(chassisProvider.notifier).startChassisControl();
+      }
+      final pose = await ref.read(chassisProvider.notifier).getPosition();
+      if (!mounted) return;
+      if (pose == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not read position — make sure the robot is localized on its map.'),
+        ));
+      } else {
+        setState(() {
+          _deskPose = pose;
+          _deskDirty = true;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _capturingDesk = false);
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final res = await http
+          .patch(
+            Uri.parse('${RobotConfig.spineBaseUrl}/staff/${Uri.encodeComponent(widget.staff.id)}'),
+            headers: {
+              'Authorization': 'Bearer ${RobotConfig.authToken}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'full_name': _name.text,
+              'phone': _phone.text,
+              'person_type': _personType,
+              'role': _role.text,
+              if (_deskDirty) 'desk_pose': _deskPose,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      final ok = (jsonDecode(res.body) as Map<String, dynamic>)['ok'] == true;
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pop(context, true);
+      } else {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Update failed'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Update failed — network error'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  InputDecoration _dec(String label) => InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: _panel,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDesk = _deskPose != null;
+    return AlertDialog(
+      backgroundColor: _panel2,
+      title: const Text('Edit Staff'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: _dec('Full name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: _dec('Phone'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _personType,
+              dropdownColor: _panel2,
+              decoration: _dec('Person type'),
+              items: const [
+                DropdownMenuItem(value: 'Employee', child: Text('Employee')),
+                DropdownMenuItem(value: 'Staff', child: Text('Staff')),
+              ],
+              onChanged: (v) => setState(() => _personType = v ?? 'Employee'),
+            ),
+            const SizedBox(height: 12),
+            TextField(controller: _role, decoration: _dec('Role')),
+            const SizedBox(height: 14),
+            // Desk location — capture the robot's SLAM pose so Timo can
+            // navigate to this person's desk later.
+            Container(
+              decoration: BoxDecoration(
+                color: _panel,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(children: [
+                Icon(hasDesk ? Icons.place : Icons.place_outlined,
+                    color: hasDesk ? _orange : Colors.white38),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Desk location',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      hasDesk
+                          ? 'x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
+                          : 'Park the robot at the desk, then capture.',
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ]),
+                ),
+                if (hasDesk)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+                    onPressed: _capturingDesk
+                        ? null
+                        : () => setState(() {
+                              _deskPose = null;
+                              _deskDirty = true;
+                            }),
+                  ),
+                TextButton.icon(
+                  onPressed: _capturingDesk ? null : _captureDesk,
+                  icon: _capturingDesk
+                      ? const SizedBox(
+                          height: 14, width: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.my_location, size: 16, color: _orange),
+                  label: Text(hasDesk ? 'Recapture' : 'Capture',
+                      style: const TextStyle(color: _orange)),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: _orange),
+          onPressed: _saving || _capturingDesk ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  height: 18, width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Save'),
+        ),
+      ],
     );
   }
 }
