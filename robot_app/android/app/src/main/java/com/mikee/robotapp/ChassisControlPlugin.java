@@ -54,6 +54,11 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     private volatile String currentDirection = "none";
     private volatile boolean isMoving = false;
     private volatile boolean isChassisReady = false;
+    // True while an autonomous point-to-point navi (move_to) is in flight. While
+    // set, the naviReady listener must NOT re-assert setNaviMode(1) — that manual/
+    // teleop mode switch cancels the running move_to (the robot accepts navi then
+    // stops). Teleop drive clears it; navi sets it; cancel/arrival clears it.
+    private volatile boolean naviInProgress = false;
     private volatile int currentLinear = 0;
     private volatile int currentAngular = 0;
     private volatile int currentMoveCode = -1; // NAVI_ROBOT_MOVE direction: 0=fwd 1=back 2=left 3=right
@@ -136,14 +141,17 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     pt.put("y", ((Number) call.argument("y")).doubleValue());
                     pt.put("z", call.argument("z") != null ? ((Number) call.argument("z")).doubleValue() : 0);
                     pt.put("rotation", call.argument("rotation") != null ? ((Number) call.argument("rotation")).doubleValue() : 0);
+                    naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
                     CsjRobot.getInstance().getAction().navi(pt.toString());
                     result.success(true);
                 } catch (Exception e) {
+                    naviInProgress = false;
                     result.error("navi", e.getMessage(), null);
                 }
                 break;
             case "cancelNavi":
                 try {
+                    naviInProgress = false;
                     CsjRobot.getInstance().getAction().cancelNavi(startupNaviCb);
                     result.success(true);
                 } catch (Exception e) {
@@ -224,6 +232,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     }
 
     private void emergencyStop() {
+        naviInProgress = false; // a stop ends any autonomous navi
         cancelMove();
     }
 
@@ -246,6 +255,10 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         long now = System.currentTimeMillis();
         if (now - lastCommandTime < RATE_LIMIT_MS) return;
         lastCommandTime = now;
+
+        // A manual teleop command overrides any autonomous navi — allow the
+        // naviReady listener to restore teleop mode (mode 1) again.
+        naviInProgress = false;
 
         if (stopTimer != null) {
             stopTimer.cancel(false);
@@ -404,10 +417,17 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
             CsjRobot.getInstance().setonRobotNaviStatesListener((naviReady, motionMode) -> {
                 Log.d(TAG, "NaviStates: naviReady=" + naviReady + " motionMode=" + motionMode);
                 if (naviReady) {
-                    // Switch to manual/track mode (mode=1) for direct movement commands
-                    CsjRobot.getInstance().getAction().setNaviMode(1);
-                    Log.d(TAG, "SLAM ready → setNaviMode(1) sent");
                     isChassisReady = true;
+                    // Only re-assert manual/teleop mode (mode=1) when NOT running an
+                    // autonomous navi — otherwise this cancels the in-flight move_to
+                    // every time this NTF fires (~5s), so the robot never reaches the
+                    // goal. Teleop drive re-asserts mode 1 on demand.
+                    if (!naviInProgress) {
+                        CsjRobot.getInstance().getAction().setNaviMode(1);
+                        Log.d(TAG, "SLAM ready → setNaviMode(1) sent");
+                    } else {
+                        Log.d(TAG, "SLAM ready → navi in progress, keeping autonomous mode");
+                    }
                 } else {
                     isChassisReady = false;
                 }
@@ -663,12 +683,15 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                         point.put("z", json.optDouble("z", 0));
                         point.put("rotation", json.optDouble("rotation", 0));
                         Log.d(TAG, "navi to: " + point);
+                        naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
                         CsjRobot.getInstance().getAction().navi(point.toString(), naviCb);
                     } catch (Exception e) {
+                        naviInProgress = false;
                         Log.e(TAG, "navi error: " + e.getMessage());
                     }
                 } else if ("cancel_navi".equals(cmd)) {
                     Log.d(TAG, "cancel_navi requested");
+                    naviInProgress = false;
                     try {
                         CsjRobot.getInstance().getAction().cancelNavi(naviCb);
                     } catch (Exception e) {
