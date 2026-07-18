@@ -30,8 +30,16 @@ void main() async {
   }
 
   runApp(
-    const ProviderScope(
-      child: MikeeApp(),
+    ProviderScope(
+      overrides: [
+        // The router requires an explicit flavor (dev|staging|prod) before it
+        // builds — 'dev' enables the local dev login bypass. Override via
+        // --dart-define=APP_FLAVOR=prod for production builds.
+        flavorProvider.overrideWith(
+          (ref) => const String.fromEnvironment('APP_FLAVOR', defaultValue: 'dev'),
+        ),
+      ],
+      child: const MikeeApp(),
     ),
   );
 }
