@@ -9,7 +9,9 @@ import '../providers/snapshot_list_provider.dart';
 /// robot camera) and enrolled staff faces. Both read the spine over HTTP and
 /// render private images via short-lived signed URLs.
 class GalleryScreen extends ConsumerWidget {
-  const GalleryScreen({Key? key}) : super(key: key);
+  /// Optional capture id from the `/gallery/:captureId` deep-link (unused for now).
+  final String? captureId;
+  const GalleryScreen({Key? key, this.captureId}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -157,7 +159,6 @@ class _SnapshotTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final url = snapshot.imageUrl;
     final hasImage = url != null && url.isNotEmpty;
-    final hasActor = snapshot.actor != null && snapshot.actor!.isNotEmpty;
 
     final placeholder = Container(
       color: MikeeColors.primary.withValues(alpha: 0.10),
@@ -175,15 +176,7 @@ class _SnapshotTile extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Expanded(
           child: hasImage
-              ? Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  timeout: const Duration(seconds: 10),
-                  errorBuilder: (_, e, st) {
-                    debugPrint('Image error: $e');
-                    return placeholder;
-                  },
-                )
+              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder)
               : placeholder,
         ),
         Padding(
@@ -195,21 +188,19 @@ class _SnapshotTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary),
             ),
-            if (hasActor) ...[
-              const SizedBox(height: 4),
-              Row(children: [
-                Icon(Icons.person_outline_rounded, size: 12, color: MikeeColors.textMuted),
-                const SizedBox(width: 3),
-                Expanded(
-                  child: Text(
-                    snapshot.actor!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
-                  ),
+            const SizedBox(height: 4),
+            Row(children: [
+              Icon(Icons.person_outline_rounded, size: 12, color: MikeeColors.textMuted),
+              const SizedBox(width: 3),
+              Expanded(
+                child: Text(
+                  snapshot.actor ?? 'autonomous',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
                 ),
-              ]),
-            ],
+              ),
+            ]),
           ]),
         ),
       ]),
@@ -232,16 +223,12 @@ class _FaceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = member.fullName;
     final color = name.isEmpty ? _palette[0] : _palette[name.codeUnitAt(0) % _palette.length];
-    
-    final initials = name.trim().isEmpty
-        ? ''
-        : name
-            .trim()
-            .split(RegExp(r'\s+'))
-            .take(2)
-            .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
-            .join();
-    
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .take(2)
+        .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+        .join();
     final url = member.photoUrl;
     final hasPhoto = url != null && url.isNotEmpty;
 
@@ -267,11 +254,8 @@ class _FaceTile extends StatelessWidget {
               ? Image.network(
                   url,
                   fit: BoxFit.cover,
-                  timeout: const Duration(seconds: 10),
-                  errorBuilder: (_, e, st) {
-                    debugPrint('Image error: $e');
-                    return placeholder;
-                  },
+                  // Fall back to initials if the signed URL fails / expires.
+                  errorBuilder: (_, __, ___) => placeholder,
                 )
               : placeholder,
         ),

@@ -26,108 +26,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   double _maxSpeed = 0.5;
   String _driveStatus = 'IDLE';
   int _throttle = 0;
-  bool _wasDriving = false;
+  bool _wasDriving = false; // true while a drive command is active (joystick out of deadzone)
   Timer? _headThrottleTimer;
-  bool _isHeadThrottleActive = false;
-  bool _isSnackbarShowing = false;
-  Queue<Map<String, dynamic>> _commandQueue = Queue();
-  Timer? _commandQueueTimer;
-  Timer? _stopDriveRetryTimer;
-  int _stopDriveRetries = 0;
-  static const int _maxStopDriveRetries = 3;
-  static const int _stopDriveRetryIntervalMs = 500;
-
-  @override
-  void initState() {
-    super.initState();
-    _wasDriving = false;
-  }
 
   @override
   void dispose() {
     _headThrottleTimer?.cancel();
-    _commandQueueTimer?.cancel();
-    _stopDriveRetryTimer?.cancel();
     super.dispose();
   }
 
-  void _showOfflineSnackbar() {
-    if (!_isSnackbarShowing && mounted) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      _isSnackbarShowing = true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12)),
-          duration: const Duration(seconds: 4),
-          onVisible: () {
-            _isSnackbarShowing = true;
-          },
-        ),
-      ).closed.then((_) {
-        if (mounted) {
-          setState(() {
-            _isSnackbarShowing = false;
-          });
-        }
-      });
-    }
-  }
-
-  bool _isRobotOnline() {
-    return ref.read(spineProvider)?.status?.online ?? false;
-  }
-
-  bool _isStopDriveQueued() {
-    return _commandQueue.any((cmd) => cmd['intent'] == 'stop_drive');
-  }
-
-  void _queueCommand(Map<String, dynamic> command) {
-    _commandQueue.add(command);
-    _processCommandQueue();
-  }
-
-  void _processCommandQueue() {
-    if (_commandQueue.isEmpty) {
-      _commandQueueTimer?.cancel();
-      _commandQueueTimer = null;
-      _stopDriveRetryTimer?.cancel();
-      _stopDriveRetryTimer = null;
-      _stopDriveRetries = 0;
-      return;
-    }
-
-    final command = _commandQueue.removeFirst();
-    final notifier = ref.read(spineProvider.notifier);
-    
-    if (kDebugMode) {
-      print('[ControlScreen] Sending command: $command');
-    }
-    
-    notifier.sendIntent(command);
-
-    if (command['intent'] == 'stop_drive') {
-      _stopDriveRetries++;
-      if (_stopDriveRetries < _maxStopDriveRetries) {
-        _stopDriveRetryTimer?.cancel();
-        _stopDriveRetryTimer = Timer(const Duration(milliseconds: _stopDriveRetryIntervalMs), () {
-          if (mounted && _isRobotOnline() && !_isStopDriveQueued()) {
-            _queueCommand({'intent': 'stop_drive'});
-          }
-        });
-      } else {
-        _stopDriveRetries = 0;
-        _stopDriveRetryTimer?.cancel();
-        _stopDriveRetryTimer = null;
-      }
-    }
-
-    if (_commandQueue.isNotEmpty) {
-      _commandQueueTimer?.cancel();
-      _commandQueueTimer = Timer(const Duration(milliseconds: 50), _processCommandQueue);
-    }
-  }
-
   void _handleDriveJoystick(double x, double y, double mag) {
+    // Update UI state
     setState(() {
       _driveX = x;
       _driveY = y;
@@ -145,34 +54,44 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
 
-    final isOnline = _isRobotOnline();
+    // Validate online status immediately before sending intent
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
 
+    // Joystick returned to the deadzone (released or centered) → halt the wheels.
+    // The robot_app holds a moveSerial heartbeat until it receives stop, so we
+    // MUST send stop_drive on release or the robot keeps moving. Only send it on
+    // the moving→idle transition (not on every idle frame), and only if we were
+    // actually driving. stop_drive does not latch the global STOP interlock.
     if (_driveStatus == 'IDLE') {
       if (_wasDriving) {
         _wasDriving = false;
         if (isOnline) {
-          _stopDriveRetries = 0;
-          _stopDriveRetryTimer?.cancel();
-          _stopDriveRetryTimer = null;
-          if (!_isStopDriveQueued()) {
-            _queueCommand({'intent': 'stop_drive'});
-          }
+          ref.read(spineProvider.notifier).sendIntent({'intent': 'stop_drive'});
         }
       }
       return;
     }
 
+    // Send drive command ONLY if joystick is not in deadzone and robot is online
     if (!isOnline) {
-      _showOfflineSnackbar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
       return;
     }
-
     final dir = _driveStatus == 'FORWARD' ? 'forward' :
                 _driveStatus == 'REVERSE' ? 'back' :
                 _driveStatus == 'RIGHT' ? 'right' : 'left';
 
-    _wasDriving = true;
-    _queueCommand({'intent': 'drive', 'dir': dir});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      _wasDriving = true;
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': 'drive', 'dir': dir});
+    }
   }
 
   void _handleHeadJoystick(double x, double y, double mag) {
@@ -181,84 +100,101 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _headY = ((y + 1) / 2 * 100).clamp(0, 100);
     });
 
-    final isOnline = _isRobotOnline();
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
 
     if (!isOnline) {
       return;
     }
 
-    if (_isHeadThrottleActive) {
-      return;
-    }
-
-    _isHeadThrottleActive = true;
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
-
+    // Throttle head commands to prevent flooding WebSocket
     _headThrottleTimer?.cancel();
-    _headThrottleTimer = Timer(Duration(milliseconds: joystickThrottleMs), () {
+    _headThrottleTimer = Timer(joystickThrottleMs, () {
       if (mounted) {
-        _isHeadThrottleActive = false;
+        // Re-validate online status within debounce callback
+        if (ref.read(spineProvider).status?.online ?? false) {
+          final notifier = ref.read(spineProvider.notifier);
+          notifier.sendIntent({'intent': 'head', 'lr': _headX.toInt(), 'ud': _headY.toInt()});
+        }
       }
     });
   }
 
   void _resetHead() {
+    final spineState = ref.read(spineProvider);
+    final isOnline = spineState.status?.online ?? false;
+
     setState(() {
       _headX = 50;
       _headY = 50;
     });
 
-    final isOnline = _isRobotOnline();
-
     if (!isOnline) {
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': 'head', 'lr': 50, 'ud': 50});
+    }
   }
 
   void _sendGesture(String gesture) {
     final spineState = ref.read(spineProvider);
-    final isOnline = spineState?.status?.online ?? false;
+    final isOnline = spineState.status?.online ?? false;
 
-    if (spineState?.stopped ?? false) {
+    if (spineState.stopped) {
       return;
     }
 
     if (!isOnline) {
-      _showOfflineSnackbar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    notifier.sendIntent({'intent': gesture});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      notifier.sendIntent({'intent': gesture});
+    }
   }
 
   void _handleStopResume() {
     final spineState = ref.read(spineProvider);
-    final isOnline = spineState?.status?.online ?? false;
+    final isOnline = spineState.status?.online ?? false;
 
     if (!isOnline) {
-      _showOfflineSnackbar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Robot offline - command not sent', style: GoogleFonts.inter(fontSize: 12))),
+        );
+      }
       return;
     }
 
-    final notifier = ref.read(spineProvider.notifier);
-    if (spineState?.stopped ?? false) {
-      notifier.sendIntent({'intent': 'resume'});
-    } else {
-      notifier.sendIntent({'intent': 'stop'});
+    // Re-validate online status immediately before sending
+    if (ref.read(spineProvider).status?.online ?? false) {
+      final notifier = ref.read(spineProvider.notifier);
+      if (spineState.stopped) {
+        notifier.sendIntent({'intent': 'resume'});
+      } else {
+        notifier.sendIntent({'intent': 'stop'});
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final spine = ref.watch(spineProvider);
-    final stopped = spine?.stopped ?? false;
-    final isBlocked = spine?.status?.obstacleState == ObstacleState.blocked;
+    final stopped = spine.stopped;
+    final isBlocked = spine.status?.obstacleState == ObstacleState.blocked;
 
+    // Body-only: the AppShell supplies the top status bar + sidebar.
     return Stack(
       children: [
         SingleChildScrollView(
@@ -279,11 +215,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 onCenterHead: _resetHead,
                 onStopResume: _handleStopResume,
                 stopped: stopped,
-                status: spine?.status,
+                status: spine.status,
               ),
             ),
           ),
         ),
+        // Blocked overlay (obstacle detected)
         BlockedOverlay(visible: isBlocked),
       ],
     );

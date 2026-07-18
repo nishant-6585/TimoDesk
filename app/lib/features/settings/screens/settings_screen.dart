@@ -13,7 +13,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  String _robotIp = defaultRobotIp;
+  String _robotIp = defaultRobotIp ?? '';
   String _port = '$robotCameraPort';
   String _signalingServer = 'ws://192.168.1.42:8081';
   String _reconnectTimeout = '5000';

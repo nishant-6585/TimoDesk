@@ -25,16 +25,8 @@ class MobileRemoteScreen extends ConsumerStatefulWidget {
 class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   bool _streaming = false;
   String _driveStatus = 'IDLE';
-  late DateTime _lastDrive;
-  late DateTime _lastHead;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize throttle timestamps to now to prevent unthrottled burst on first joystick movement.
-    _lastDrive = DateTime.now();
-    _lastHead = DateTime.now();
-  }
+  DateTime _lastDrive = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastHead = DateTime.fromMillisecondsSinceEpoch(0);
 
   // ── Intents (mirror ControlScreen; throttled drive) ────────────────────────
   void _handleDrive(double x, double y, double mag) {
@@ -53,14 +45,6 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
     }
     if (status == 'IDLE') return; // coast — send nothing
 
-    // Verify robot is online and not stopped before sending intent.
-    final spineState = ref.read(spineProvider);
-    if (!(spineState.status?.online ?? false)) return;
-    if (spineState.stopped) {
-      HapticFeedback.heavyImpact();
-      return;
-    }
-
     // Throttle drive intents to joystickThrottleMs.
     final now = DateTime.now();
     if (now.difference(_lastDrive) < joystickThrottleMs) return;
@@ -77,10 +61,6 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
   }
 
   void _handleHead(double x, double y, double mag) {
-    // Verify robot is online before sending intent.
-    final spineState = ref.read(spineProvider);
-    if (!(spineState.status?.online ?? false)) return;
-
     // Throttle head intents to joystickThrottleMs (same as drive).
     final now = DateTime.now();
     if (now.difference(_lastHead) < joystickThrottleMs) return;
@@ -150,10 +130,6 @@ class _MobileRemoteScreenState extends ConsumerState<MobileRemoteScreen> {
 
   @override
   void dispose() {
-    // Stop streaming before leaving the screen to prevent WebSocket/MJPEG connection leaks.
-    if (_streaming) {
-      setState(() => _streaming = false);
-    }
     super.dispose();
   }
 }
@@ -227,45 +203,26 @@ class _Pill extends StatelessWidget {
 }
 
 // ── Camera panel (full-bleed MjpegView + start/stop) ──────────────────────────
-class _CameraPanel extends ConsumerStatefulWidget {
+class _CameraPanel extends StatelessWidget {
   final bool streaming;
   final String url;
   final VoidCallback onToggle;
   const _CameraPanel({required this.streaming, required this.url, required this.onToggle});
 
   @override
-  ConsumerState<_CameraPanel> createState() => _CameraPanelState();
-}
-
-class _CameraPanelState extends ConsumerState<_CameraPanel> {
-  late MjpegViewController _mjpegController;
-
-  @override
-  void dispose() {
-    // Explicitly stop and close MjpegView WebSocket to prevent connection leaks.
-    if (widget.streaming) {
-      _mjpegController.stop();
-    }
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.black,
       child: Stack(fit: StackFit.expand, children: [
-        if (widget.streaming)
-          MjpegView(
-            url: widget.url,
-            onCreated: (controller) => _mjpegController = controller,
-          )
+        if (streaming)
+          MjpegView(url: url)
         else
           Center(
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.videocam_off, size: 48, color: Color(0xFF3A3A3A)),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: widget.onToggle,
+                onPressed: onToggle,
                 icon: const Icon(Icons.play_arrow, size: 18),
                 label: Text('Start stream', style: GoogleFonts.inter(fontSize: 13)),
               ),
@@ -275,12 +232,12 @@ class _CameraPanelState extends ConsumerState<_CameraPanel> {
           top: 8,
           right: 8,
           child: InkWell(
-            onTap: widget.onToggle,
+            onTap: onToggle,
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
-              child: Icon(widget.streaming ? Icons.stop_circle_outlined : Icons.play_circle_outline,
-                  size: 22, color: widget.streaming ? MikeeColors.error : MikeeColors.primary),
+              child: Icon(streaming ? Icons.stop_circle_outlined : Icons.play_circle_outline,
+                  size: 22, color: streaming ? MikeeColors.error : MikeeColors.primary),
             ),
           ),
         ),
@@ -290,7 +247,7 @@ class _CameraPanelState extends ConsumerState<_CameraPanel> {
 }
 
 // ── Controls: drive joystick · head pad · arm/wave ────────────────────────────
-class _ControlsPanel extends ConsumerWidget {
+class _ControlsPanel extends StatelessWidget {
   final String driveStatus;
   final bool stopped;
   final void Function(double, double, double) onDrive;
@@ -305,24 +262,21 @@ class _ControlsPanel extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final spineState = ref.watch(spineProvider);
-    final isDisabled = stopped || !(spineState.status?.online ?? false);
-
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: MikeeColors.primary, onChange: onDrive, disabled: isDisabled)),
-          _Labeled('HEAD', Joystick(size: 150, knobColor: const Color(0xFF3B82F6), onChange: onHead, disabled: isDisabled)),
+          _Labeled('DRIVE · $driveStatus', Joystick(size: 150, knobColor: MikeeColors.primary, onChange: onDrive, disabled: stopped)),
+          _Labeled('HEAD', Joystick(size: 150, knobColor: const Color(0xFF3B82F6), onChange: onHead, disabled: stopped)),
         ]),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: _ActionButton('Wave', Icons.waving_hand, isDisabled ? null : () => onGesture('wave'))),
+          Expanded(child: _ActionButton('Wave', Icons.waving_hand, stopped ? null : () => onGesture('wave'))),
           const SizedBox(width: 10),
-          Expanded(child: _ActionButton('Reset', Icons.refresh, isDisabled ? null : () => onGesture('reset_body'))),
+          Expanded(child: _ActionButton('Reset', Icons.refresh, stopped ? null : () => onGesture('reset_body'))),
           const SizedBox(width: 10),
-          Expanded(child: _ActionButton('Snapshot', Icons.photo_camera, isDisabled ? null : () => onGesture('snapshot'))),
+          Expanded(child: _ActionButton('Snapshot', Icons.photo_camera, stopped ? null : () => onGesture('snapshot'))),
         ]),
       ]),
     );
@@ -391,11 +345,5 @@ class _StopResumeBar extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class MjpegViewController {
-  void stop() {
-    // Placeholder for explicit WebSocket close
   }
 }
