@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
+import 'services/audio_bridge.dart'; // arrival speech (CSJBot built-in TTS)
 import 'services/nav_points_api.dart';
 
 /// Whole-screen state for the on-robot Navigation Points feature.
@@ -14,11 +17,13 @@ class NavPointsState {
   final AsyncValue<List<NavPoint>> points;
   final bool capturing;
   final NavPoint? navigatingTo; // non-null while a go-to is active
+  final String? arrivedAt; // name of the point just reached (transient banner)
 
   const NavPointsState({
     this.points = const AsyncValue.loading(),
     this.capturing = false,
     this.navigatingTo,
+    this.arrivedAt,
   });
 
   NavPointsState copyWith({
@@ -26,21 +31,56 @@ class NavPointsState {
     bool? capturing,
     NavPoint? navigatingTo,
     bool clearNavigating = false,
+    String? arrivedAt,
+    bool clearArrived = false,
   }) =>
       NavPointsState(
         points: points ?? this.points,
         capturing: capturing ?? this.capturing,
         navigatingTo: clearNavigating ? null : (navigatingTo ?? this.navigatingTo),
+        arrivedAt: clearArrived ? null : (arrivedAt ?? this.arrivedAt),
       );
 }
 
 class NavPointsNotifier extends StateNotifier<NavPointsState> {
   NavPointsNotifier(this._ref) : super(const NavPointsState()) {
     load();
+    // Listen for navi lifecycle events from the native SDK → announce arrival.
+    _naviSub = _ref
+        .read(chassisProvider.notifier)
+        .naviEvents
+        .listen(_onNaviEvent);
   }
 
   final Ref _ref;
   final NavPointsApi _api = NavPointsApi();
+  final AudioBridge _audio = AudioBridge();
+  StreamSubscription<NaviEvent>? _naviSub;
+
+  /// Handle a navigation lifecycle event from the native chassis plugin.
+  /// On arrival: speak the destination name, clear the navigating flag, and
+  /// surface a transient "arrived" banner.
+  void _onNaviEvent(NaviEvent e) {
+    if (!mounted) return;
+    if (e.isArrival) {
+      final name = state.navigatingTo?.name ?? 'the destination';
+      _audio.speak("I've arrived at $name.");
+      state = state.copyWith(clearNavigating: true, arrivedAt: name);
+    } else if (e.kind == 'cancel_result') {
+      state = state.copyWith(clearNavigating: true);
+    }
+  }
+
+  /// Dismiss the "arrived" banner.
+  void clearArrived() {
+    if (mounted) state = state.copyWith(clearArrived: true);
+  }
+
+  @override
+  void dispose() {
+    _naviSub?.cancel();
+    super.dispose();
+  }
 
   /// Ensure chassis control is started before any getPosition/navi call — the
   /// native SDK no-ops otherwise (mirrors how the dashboard d-pad starts it).
@@ -99,7 +139,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// Send the robot to a saved point. Sets [NavPointsState.navigatingTo] while
   /// the SDK is driving there. Returns false if the SDK rejected the request.
   Future<bool> goTo(NavPoint point) async {
-    state = state.copyWith(navigatingTo: point);
+    state = state.copyWith(navigatingTo: point, clearArrived: true);
     try {
       await _ensureChassis();
       final ok = await _ref.read(chassisProvider.notifier).naviTo(point.pose);

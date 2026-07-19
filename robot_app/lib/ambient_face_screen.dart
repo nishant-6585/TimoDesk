@@ -70,6 +70,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _greetTimer;
   final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
 
+  // Greeting coordinator: on motion/presence we hold off greeting for a brief
+  // window so face recognition can identify a known staff member FIRST (→ greet
+  // by name); if no face is recognised in time we fall back to a plain hello.
+  // This makes the greeting deterministic — exactly one per visit, name-if-known
+  // — instead of the old race between the person-sensor and face-recognition
+  // paths (which caused the intermittent "Hello" vs "Hello <name>").
+  bool _awaitingRecognition = false;
+  Timer? _recognitionWaitTimer;
+
   // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
   late final ElevenLabsTts _tts;
 
@@ -112,6 +121,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
   static const Duration _regreetWindow = Duration(minutes: 10);
+  // How long after motion we wait for face recognition before greeting anonymously.
+  // Long enough for the CSJBot recogniser to return a match on an enrolled face,
+  // short enough that an unknown visitor isn't left waiting for a hello.
+  static const Duration _recognitionWindow = Duration(milliseconds: 2000);
   static const Duration _engageWindow = Duration(seconds: 10); // no greeting response → close
   static const Duration _conversationIdle = Duration(seconds: 25); // mid-chat silence → close
   // Mic stays muted this long after Mikee's last speaker output — must exceed the
@@ -194,6 +207,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _ticker.dispose();
     _presenceHold?.cancel();
     _greetTimer?.cancel();
+    _recognitionWaitTimer?.cancel();
     _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
@@ -253,7 +267,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       }
       // Obvious reception reaction on a fresh approach (the ML-Kit camera path is
       // what actually fires here; the CSJBot sensor stays silent on this unit).
-      if (fresh && !_voiceActive) _greetOnApproach();
+      // Recognise-first: hold the greeting briefly so an enrolled staff member is
+      // greeted by name; unknown faces fall back to a plain hello.
+      if (fresh && !_voiceActive) _beginGreetSequence();
     } else {
       // Hold attentive briefly before returning to idle (kills jitter).
       if (_present && _presenceHold == null) {
@@ -263,6 +279,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _presenceHold = Timer(hold, () {
           _present = false;
           _greeted = false; // person has left — allow greeting on next approach
+          _awaitingRecognition = false; // cancel any pending greet-after-recognise
+          _recognitionWaitTimer?.cancel();
           _reconnectAttempts = 0; // fresh retry budget for the next visitor
           _presenceHold = null;
           if (_face.state == FaceStateKind.attentive ||
@@ -277,14 +295,34 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // ── Wire 2: spine identity + presence ───────────────────────────────────────
   void _onFaceDetected(FaceDetectedEvent e) {
-    if (_voiceActive) return; // don't greet over a live conversation
+    if (_voiceActive || _greeted) return; // don't greet over a conversation / twice
     final now = DateTime.now();
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     _greetedAt[e.name] = now;
+    _greeted = true; // counts as this visit's one greeting
+    _awaitingRecognition = false; // spine identity beat the local recogniser
+    _recognitionWaitTimer?.cancel();
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(e.name));
     _greetThenListen(lang.greetSpeech(e.name));
+  }
+
+  // Motion/presence detected → give face recognition a brief head start so a
+  // known staff member is greeted BY NAME, before falling back to a plain hello.
+  // The recogniser (_onFaceRecognized) cancels this window and greets by name if
+  // it matches within [_recognitionWindow]; otherwise the timer fires a generic
+  // greeting. Guarded so exactly one greeting happens per visit.
+  void _beginGreetSequence() {
+    if (_greeted || _voiceActive || _awaitingRecognition) return;
+    _awaitingRecognition = true;
+    _recognitionWaitTimer?.cancel();
+    _recognitionWaitTimer = Timer(_recognitionWindow, () {
+      if (!_awaitingRecognition) return;
+      _awaitingRecognition = false;
+      if (_greeted || _voiceActive) return;
+      _greetOnApproach(); // no face recognised in the window → plain hello
+    });
   }
 
   // Greeting reaction on a fresh approach — on-screen wave + voice.
@@ -401,7 +439,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _onSdkPerson(bool present) {
     _onPersonDetected(present);
     if (present && !_sdkPersonPresent && !_voiceActive) {
-      _greetOnApproach(); // debounced — same overlay + voice as the ML Kit path
+      _beginGreetSequence(); // recognise-first, then greet (by name if matched)
     }
     _sdkPersonPresent = present;
   }
@@ -423,13 +461,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         }
         return;
       case 'recognized':
+        if (_greeted) return; // already greeted this visit — don't repeat
         final name = e.name?.trim() ?? '';
         if (e.confidence >= 60 && name.isNotEmpty) {
+          // Matched → win the recognise-first window and greet BY NAME.
+          _awaitingRecognition = false;
+          _recognitionWaitTimer?.cancel();
           _greetStaff(name);
-        } else {
-          // Uncertain match → standard anonymous greeting (no name injection).
-          _greetOnApproach();
         }
+        // Uncertain (<60): don't greet yet. If a presence window is open it falls
+        // back to a plain hello on timeout; a stronger match may still arrive. If
+        // recognition fired without a presence window, the visitor's motion edge
+        // will open one — so an unknown face still gets its plain hello.
         return;
     }
   }
@@ -444,6 +487,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     final last = _greetedAt[name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     _greetedAt[name] = now;
+    _greeted = true; // counts as this visit's one greeting (blocks the plain hello)
     _pendingGreetName = name;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(name)); // overlay + greeting face state

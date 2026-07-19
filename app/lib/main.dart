@@ -11,6 +11,12 @@ import 'services/push/push_service.dart';
 final GlobalKey<ScaffoldMessengerState> rootMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
+/// Build flavor. Set at launch via `--dart-define=FLAVOR=dev|staging|prod`.
+/// Defaults to `dev` (which skips the login gate for local development).
+/// `flavorProvider` (router.dart) throws unless this is set before the router
+/// is built, so it is injected via ProviderScope overrides in [main].
+const String _flavor = String.fromEnvironment('FLAVOR', defaultValue: 'dev');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -30,8 +36,12 @@ void main() async {
   }
 
   runApp(
-    const ProviderScope(
-      child: MikeeApp(),
+    ProviderScope(
+      overrides: [
+        // Initialize the build flavor before the router is built.
+        flavorProvider.overrideWith((ref) => _flavor),
+      ],
+      child: const MikeeApp(),
     ),
   );
 }

@@ -107,6 +107,8 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
         child: Column(children: [
           _topBar(),
           if (s.navigatingTo != null) _navBanner(s.navigatingTo!),
+          if (s.navigatingTo == null && s.arrivedAt != null)
+            _arrivedBanner(s.arrivedAt!),
           _captureBar(s.capturing),
           Expanded(
             child: s.points.when(
@@ -160,6 +162,13 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
               running ? 'Chassis Online' : 'Chassis Offline');
         }),
         const SizedBox(width: 8),
+        // Map/localization readiness — go-to needs a loaded SLAM map + localization.
+        Consumer(builder: (_, ref, __) {
+          final ready = ref.watch(chassisProvider).isNaviReady;
+          return _pill(ready ? const Color(0xFF4ADE80) : const Color(0xFFF59E0B),
+              ready ? 'Map Ready' : 'No Map / Localizing');
+        }),
+        const SizedBox(width: 8),
         _IconBox(
             icon: Icons.refresh_rounded,
             onTap: () => ref.read(navPointsProvider.notifier).load()),
@@ -185,6 +194,41 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
         Text(label,
             style: const TextStyle(
                 color: _ink, fontSize: 12, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
+  // ── Arrived banner (dismissible) ─────────────────────────────────────────────
+  Widget _arrivedBanner(String name) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F1F14),
+        border: Border(bottom: BorderSide(color: _line)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.check_circle_rounded, size: 22, color: Color(0xFF4ADE80)),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text('Arrived at "$name"',
+              style: const TextStyle(
+                  color: _ink, fontSize: 15, fontWeight: FontWeight.w600)),
+        ),
+        GestureDetector(
+          onTap: () => ref.read(navPointsProvider.notifier).clearArrived(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              border: Border.all(color: _line2),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: const Text('Dismiss',
+                style: TextStyle(
+                    color: _muted, fontSize: 14, fontWeight: FontWeight.w700)),
+          ),
+        ),
       ]),
     );
   }

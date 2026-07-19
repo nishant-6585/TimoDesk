@@ -1,0 +1,12 @@
+# SOPS encryption rules for this repo.
+# Any file matching the path_regex is encrypted to the listed age recipients.
+# Add a teammate by appending their age public key (comma-separated) and
+# re-running `npm run secrets:push` so the file is re-encrypted for everyone.
+creation_rules:
+  # Matches the plaintext INPUT (.env) — SOPS picks recipients from the input
+  # path at encrypt time. Decryption needs no rule (recipients are in the file).
+  - path_regex: (^|/)\.env$
+    # Recipients who can decrypt. Each is an age PUBLIC key (safe to commit).
+    #   Nishant (macOS): age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4
+    age: >-
+      age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4
