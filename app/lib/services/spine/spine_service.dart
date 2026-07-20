@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../../../core/constants.dart';
-import '../../features/settings/providers/settings_provider.dart';
+import '../../core/constants.dart';
+import '../../core/spine_base.dart';
 import 'spine_state.dart';
 import 'face_detection_provider.dart';
+import 'navi_status_provider.dart';
 import 'visitor_arrived_provider.dart';
 
 class SpineService extends StateNotifier<SpineState> {
@@ -41,14 +42,14 @@ class SpineService extends StateNotifier<SpineState> {
       final session = Supabase.instance.client.auth.currentSession;
       _jwt = session?.accessToken ?? 'dev';
 
-      // HARDCODED: Use localhost for development (Spine runs on dev machine)
-      // In production, Spine will run on the robot itself at ws://192.168.10.18:4000
-      _spineUrl = 'ws://localhost:4000';
+      // Spine runs on the machine serving this app — derive the host from the
+      // browser URL so LAN-served builds work from any device.
+      _spineUrl = spineWsUrl;
 
       print('[SpineService] ========================================');
       print('[SpineService] CONNECTING TO SPINE BROKER');
       print('[SpineService] Spine WebSocket: $_spineUrl');
-      print('[SpineService] (Camera stream from robot: http://192.168.10.18:8080)');
+      print('[SpineService] (Camera stream from robot: http://192.168.1.5:8080)');
       print('[SpineService] ========================================');
 
       await connect(_spineUrl!, _jwt!);
@@ -153,6 +154,16 @@ class SpineService extends StateNotifier<SpineState> {
             );
       }
 
+      if (eventType == 'navi_event' && eventPayload != null) {
+        // Same nesting as face_detected: fields live under eventPayload['payload'].
+        final inner = (eventPayload['payload'] as Map<String, dynamic>?) ?? eventPayload;
+        final naviEvent = inner['event'] as String?;
+        print('[SpineService] Navi event: $naviEvent data: ${inner['data']}');
+        if (naviEvent == 'cancel_result') {
+          _ref.read(naviStatusProvider.notifier).clear();
+        }
+      }
+
       if (eventType == 'visitor_arrived' && eventPayload != null) {
         // Same nesting as face_detected: fields live under eventPayload['payload'].
         final inner = (eventPayload['payload'] as Map<String, dynamic>?) ?? eventPayload;
@@ -186,6 +197,23 @@ class SpineService extends StateNotifier<SpineState> {
             'rotation': (pos['rotation'] as num?)?.toDouble() ?? 0.0,
           });
         }
+      }
+    } else if (msgType == 'navi_state') {
+      // Spine-owned cross-client navigation state: a Go To / Cancel from ANY
+      // client (web admin or robot app) lands here on every client.
+      final active = msg['active'] == true;
+      print('[SpineService] [NAVI STATE] active=$active name=${msg['name']} cancelling=${msg['cancelling']}');
+      final notifier = _ref.read(naviStatusProvider.notifier);
+      if (active) {
+        notifier.syncActive(
+          (msg['name'] as String?) ?? 'saved point',
+          cancelling: msg['cancelling'] == true,
+          stalled: msg['stalled'] == true,
+        );
+      } else if (msg['arrived'] == true) {
+        notifier.arrived((msg['name'] as String?) ?? 'saved point');
+      } else {
+        notifier.clear();
       }
     } else if (msgType == 'ack') {
       print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
@@ -222,9 +250,14 @@ class SpineService extends StateNotifier<SpineState> {
   }
 
   /// Navigate the robot to a saved pose. Fire-and-forget — the spine acks
-  /// {type:'ack', intent:'navi'} and may emit navi_event lifecycle messages.
-  void naviTo(Map<String, dynamic> point) {
-    sendIntent({'intent': 'navi', 'point': point});
+  /// {type:'ack', intent:'navi'}, then broadcasts navi_state to all clients.
+  void naviTo(Map<String, dynamic> point, {String? name}) {
+    sendIntent({
+      'intent': 'navi',
+      'point': point,
+      if (name != null) 'name': name,
+      'source': 'admin',
+    });
   }
 
   /// Cancel an in-progress navigation. Spine acks {type:'ack', intent:'cancel_navi'}.
@@ -275,8 +308,7 @@ class SpineService extends StateNotifier<SpineState> {
       // Re-fetch JWT in case it expired
       final session = Supabase.instance.client.auth.currentSession;
       final newJwt = session?.accessToken ?? 'dev';
-      // HARDCODED: Use localhost (where Spine broker runs on dev machine)
-      final url = _spineUrl ?? 'ws://localhost:4000';
+      final url = _spineUrl ?? spineWsUrl;
       connect(url, newJwt);
     });
   }

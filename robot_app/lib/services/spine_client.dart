@@ -39,6 +39,7 @@ class SpineClient {
   final _faceCtrl = StreamController<FaceDetectedEvent>.broadcast();
   final _presenceCtrl = StreamController<bool>.broadcast();
   final _connCtrl = StreamController<bool>.broadcast();
+  final _naviCtrl = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
@@ -49,7 +50,16 @@ class SpineClient {
   /// Connection/auth state (true once authenticated).
   Stream<bool> get connected => _connCtrl.stream;
 
+  /// Spine-owned cross-client navigation state ({active, name, cancelling, …}).
+  /// Fired whenever ANY client (web admin or this robot) starts/cancels a Go To.
+  Stream<Map<String, dynamic>> get naviState => _naviCtrl.stream;
+
   bool get isConnected => _authed;
+
+  /// Send an arbitrary intent to the spine (e.g. navi / cancel_navi).
+  /// No-op when not connected — callers should check [isConnected] first.
+  void sendIntent(Map<String, dynamic> intent) =>
+      _send({'type': 'intent', 'intent': intent});
 
   void start() => _connect();
 
@@ -147,6 +157,9 @@ class SpineClient {
             }
           }
           return;
+        case 'navi_state':
+          if (!_naviCtrl.isClosed) _naviCtrl.add(msg);
+          return;
       }
     } catch (_) {
       // ignore malformed frames
@@ -193,5 +206,6 @@ class SpineClient {
     await _faceCtrl.close();
     await _presenceCtrl.close();
     await _connCtrl.close();
+    await _naviCtrl.close();
   }
 }

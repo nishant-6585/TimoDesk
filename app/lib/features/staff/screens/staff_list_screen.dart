@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/spine_provider.dart';
 import '../providers/staff_list_provider.dart';
 
 /// View / edit / delete enrolled staff (DPDP-compliant erasure).
@@ -237,6 +238,13 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
   late String _personType;
   bool _saving = false;
 
+  // Desk/location pose. Starts as the member's saved pose; Capture replaces it
+  // with the robot's live SLAM position, the clear button nulls it. Only sent
+  // on save when it actually changed (_deskDirty).
+  Map<String, double>? _deskPose;
+  bool _deskDirty = false;
+  bool _capturingDesk = false;
+
   @override
   void initState() {
     super.initState();
@@ -244,6 +252,14 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     _phone = TextEditingController(text: widget.member.phone ?? '');
     _role = TextEditingController(text: widget.member.role ?? '');
     _personType = widget.member.personType ?? 'Employee';
+    if (widget.member.hasDesk) {
+      _deskPose = {
+        'x': widget.member.deskX!,
+        'y': widget.member.deskY!,
+        'z': widget.member.deskZ ?? 0,
+        'rotation': widget.member.deskRotation ?? 0,
+      };
+    }
   }
 
   @override
@@ -254,6 +270,28 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     super.dispose();
   }
 
+  /// Capture the robot's current SLAM pose (via the spine) as this person's
+  /// desk. Requires the robot online and localized, parked at the desk.
+  Future<void> _captureDesk() async {
+    setState(() => _capturingDesk = true);
+    try {
+      final pose = await widget.ref.read(spineProvider.notifier).getPosition();
+      if (!mounted) return;
+      if (pose == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not read robot position — is the robot online and localized on its map?'),
+        ));
+      } else {
+        setState(() {
+          _deskPose = pose;
+          _deskDirty = true;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _capturingDesk = false);
+    }
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -262,6 +300,7 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
         'phone': _phone.text,
         'person_type': _personType,
         'role': _role.text,
+        if (_deskDirty) 'desk_pose': _deskPose,
       });
       widget.ref.invalidate(staffListProvider);
       if (mounted) Navigator.pop(context);
@@ -301,18 +340,76 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
             ),
             const SizedBox(height: 12),
             TextField(controller: _role, decoration: const InputDecoration(labelText: 'Role')),
+            const SizedBox(height: 16),
+            _buildDeskRow(),
           ],
         ),
       ),
       actions: [
         TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
         ElevatedButton(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving || _capturingDesk ? null : _save,
           child: _saving
               ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('Save'),
         ),
       ],
+    );
+  }
+
+  /// Desk location row — shows the captured pose (if any) with capture /
+  /// recapture / clear actions. Park the robot at the desk before capturing.
+  Widget _buildDeskRow() {
+    final has = _deskPose != null;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: MikeeColors.background,
+        border: Border.all(color: MikeeColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(has ? Icons.place : Icons.place_outlined,
+              size: 20, color: has ? MikeeColors.primary : MikeeColors.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Desk Location',
+                    style: GoogleFonts.inter(
+                        fontSize: 13, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary)),
+                Text(
+                  has
+                      ? 'x=${_deskPose!['x']!.toStringAsFixed(2)}, y=${_deskPose!['y']!.toStringAsFixed(2)}'
+                      : 'Park the robot at the desk, then capture.',
+                  style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (has)
+            IconButton(
+              tooltip: 'Clear desk location',
+              icon: const Icon(Icons.close, size: 16),
+              onPressed: _capturingDesk
+                  ? null
+                  : () => setState(() {
+                        _deskPose = null;
+                        _deskDirty = true;
+                      }),
+            ),
+          TextButton.icon(
+            onPressed: _capturingDesk ? null : _captureDesk,
+            icon: _capturingDesk
+                ? const SizedBox(
+                    height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.my_location, size: 16),
+            label: Text(has ? 'Recapture' : 'Capture'),
+          ),
+        ],
+      ),
     );
   }
 }

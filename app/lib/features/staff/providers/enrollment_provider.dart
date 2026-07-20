@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/spine_base.dart';
 import '../models/staff_enroll_model.dart';
 
 final enrollmentProvider = StateNotifierProvider<EnrollmentNotifier, AsyncValue<EnrollmentResponse?>>((ref) {
@@ -28,7 +29,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
       final token = session?.accessToken ?? 'test-token';
       final response = await http
           .post(
-            Uri.parse('http://localhost:4000/check-face'),
+            Uri.parse('$spineHttpBase/check-face'),
             headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
             body: jsonEncode({'image_base64': base64Encode(imageBytes)}),
           )
@@ -64,7 +65,7 @@ class EnrollmentNotifier extends StateNotifier<AsyncValue<EnrollmentResponse?>> 
     final imageBase64 = base64Encode(imageBytes);
 
     // POST to Spine /enroll endpoint (one photo at a time)
-    final spineUrl = 'http://localhost:4000/enroll';
+    final spineUrl = '$spineHttpBase/enroll';
     final response = await http.post(
       Uri.parse(spineUrl),
       headers: {

@@ -30,6 +30,8 @@ export interface Intent {
   transcript?: { role: 'user' | 'assistant'; text: string; ts: string }[]; // for voice_log
   resolvedBy?: 'elevenlabs';
   point?: RobotPosition; // for navi
+  name?: string; // for navi — display name of the target point (broadcast to all clients)
+  source?: 'admin' | 'robot'; // for navi — which UI initiated it
 }
 
 // A SLAM pose / navigation point.
@@ -108,7 +110,7 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state';
   ok?: boolean;
   message?: string;
   intent?: string; // for ack
@@ -117,6 +119,15 @@ export interface SpineMessage {
   position?: RobotPosition; // for get_position response
   event?: string; // for event — the event type name (e.g. 'face_detected')
   eventPayload?: Record<string, any>; // for event — the event payload fields
+  // navi_state — spine-owned cross-client navigation state (Go To / Cancel sync)
+  active?: boolean;
+  name?: string; // target point display name
+  point?: RobotPosition;
+  source?: string; // 'admin' | 'robot'
+  cancelling?: boolean;
+  startedAt?: number;
+  arrived?: boolean; // one-shot: navigation completed (sent with active:false)
+  stalled?: boolean; // goal active but robot not moving — nav service likely wedged
 }
 
 // Session tracking (spine-internal)

@@ -7,7 +7,7 @@
 import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
-import { SpineMessage, AdminMessage, RobotStatus, RobotEvent } from './types';
+import { SpineMessage, AdminMessage, RobotStatus, RobotEvent, RobotPosition } from './types';
 import { routeMessage } from './commands/router';
 import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
@@ -39,6 +39,103 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     // WebSocket server exists (below); declared here so HTTP route handlers
     // (e.g. /visit) can reference it. No-op until assigned (requests arrive after).
     let broadcastRobotEvent: (event: RobotEvent) => void = () => {};
+
+    // Spine-owned navigation state, broadcast to ALL clients (admin + robot app)
+    // so a Go To pressed on either platform shows its banner + Cancel on both.
+    // Cleared on the robot's cancel_result; replaced by each new navi.
+    let naviState: {
+      active: boolean;
+      point?: RobotPosition;
+      name?: string;
+      source?: string;
+      startedAt?: number;
+      cancelling?: boolean;
+      arrived?: boolean;
+      stalled?: boolean;
+    } = { active: false };
+    let broadcastNaviState: () => void = () => {};
+
+    // Arrival watcher: while a navi is active, poll the live pose against the
+    // target. Within ARRIVE_DIST_M we're "there"; we then wait for the heading
+    // to align (or ARRIVE_ROT_WAIT_MS of hunting) and CANCEL the residual goal —
+    // the chassis otherwise keeps rotating at the point indefinitely. Broadcasts
+    // navi_state {active:false, arrived:true} so both UIs show "complete".
+    const ARRIVE_DIST_M = 0.4;
+    const ARRIVE_ROT_TOL_DEG = 20;
+    const ARRIVE_ROT_WAIT_MS = 10_000;
+    const NAVI_WATCH_TIMEOUT_MS = 4 * 60_000;
+    let naviWatchTimer: ReturnType<typeof setInterval> | null = null;
+    const stopNaviWatch = () => {
+      if (naviWatchTimer) {
+        clearInterval(naviWatchTimer);
+        naviWatchTimer = null;
+      }
+    };
+    const startNaviWatch = () => {
+      stopNaviWatch();
+      const target = naviState.point;
+      if (!target || !sdk.getPosition) return;
+      const watchStarted = Date.now();
+      let nearSince: number | null = null;
+      let lastPose: RobotPosition | null = null;
+      let lastMovedAt = Date.now();
+      naviWatchTimer = setInterval(async () => {
+        if (!naviState.active) {
+          stopNaviWatch();
+          return;
+        }
+        try {
+          const pos = await sdk.getPosition!();
+          const dist = Math.hypot(pos.x - target.x, pos.y - target.y);
+
+          // Stall detection: goal active but the robot hasn't moved (>0.15m or
+          // >10° heading) for 20s and isn't at the goal → its nav service is
+          // wedged (the pattern seen when the chassis stack needs a power-cycle).
+          // Surface it so operators see WHY nothing is happening.
+          if (lastPose) {
+            const moved = Math.hypot(pos.x - lastPose.x, pos.y - lastPose.y) > 0.15 ||
+              Math.abs(((pos.rotation - lastPose.rotation + 540) % 360) - 180) > 10;
+            if (moved) {
+              lastMovedAt = Date.now();
+              if (naviState.stalled) {
+                naviState = { ...naviState, stalled: false };
+                broadcastNaviState();
+              }
+            } else if (!naviState.stalled && dist > ARRIVE_DIST_M &&
+                Date.now() - lastMovedAt > 20_000) {
+              console.log('[Spine] Navi STALLED — goal active but robot not moving');
+              naviState = { ...naviState, stalled: true };
+              broadcastNaviState();
+            }
+          }
+          lastPose = pos;
+          if (dist <= ARRIVE_DIST_M) {
+            nearSince = nearSince ?? Date.now();
+            const rotDelta = Math.abs(((pos.rotation - target.rotation + 540) % 360) - 180);
+            if (rotDelta <= ARRIVE_ROT_TOL_DEG || Date.now() - nearSince >= ARRIVE_ROT_WAIT_MS) {
+              console.log(`[Spine] Navi arrival detected (dist ${dist.toFixed(2)}m, rotΔ ${rotDelta.toFixed(0)}°) — completing`);
+              stopNaviWatch();
+              const name = naviState.name;
+              naviState = { active: false, arrived: true, name };
+              // Kill any residual rotation-hunting at the goal.
+              try {
+                await sdk.cancelNavi?.();
+              } catch { /* best-effort */ }
+              broadcastNaviState();
+              naviState = { active: false }; // arrived is a one-shot flag
+            }
+          } else {
+            nearSince = null;
+          }
+          if (naviState.active && Date.now() - watchStarted > NAVI_WATCH_TIMEOUT_MS) {
+            console.log('[Spine] Navi watch timeout — clearing stale navi_state');
+            stopNaviWatch();
+            naviState = { active: false };
+            broadcastNaviState();
+          }
+        } catch { /* pose read failed — skip this tick */ }
+      }, 2000);
+    };
 
     // Initialize face-api models BEFORE server starts (required for enrollment)
     try {
@@ -221,6 +318,9 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             const statusResponse = { type: 'robot_status', status } as SpineMessage;
             ws.send(JSON.stringify(statusResponse));
 
+            // Emit current navigation state so a client joining mid-nav shows the banner.
+            ws.send(JSON.stringify({ type: 'navi_state', ...naviState } as SpineMessage));
+
             return;
           }
 
@@ -255,6 +355,26 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           console.log(`[Spine WebSocket] Handler returned response type: ${response.type}`);
           console.log(`[Spine WebSocket] Sending response to client: ${JSON.stringify(response)}`);
           ws.send(JSON.stringify(response));
+
+          // Navigation state sync: a successfully-acked navi/cancel_navi updates
+          // the shared navi_state and pushes it to every connected client.
+          if (msg.type === 'intent' && response.type === 'ack' && response.ok) {
+            const it = msg.intent?.intent;
+            if (it === 'navi') {
+              naviState = {
+                active: true,
+                point: msg.intent?.point,
+                name: msg.intent?.name,
+                source: msg.intent?.source ?? 'admin',
+                startedAt: Date.now(),
+              };
+              broadcastNaviState();
+              startNaviWatch();
+            } else if (it === 'cancel_navi' && naviState.active) {
+              naviState = { ...naviState, cancelling: true };
+              broadcastNaviState();
+            }
+          }
           console.log(`[Spine WebSocket] ======== MESSAGE COMPLETE ========`);
         } catch (err) {
           console.error('[Spine WebSocket] !!!! MESSAGE HANDLING ERROR !!!!');
@@ -303,6 +423,16 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Log but don't exit — keep server alive for robot control
     });
 
+    broadcastNaviState = () => {
+      const msg = { type: 'navi_state', ...naviState } as SpineMessage;
+      console.log(`[Spine] Broadcasting navi_state: ${JSON.stringify(msg)}`);
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(msg));
+        }
+      });
+    };
+
     // Single broadcast path for all RobotEvents → { type:'event', event, eventPayload }.
     broadcastRobotEvent = (event: RobotEvent) => {
       const { type: eventType, ...rest } = event;
@@ -316,6 +446,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           client.send(JSON.stringify(msg));
         }
       });
+      // The robot confirmed a navigation cancel → clear the shared navi state.
+      if (eventType === 'navi_event' && (event.payload as Record<string, any>)?.event === 'cancel_result') {
+        if (naviState.active || naviState.cancelling) {
+          naviState = { active: false };
+          broadcastNaviState();
+        }
+      }
       // Push trigger (#90): battery low → notify admins (best-effort, never throws).
       if (eventType === 'battery_update' && supabase) {
         const level = Number(event.payload?.level);

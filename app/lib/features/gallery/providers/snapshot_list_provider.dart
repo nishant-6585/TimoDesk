@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/spine_base.dart';
 
 // Mirrors staff_list_provider — the spine base + auth token pattern. The
 // hardcoded localhost is the same #91 tech-debt as elsewhere; not this task.
-const String _spineBase = 'http://localhost:4000';
+final String _spineBase = spineHttpBase;
 
 String _authToken() =>
     Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';

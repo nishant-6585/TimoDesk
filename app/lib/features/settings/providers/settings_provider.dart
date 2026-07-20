@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../../core/constants.dart';
+import '../../../core/spine_base.dart';
 
 class SettingsState {
   final String spineUrl;
@@ -30,8 +30,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     // HARDCODED: Always initialize with REAL ROBOT settings
     // NEVER use cached/old settings from SharedPreferences
     : super(SettingsState(
-        spineUrl: 'ws://localhost:4000',
-        robotIp: '192.168.1.21',
+        spineUrl: spineWsUrl,
+        robotIp: '192.168.1.5',
       )) {
     _clearOldCachedSettings();
   }
@@ -46,9 +46,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
       print('[SettingsNotifier] ════════════════════════════════════════');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.1.21');
-      print('[SettingsNotifier] Spine: ws://localhost:4000');
-      print('[SettingsNotifier] Camera: http://192.168.1.21:8080/stream');
+      print('[SettingsNotifier] Robot IP: 192.168.1.5');
+      print('[SettingsNotifier] Spine: $spineWsUrl');
+      print('[SettingsNotifier] Camera: http://192.168.1.5:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
       print('[SettingsNotifier] ════════════════════════════════════════');
     } catch (e) {
@@ -60,7 +60,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Spine URL, ignoring to keep hardcoded value');
-      state = state.copyWith(spineUrl: 'ws://localhost:4000');
+      state = state.copyWith(spineUrl: spineWsUrl);
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }
@@ -70,7 +70,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.1.21');
+      state = state.copyWith(robotIp: '192.168.1.5');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }

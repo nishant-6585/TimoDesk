@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/spine_base.dart';
 
-const String _spineBase = 'http://localhost:4000';
+final String _spineBase = spineHttpBase;
 
 String _authToken() =>
     Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
@@ -17,6 +18,11 @@ class StaffMember {
   final int embeddingCount;
   final bool active;
   final String? photoUrl;
+  // Desk/location SLAM pose captured via the robot (migration 013). Null = not captured.
+  final double? deskX;
+  final double? deskY;
+  final double? deskZ;
+  final double? deskRotation;
 
   StaffMember({
     required this.id,
@@ -27,7 +33,13 @@ class StaffMember {
     required this.embeddingCount,
     required this.active,
     this.photoUrl,
+    this.deskX,
+    this.deskY,
+    this.deskZ,
+    this.deskRotation,
   });
+
+  bool get hasDesk => deskX != null && deskY != null;
 
   factory StaffMember.fromJson(Map<String, dynamic> j) => StaffMember(
         id: j['id'] as String,
@@ -38,6 +50,10 @@ class StaffMember {
         embeddingCount: (j['embedding_count'] ?? 0) as int,
         active: (j['active'] ?? true) as bool,
         photoUrl: j['photo_url'] as String?,
+        deskX: (j['desk_x'] as num?)?.toDouble(),
+        deskY: (j['desk_y'] as num?)?.toDouble(),
+        deskZ: (j['desk_z'] as num?)?.toDouble(),
+        deskRotation: (j['desk_rotation'] as num?)?.toDouble(),
       );
 }
 

@@ -6,6 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
 import 'services/audio_bridge.dart'; // arrival speech (CSJBot built-in TTS)
 import 'services/nav_points_api.dart';
+import 'services/spine_client.dart';
+
+/// Shared spine WS client for navigation sync. Separate instance from the
+/// ambient-face screen's private client (cleanup TODO: unify them here).
+final navSpineClientProvider = Provider<SpineClient>((ref) {
+  ref.keepAlive();
+  final client = SpineClient()..start();
+  ref.onDispose(client.dispose);
+  return client;
+});
 
 /// Whole-screen state for the on-robot Navigation Points feature.
 ///
@@ -50,12 +60,49 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         .read(chassisProvider.notifier)
         .naviEvents
         .listen(_onNaviEvent);
+    // Spine navi_state broadcasts: a Go To / Cancel from ANY client (web admin
+    // or this robot) syncs the banner + cancel UI here.
+    _naviStateSub =
+        _ref.read(navSpineClientProvider).naviState.listen(_onSpineNaviState);
   }
 
   final Ref _ref;
   final NavPointsApi _api = NavPointsApi();
   final AudioBridge _audio = AudioBridge();
   StreamSubscription<NaviEvent>? _naviSub;
+  StreamSubscription<Map<String, dynamic>>? _naviStateSub;
+
+  /// Apply a spine navi_state broadcast (the shared cross-client truth).
+  void _onSpineNaviState(Map<String, dynamic> m) {
+    if (!mounted) return;
+    if (m['active'] != true) {
+      if (m['arrived'] == true) {
+        // Spine's arrival watcher confirmed the robot reached the point.
+        final name =
+            (m['name'] as String?) ?? state.navigatingTo?.name ?? 'the destination';
+        _audio.speak("I've arrived at $name.");
+        state = state.copyWith(clearNavigating: true, arrivedAt: name);
+      } else {
+        state = state.copyWith(clearNavigating: true);
+      }
+      return;
+    }
+    final name = (m['name'] as String?) ?? 'a saved point';
+    if (state.navigatingTo?.name == name) return; // already showing it
+    final list = state.points.valueOrNull ?? const <NavPoint>[];
+    final target = list.where((p) => p.name == name).firstOrNull ??
+        NavPoint(
+          id: '_remote',
+          name: name,
+          x: 0,
+          y: 0,
+          z: 0,
+          rotation: 0,
+          kind: 'navigation',
+          sortOrder: 0,
+        );
+    state = state.copyWith(navigatingTo: target, clearArrived: true);
+  }
 
   /// Handle a navigation lifecycle event from the native chassis plugin.
   /// On arrival: speak the destination name, clear the navigating flag, and
@@ -79,6 +126,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   @override
   void dispose() {
     _naviSub?.cancel();
+    _naviStateSub?.cancel();
     super.dispose();
   }
 
@@ -138,8 +186,34 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
 
   /// Send the robot to a saved point. Sets [NavPointsState.navigatingTo] while
   /// the SDK is driving there. Returns false if the SDK rejected the request.
+  ///
+  /// Routed through the spine when connected (single command path + the spine
+  /// broadcasts navi_state so the web admin shows the same banner/cancel).
+  /// Falls back to the native MethodChannel when the spine is unreachable
+  /// (standalone mode — no cross-device sync then).
   Future<bool> goTo(NavPoint point) async {
     state = state.copyWith(navigatingTo: point, clearArrived: true);
+    final spine = _ref.read(navSpineClientProvider);
+    if (spine.isConnected) {
+      // isConnected can be STALE after a silent Wi-Fi drop (half-open socket) —
+      // require the spine's navi_state confirmation broadcast; on timeout fall
+      // through to the native path so on-robot Go To works offline too.
+      final confirmed = spine.naviState
+          .firstWhere((m) => m['active'] == true)
+          .timeout(const Duration(seconds: 3));
+      spine.sendIntent({
+        'intent': 'navi',
+        'point': point.pose,
+        'name': point.name,
+        'source': 'robot',
+      });
+      try {
+        await confirmed;
+        return true;
+      } catch (_) {
+        debugPrint('goTo: spine unconfirmed in 3s — falling back to native');
+      }
+    }
     try {
       await _ensureChassis();
       final ok = await _ref.read(chassisProvider.notifier).naviTo(point.pose);
@@ -153,7 +227,22 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   }
 
   /// Cancel an in-flight navigation and clear the navigating flag.
+  /// Via spine when connected (so all clients see the cancel); falls back to
+  /// the native path if the spine doesn't confirm within 3s (stale socket).
   Future<void> cancel() async {
+    final spine = _ref.read(navSpineClientProvider);
+    if (spine.isConnected) {
+      final confirmed = spine.naviState
+          .firstWhere((m) => m['active'] != true || m['cancelling'] == true)
+          .timeout(const Duration(seconds: 3));
+      spine.sendIntent({'intent': 'cancel_navi'});
+      try {
+        await confirmed;
+        return; // banner clears on the robot's cancel_result broadcast
+      } catch (_) {
+        debugPrint('cancel: spine unconfirmed in 3s — falling back to native');
+      }
+    }
     await _ref.read(chassisProvider.notifier).cancelNavi();
     if (mounted) state = state.copyWith(clearNavigating: true);
   }

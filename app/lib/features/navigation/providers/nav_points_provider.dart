@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/supabase.dart';
+import '../../../services/spine/navi_status_provider.dart';
 import '../../../services/spine/spine_provider.dart';
 
 /// A named SLAM pose the robot can navigate to. Mirrors the `nav_points`
@@ -100,7 +101,15 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
 
   /// Send the robot to a saved point. Fire-and-forget through the spine.
   void goTo(NavPoint point) {
-    _ref.read(spineProvider.notifier).naviTo(point.pose);
+    _ref.read(spineProvider.notifier).naviTo(point.pose, name: point.name);
+    _ref.read(naviStatusProvider.notifier).start(point.name);
+  }
+
+  /// Cancel the in-flight navigation. The banner clears when the robot's
+  /// cancel_result navi_event comes back through the spine.
+  void cancelNavi() {
+    _ref.read(spineProvider.notifier).cancelNavi();
+    _ref.read(naviStatusProvider.notifier).cancelling();
   }
 }
 

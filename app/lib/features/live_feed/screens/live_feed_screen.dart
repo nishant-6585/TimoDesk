@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants.dart';
+import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/visitor_arrived_provider.dart';
 import '../../settings/providers/settings_provider.dart';
@@ -1098,7 +1099,7 @@ class _VisitorCheckInCardState extends ConsumerState<_VisitorCheckInCard> {
       final token = Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
       final res = await http
           .post(
-            Uri.parse('http://localhost:4000/visit'),
+            Uri.parse('$spineHttpBase/visit'),
             headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
             body: jsonEncode({'visitor_name': name, 'host_staff_id': _hostId}),
           )

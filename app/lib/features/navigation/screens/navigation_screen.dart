@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/navi_status_provider.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../providers/nav_points_provider.dart';
 
@@ -97,6 +98,11 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
     _snack('Sending robot to "${point.name}"…');
   }
 
+  void _onCancelNavi() {
+    ref.read(navPointsProvider.notifier).cancelNavi();
+    _snack('Cancelling navigation…');
+  }
+
   Future<void> _onDelete(NavPoint point) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -129,6 +135,7 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
     final spine = ref.watch(spineProvider);
     final online = spine.connected && (spine.status?.online ?? false);
     final pointsAsync = ref.watch(navPointsProvider);
+    final naviStatus = ref.watch(naviStatusProvider);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -143,6 +150,14 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
               capturing: _capturing,
               onCapture: _onCapture,
             ),
+            if (naviStatus != null) ...[
+              const SizedBox(height: 16),
+              _NavigatingBanner(
+                status: naviStatus,
+                onCancel: _onCancelNavi,
+                onDismiss: () => ref.read(naviStatusProvider.notifier).clear(),
+              ),
+            ],
             const SizedBox(height: 24),
             pointsAsync.when(
               loading: () => const Padding(
@@ -247,6 +262,91 @@ class _CaptureBar extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Shown while a Go To is in flight. Persists until the robot confirms a
+/// cancel (cancel_result clears the provider) or the user dismisses it, so the
+/// Cancel button stays reachable for the whole navigation.
+class _NavigatingBanner extends StatelessWidget {
+  final NaviStatus status;
+  final VoidCallback onCancel;
+  final VoidCallback onDismiss;
+  const _NavigatingBanner({required this.status, required this.onCancel, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = status.arrived ? MikeeColors.success : MikeeColors.primary;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.08),
+        border: Border.all(color: accent.withOpacity(0.4)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(children: [
+        if (status.arrived)
+          const Icon(Icons.check_circle, size: 20, color: MikeeColors.success)
+        else
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: MikeeColors.primary),
+          ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              status.arrived
+                  ? 'Arrived at "${status.pointName}"'
+                  : status.cancelling
+                      ? 'Cancelling navigation…'
+                      : 'Navigating to "${status.pointName}"',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              status.arrived
+                  ? 'Navigation complete.'
+                  : status.cancelling
+                      ? 'Waiting for the robot to confirm the cancel.'
+                      : status.stalled
+                          ? 'Robot is NOT moving — its navigation service looks wedged. '
+                              'Cancel, then power-cycle the robot if this repeats.'
+                          : 'The robot is driving autonomously to the saved point.',
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: status.stalled ? MikeeColors.error : MikeeColors.textSecondary,
+                  fontWeight: status.stalled ? FontWeight.w600 : FontWeight.w400),
+            ),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        if (!status.arrived)
+          SizedBox(
+            height: 38,
+            child: ElevatedButton.icon(
+              onPressed: status.cancelling ? null : onCancel,
+              icon: const Icon(Icons.close, size: 16),
+              label: Text('Cancel navigation', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: MikeeColors.error,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: MikeeColors.inset,
+                disabledForegroundColor: MikeeColors.textMuted,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        IconButton(
+          onPressed: onDismiss,
+          icon: Icon(status.arrived ? Icons.close : Icons.visibility_off_outlined, size: 18),
+          color: MikeeColors.textMuted,
+          tooltip: status.arrived ? 'Dismiss' : 'Hide banner (does not stop the robot)',
         ),
       ]),
     );
