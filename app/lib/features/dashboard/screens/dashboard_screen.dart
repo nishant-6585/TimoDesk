@@ -227,7 +227,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final spineState = ref.watch(spineProvider);
-    final online = spineState.connected;
+    // ONLINE means the ROBOT is reachable, not merely the browser↔spine link —
+    // same derivation as the Navigation screen so the two never disagree.
+    final online = spineState.connected && (spineState.status?.online ?? false);
     // Real battery from spine, or null (shown as "—") when unknown — no fake value.
     final rawBattery = spineState.status?.battery;
     final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
@@ -412,7 +414,7 @@ class _RobotStatusCard extends StatelessWidget {
         const SizedBox(height: 12),
         Text.rich(
           TextSpan(
-            text: online ? 'Connected · ' : 'Link lost — retrying…',
+            text: online ? 'Connected · ' : 'Robot unreachable — check power/Wi-Fi',
             style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
             children: online
                 ? [

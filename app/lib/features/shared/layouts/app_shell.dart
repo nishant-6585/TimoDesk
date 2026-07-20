@@ -42,7 +42,8 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final spine = ref.watch(spineProvider);
-    final online = spine.connected;
+    // Robot reachability, not just the browser↔spine link (matches Navigation).
+    final online = spine.connected && (spine.status?.online ?? false);
     final rawBattery = spine.status?.battery;
     final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
     final bool charging = spine.status?.isCharging ?? false;
