@@ -32,6 +32,7 @@ export interface Intent {
   point?: RobotPosition; // for navi
   name?: string; // for navi — display name of the target point (broadcast to all clients)
   source?: 'admin' | 'robot'; // for navi — which UI initiated it
+  arrivalText?: string; // for navi — custom phrase the robot speaks on arrival
 }
 
 // A SLAM pose / navigation point.
@@ -128,6 +129,7 @@ export interface SpineMessage {
   startedAt?: number;
   arrived?: boolean; // one-shot: navigation completed (sent with active:false)
   stalled?: boolean; // goal active but robot not moving — nav service likely wedged
+  arrivalText?: string; // custom arrival phrase (spoken by the robot on arrived)
 }
 
 // Session tracking (spine-internal)

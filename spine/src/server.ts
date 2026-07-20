@@ -52,6 +52,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       cancelling?: boolean;
       arrived?: boolean;
       stalled?: boolean;
+      arrivalText?: string;
     } = { active: false };
     let broadcastNaviState: () => void = () => {};
 
@@ -88,25 +89,27 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           const pos = await sdk.getPosition!();
           const dist = Math.hypot(pos.x - target.x, pos.y - target.y);
 
-          // Stall detection: goal active but the robot hasn't moved (>0.15m or
-          // >10° heading) for 20s and isn't at the goal → its nav service is
-          // wedged (the pattern seen when the chassis stack needs a power-cycle).
-          // Surface it so operators see WHY nothing is happening.
+          // Stall detection: goal active but the robot has not TRANSLATED
+          // (>0.15m) for 30s and isn't at the goal → either fully wedged (needs
+          // power-cycle) or spinning in place because the planner can't find a
+          // clear path out of its spot. Rotation deliberately does NOT count as
+          // progress — endless rotate-in-place is exactly a failure mode.
           if (lastPose) {
-            const moved = Math.hypot(pos.x - lastPose.x, pos.y - lastPose.y) > 0.15 ||
-              Math.abs(((pos.rotation - lastPose.rotation + 540) % 360) - 180) > 10;
-            if (moved) {
+            const translated = Math.hypot(pos.x - lastPose.x, pos.y - lastPose.y) > 0.15;
+            if (translated) {
               lastMovedAt = Date.now();
               if (naviState.stalled) {
                 naviState = { ...naviState, stalled: false };
                 broadcastNaviState();
               }
             } else if (!naviState.stalled && dist > ARRIVE_DIST_M &&
-                Date.now() - lastMovedAt > 20_000) {
-              console.log('[Spine] Navi STALLED — goal active but robot not moving');
+                Date.now() - lastMovedAt > 30_000) {
+              console.log('[Spine] Navi STALLED — goal active but robot not translating');
               naviState = { ...naviState, stalled: true };
               broadcastNaviState();
             }
+          } else {
+            lastMovedAt = Date.now();
           }
           lastPose = pos;
           if (dist <= ARRIVE_DIST_M) {
@@ -116,7 +119,8 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               console.log(`[Spine] Navi arrival detected (dist ${dist.toFixed(2)}m, rotΔ ${rotDelta.toFixed(0)}°) — completing`);
               stopNaviWatch();
               const name = naviState.name;
-              naviState = { active: false, arrived: true, name };
+              const arrivalText = naviState.arrivalText;
+              naviState = { active: false, arrived: true, name, arrivalText };
               // Kill any residual rotation-hunting at the goal.
               try {
                 await sdk.cancelNavi?.();
@@ -366,6 +370,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
                 point: msg.intent?.point,
                 name: msg.intent?.name,
                 source: msg.intent?.source ?? 'admin',
+                arrivalText: msg.intent?.arrivalText,
                 startedAt: Date.now(),
               };
               broadcastNaviState();

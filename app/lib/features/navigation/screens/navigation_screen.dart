@@ -36,13 +36,16 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
       _snack('Robot offline — cannot capture position');
       return;
     }
-    final name = await _promptName();
-    if (name == null || name.trim().isEmpty) return;
+    final result = await _promptName();
+    if (result == null || result.$1.trim().isEmpty) return;
+    final name = result.$1.trim();
 
     setState(() => _capturing = true);
     try {
-      await ref.read(navPointsProvider.notifier).capture(name.trim());
-      _snack('Captured "${name.trim()}"');
+      await ref
+          .read(navPointsProvider.notifier)
+          .capture(name, description: result.$2);
+      _snack('Captured "$name"');
     } catch (e) {
       _snack('Capture failed: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
@@ -50,9 +53,20 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
     }
   }
 
-  Future<String?> _promptName() {
-    final controller = TextEditingController();
-    return showDialog<String>(
+  InputDecoration _dialogField(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textMuted),
+        filled: true,
+        fillColor: MikeeColors.inset,
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: MikeeColors.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: MikeeColors.primary)),
+      );
+
+  /// Returns (name, arrivalAnnouncement) — announcement null when left empty.
+  Future<(String, String?)?> _promptName() {
+    final nameCtrl = TextEditingController();
+    final sayCtrl = TextEditingController();
+    return showDialog<(String, String?)>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: MikeeColors.cardTop,
@@ -63,24 +77,31 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
               style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
           const SizedBox(height: 16),
           TextField(
-            controller: controller,
+            controller: nameCtrl,
             autofocus: true,
             style: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textPrimary),
-            onSubmitted: (v) => Navigator.of(ctx).pop(v),
-            decoration: InputDecoration(
-              hintText: 'e.g. Reception desk',
-              hintStyle: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textMuted),
-              filled: true,
-              fillColor: MikeeColors.inset,
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: MikeeColors.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: MikeeColors.primary)),
-            ),
+            decoration: _dialogField('e.g. Reception desk'),
           ),
+          const SizedBox(height: 14),
+          Text('ARRIVAL ANNOUNCEMENT (OPTIONAL)',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.08, color: MikeeColors.textSecondary)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: sayCtrl,
+            style: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textPrimary),
+            decoration: _dialogField("e.g. Welcome to Vishal's office"),
+          ),
+          const SizedBox(height: 6),
+          Text('The robot speaks this on reaching the point. Left empty it says "We have arrived at <name>."',
+              style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text('Cancel', style: GoogleFonts.inter(color: MikeeColors.textSecondary))),
           ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            onPressed: () => Navigator.of(ctx).pop((
+              nameCtrl.text,
+              sayCtrl.text.trim().isEmpty ? null : sayCtrl.text.trim(),
+            )),
             style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary, foregroundColor: Colors.white),
             child: Text('Capture', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),

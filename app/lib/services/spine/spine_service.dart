@@ -251,11 +251,12 @@ class SpineService extends StateNotifier<SpineState> {
 
   /// Navigate the robot to a saved pose. Fire-and-forget — the spine acks
   /// {type:'ack', intent:'navi'}, then broadcasts navi_state to all clients.
-  void naviTo(Map<String, dynamic> point, {String? name}) {
+  void naviTo(Map<String, dynamic> point, {String? name, String? arrivalText}) {
     sendIntent({
       'intent': 'navi',
       'point': point,
       if (name != null) 'name': name,
+      if (arrivalText != null) 'arrivalText': arrivalText,
       'source': 'admin',
     });
   }

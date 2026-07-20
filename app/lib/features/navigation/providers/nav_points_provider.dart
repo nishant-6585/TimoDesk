@@ -101,7 +101,12 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
 
   /// Send the robot to a saved point. Fire-and-forget through the spine.
   void goTo(NavPoint point) {
-    _ref.read(spineProvider.notifier).naviTo(point.pose, name: point.name);
+    final say = point.description?.trim();
+    _ref.read(spineProvider.notifier).naviTo(
+          point.pose,
+          name: point.name,
+          arrivalText: (say != null && say.isNotEmpty) ? say : null,
+        );
     _ref.read(naviStatusProvider.notifier).start(point.name);
   }
 

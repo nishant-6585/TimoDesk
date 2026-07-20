@@ -60,11 +60,14 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
   }
 
   Future<void> _onCapture() async {
-    final name = await _promptName();
-    if (name == null || name.trim().isEmpty) return;
+    final result = await _promptName();
+    if (result == null || result.$1.trim().isEmpty) return;
+    final name = result.$1.trim();
     try {
-      await ref.read(navPointsProvider.notifier).capture(name.trim());
-      _snack('Captured "${name.trim()}"');
+      await ref
+          .read(navPointsProvider.notifier)
+          .capture(name, description: result.$2);
+      _snack('Captured "$name"');
     } catch (e) {
       _snack(_clean(e), error: true);
     }
@@ -401,10 +404,27 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
     );
   }
 
-  // ── Name dialog ──────────────────────────────────────────────────────────────
-  Future<String?> _promptName() {
-    final controller = TextEditingController();
-    return showDialog<String>(
+  // ── Name + announcement dialog ───────────────────────────────────────────────
+  InputDecoration _dialogField(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: _muted2, fontSize: 18),
+        filled: true,
+        fillColor: _bg,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _line)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _accent)),
+      );
+
+  /// Returns (name, arrivalAnnouncement) — announcement null when left empty.
+  Future<(String, String?)?> _promptName() {
+    final nameCtrl = TextEditingController();
+    final sayCtrl = TextEditingController();
+    return showDialog<(String, String?)>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _panel,
@@ -421,26 +441,29 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
                 style: TextStyle(color: _muted, fontSize: 14)),
             const SizedBox(height: 18),
             TextField(
-              controller: controller,
+              controller: nameCtrl,
               autofocus: true,
               style: const TextStyle(color: _ink, fontSize: 18),
               textCapitalization: TextCapitalization.words,
-              onSubmitted: (v) => Navigator.of(ctx).pop(v),
-              decoration: InputDecoration(
-                hintText: 'e.g. Reception desk',
-                hintStyle: const TextStyle(color: _muted2, fontSize: 18),
-                filled: true,
-                fillColor: _bg,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 16),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _line)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _accent)),
-              ),
+              decoration: _dialogField('e.g. Reception desk'),
             ),
+            const SizedBox(height: 14),
+            const Text('Arrival announcement (optional)',
+                style: TextStyle(
+                    color: _muted, fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: sayCtrl,
+              style: const TextStyle(color: _ink, fontSize: 16),
+              textCapitalization: TextCapitalization.sentences,
+              decoration:
+                  _dialogField("e.g. Welcome to Vishal's office"),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+                'Spoken when I reach this point. Left empty, I\'ll say '
+                '"We have arrived at <name>."',
+                style: TextStyle(color: _muted2, fontSize: 12)),
           ],
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -454,7 +477,10 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
                 style: TextStyle(color: _muted, fontSize: 16)),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            onPressed: () => Navigator.of(ctx).pop((
+              nameCtrl.text,
+              sayCtrl.text.trim().isEmpty ? null : sayCtrl.text.trim(),
+            )),
             style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
                 foregroundColor: Colors.white,

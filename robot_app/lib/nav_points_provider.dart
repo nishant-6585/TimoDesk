@@ -80,7 +80,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         // Spine's arrival watcher confirmed the robot reached the point.
         final name =
             (m['name'] as String?) ?? state.navigatingTo?.name ?? 'the destination';
-        _audio.speak("I've arrived at $name.");
+        _audio.speak(_arrivalPhrase(name, m['arrivalText'] as String?));
         state = state.copyWith(clearNavigating: true, arrivedAt: name);
       } else {
         state = state.copyWith(clearNavigating: true);
@@ -104,14 +104,23 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     state = state.copyWith(navigatingTo: target, clearArrived: true);
   }
 
+  /// What the robot says on arrival: the point's custom announcement (stored in
+  /// nav_points.description) when set, else a phrase built from the point name.
+  String _arrivalPhrase(String name, String? custom) {
+    final text = custom?.trim();
+    if (text != null && text.isNotEmpty) return text;
+    return "We have arrived at $name.";
+  }
+
   /// Handle a navigation lifecycle event from the native chassis plugin.
   /// On arrival: speak the destination name, clear the navigating flag, and
   /// surface a transient "arrived" banner.
   void _onNaviEvent(NaviEvent e) {
     if (!mounted) return;
     if (e.isArrival) {
-      final name = state.navigatingTo?.name ?? 'the destination';
-      _audio.speak("I've arrived at $name.");
+      final target = state.navigatingTo;
+      final name = target?.name ?? 'the destination';
+      _audio.speak(_arrivalPhrase(name, target?.description));
       state = state.copyWith(clearNavigating: true, arrivedAt: name);
     } else if (e.kind == 'cancel_result') {
       state = state.copyWith(clearNavigating: true);
@@ -206,6 +215,8 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         'point': point.pose,
         'name': point.name,
         'source': 'robot',
+        if (point.description?.trim().isNotEmpty == true)
+          'arrivalText': point.description!.trim(),
       });
       try {
         await confirmed;
