@@ -14,6 +14,9 @@ import 'services/elevenlabs_tts.dart';
 import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
+import 'nav_points_provider.dart';
+import 'services/nav_points_api.dart';
+import 'services/nav_voice.dart';
 import 'waving_hand_overlay.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
@@ -295,17 +298,26 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // ── Wire 2: spine identity + presence ───────────────────────────────────────
   void _onFaceDetected(FaceDetectedEvent e) {
-    if (_voiceActive || _greeted) return; // don't greet over a conversation / twice
+    if (_voiceActive) return; // don't greet over a conversation
     final now = DateTime.now();
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     _greetedAt[e.name] = now;
+    // A NAMED greeting is allowed to fire even after the generic approach
+    // greeting already went out — the spine's identity often lands a beat late,
+    // and staff should always hear their personalised welcome (once per
+    // debounce window). It just must not re-open the mic a second time.
+    final upgradeAfterGeneric = _greeted;
     _greeted = true; // counts as this visit's one greeting
     _awaitingRecognition = false; // spine identity beat the local recogniser
     _recognitionWaitTimer?.cancel();
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(e.name));
-    _greetThenListen(lang.greetSpeech(e.name));
+    if (upgradeAfterGeneric) {
+      _speakGreeting(lang.greetSpeech(e.name));
+    } else {
+      _greetThenListen(lang.greetSpeech(e.name));
+    }
   }
 
   // Motion/presence detected → give face recognition a brief head start so a
@@ -315,6 +327,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // greeting. Guarded so exactly one greeting happens per visit.
   void _beginGreetSequence() {
     if (_greeted || _voiceActive || _awaitingRecognition) return;
+    // Don't greet passers-by mid-navigation — it talks over the "follow me" /
+    // arrival announcements (the "hello instead of my announcement" bug).
+    if (ref.read(navPointsProvider).navigatingTo != null) return;
     _awaitingRecognition = true;
     _recognitionWaitTimer?.cancel();
     _recognitionWaitTimer = Timer(_recognitionWindow, () {
@@ -362,6 +377,32 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _tts.speak(text).then((ok) {
       if (!ok) _audioBridge.speak(text);
     });
+  }
+
+  // ── Voice navigation ("go to <saved point>") ────────────────────────────────
+  // Returns true when [transcript] was a navigation command (handled here —
+  // spoken reply + action); false lets the conversational agent answer normally.
+  bool _handleNavVoice(String transcript) {
+    final points =
+        ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+    final result = NavVoice.match(transcript, points);
+    if (!result.isCommand) return false;
+
+    _audioBridge.stopPlayback(); // don't talk over the agent's partial audio
+    if (result.point != null) {
+      final p = result.point!;
+      debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
+      _speakGreeting('Please follow me to ${p.name}.');
+      ref.read(navPointsProvider.notifier).goTo(p);
+    } else {
+      final known = points.map((p) => p.name).take(3).join(', ');
+      debugPrint('NavVoice: "$transcript" → no point matches "${result.heard}"');
+      _speakGreeting(points.isEmpty
+          ? "I don't have any saved locations yet."
+          : "I couldn't find a place called ${result.heard}. "
+              'I can take you to: $known.');
+    }
+    return true;
   }
 
   // Speak the greeting, then auto-open the mic so a visitor can talk without
@@ -533,6 +574,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _conversed = true;
         _bumpActivity();
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
+        // Voice navigation: "go to <saved point>" spoken to Mikee. When the
+        // transcript is a nav command WE handle the reply + action and drop the
+        // agent's own answer to this turn (it doesn't know the saved points).
+        if (e.text != null && _handleNavVoice(e.text!)) {
+          _dropFirstAgentTurn = true;
+          break;
+        }
         // Genuine processing gap (STT done, reply not yet streaming).
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking, mouthOpen: 0));
         break;
