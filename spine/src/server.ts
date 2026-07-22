@@ -61,9 +61,19 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     // to align (or ARRIVE_ROT_WAIT_MS of hunting) and CANCEL the residual goal —
     // the chassis otherwise keeps rotating at the point indefinitely. Broadcasts
     // navi_state {active:false, arrived:true} so both UIs show "complete".
-    const ARRIVE_DIST_M = 0.4;
-    const ARRIVE_ROT_TOL_DEG = 20;
-    const ARRIVE_ROT_WAIT_MS = 10_000;
+    // The chassis's own goal tolerance stops it 0.5–0.8m short of the target
+    // (measured repeatedly), so the arrival radius must be wider than that or
+    // arrival never triggers — the robot then rotation-hunts forever and no
+    // arrived/speech broadcast fires.
+    const ARRIVE_DIST_M = 0.85;
+    // Loose heading tolerance + short grace: the chassis's own final alignment
+    // usually lands within ~30°, and every second here is silence between the
+    // robot stopping and it speaking. Announce fast; precision isn't the point.
+    // 2026-07-22: tightened 35→20→12 per demo feedback — final heading must
+    // closely match the captured pose. Trade-off: settles outside 12° waits the
+    // 3s grace before announcing. Future: prefetch ElevenLabs audio mid-drive.
+    const ARRIVE_ROT_TOL_DEG = 6;
+    const ARRIVE_ROT_WAIT_MS = 3_000;
     const NAVI_WATCH_TIMEOUT_MS = 4 * 60_000;
     let naviWatchTimer: ReturnType<typeof setInterval> | null = null;
     const stopNaviWatch = () => {
@@ -138,7 +148,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             broadcastNaviState();
           }
         } catch { /* pose read failed — skip this tick */ }
-      }, 2000);
+      }, 1000);
     };
 
     // Initialize face-api models BEFORE server starts (required for enrollment)

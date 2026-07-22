@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_service.dart';
 import 'config.dart';
 import 'ambient_face_screen.dart';
+import 'nav_points_provider.dart';
 
 // #89 P1 — the robot chest screen now opens to an AMBIENT FACE (front-of-house
 // shell), not the old _StreamScreen. The face → Dashboard → feature tiles. The
@@ -26,10 +27,14 @@ void main() async {
 
 const _orange = Color(0xFFFF6B35);
 
-class _App extends StatelessWidget {
+class _App extends ConsumerWidget {
   const _App();
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Arm the navigation listener (arrival banner + spoken announcement) at
+    // startup. Without this it only existed after the Navigation Points screen
+    // was opened once — arrivals were silent if the app sat on the face screen.
+    ref.read(navPointsProvider);
     return MaterialApp(
       title: 'Mikee — Robot',
       themeMode: ThemeMode.dark,

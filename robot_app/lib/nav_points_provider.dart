@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'config.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
-import 'services/audio_bridge.dart'; // arrival speech (CSJBot built-in TTS)
+import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
+import 'services/elevenlabs_tts.dart'; // arrival speech (Mikee's real voice)
 import 'services/nav_points_api.dart';
 import 'services/spine_client.dart';
 
@@ -69,8 +71,26 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   final Ref _ref;
   final NavPointsApi _api = NavPointsApi();
   final AudioBridge _audio = AudioBridge();
+  late final ElevenLabsTts _voice = ElevenLabsTts(
+    apiKey: RobotConfig.elevenLabsApiKey,
+    voiceId: RobotConfig.elevenLabsVoiceId,
+    audio: _audio,
+  );
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
+
+  /// Speak an arrival announcement through Mikee's real voice (ElevenLabs →
+  /// proven speaker path). The device-TTS fallback exists because ElevenLabs
+  /// needs internet + key — but device TTS is NOT guaranteed installed on this
+  /// Android build, which is why ElevenLabs is primary.
+  Future<void> _speakArrival(String phrase) async {
+    debugPrint('navSync: speaking arrival: "$phrase"');
+    final ok = await _voice.speak(phrase);
+    if (!ok) {
+      debugPrint('navSync: ElevenLabs failed — falling back to device TTS');
+      await _audio.speak(phrase);
+    }
+  }
 
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
   void _onSpineNaviState(Map<String, dynamic> m) {
@@ -80,7 +100,8 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         // Spine's arrival watcher confirmed the robot reached the point.
         final name =
             (m['name'] as String?) ?? state.navigatingTo?.name ?? 'the destination';
-        _audio.speak(_arrivalPhrase(name, m['arrivalText'] as String?));
+        debugPrint('navSync: arrived at "$name" — speaking announcement');
+        _speakArrival(_arrivalPhrase(name, m['arrivalText'] as String?));
         state = state.copyWith(clearNavigating: true, arrivedAt: name);
       } else {
         state = state.copyWith(clearNavigating: true);
@@ -120,7 +141,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     if (e.isArrival) {
       final target = state.navigatingTo;
       final name = target?.name ?? 'the destination';
-      _audio.speak(_arrivalPhrase(name, target?.description));
+      _speakArrival(_arrivalPhrase(name, target?.description));
       state = state.copyWith(clearNavigating: true, arrivedAt: name);
     } else if (e.kind == 'cancel_result') {
       state = state.copyWith(clearNavigating: true);
