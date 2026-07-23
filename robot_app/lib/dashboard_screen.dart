@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'providers.dart'; // kOrange + head/chassis/arm/battery providers + states
+import 'providers.dart';
+import 'nav_points_provider.dart';
+import 'services/nav_points_api.dart'; // kOrange + head/chassis/arm/battery providers + states
 import 'face_painter.dart'; // FaceState, FaceStateKind, FacePainter
 import 'face_rig.dart'; // FaceRig
 import 'services/voice_agent.dart';
@@ -923,38 +925,64 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  // ── Action dock — 6 tiles, one row (§5) ─────────────────────────────────────
+  // ── Action dock — saved navigation points, tap to go (§5 repurposed) ────────
   Widget _actionDock(int cols) {
-    final tiles = _Act.values;
-    Widget tile(_Act a) => _ActionTile(
-          act: a,
-          active: _activeAct == a,
-          labelSize: _tileLabel,
-          subSize: _tileSub,
-          onTap: () => _runAction(a),
+    return Consumer(builder: (context, ref, _) {
+      final st = ref.watch(navPointsProvider);
+      final points = st.points.valueOrNull ?? const <NavPoint>[];
+      if (points.isEmpty) {
+        return SizedBox(
+          height: _dockH,
+          child: Center(
+            child: Text('No saved points yet — capture them in Navigation Points',
+                style: TextStyle(color: Colors.white38, fontSize: _tileSub)),
+          ),
         );
-
-    if (cols == 6) {
+      }
+      final busy = st.navigatingTo != null;
+      Widget tile(NavPoint p) => SizedBox(
+            width: 176,
+            child: Material(
+              color: st.navigatingTo?.id == p.id
+                  ? kOrange.withOpacity(0.18)
+                  : const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: busy ? null : () => ref.read(navPointsProvider.notifier).goTo(p),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.place_rounded, color: kOrange, size: 20),
+                        const SizedBox(height: 6),
+                        Text(p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: _tileLabel,
+                                fontWeight: FontWeight.w700)),
+                        Text(busy ? 'Navigating…' : 'Tap to go',
+                            style: TextStyle(
+                                color: Colors.white38, fontSize: _tileSub)),
+                      ]),
+                ),
+              ),
+            ),
+          );
       return SizedBox(
         height: _dockH,
-        child: Row(children: [
-          for (var i = 0; i < tiles.length; i++) ...[
-            if (i > 0) const SizedBox(width: 10),
-            Expanded(child: tile(tiles[i])),
-          ],
-        ]),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: points.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (_, i) => tile(points[i]),
+        ),
       );
-    }
-    Widget row(int start) => SizedBox(
-          height: _dockH,
-          child: Row(children: [
-            for (var i = start; i < start + 3; i++) ...[
-              if (i > start) const SizedBox(width: 10),
-              Expanded(child: tile(tiles[i])),
-            ],
-          ]),
-        );
-    return Column(children: [row(0), const SizedBox(height: 10), row(3)]);
+    });
   }
 
   // ── Quick Controls (§4) — height-distributing, fixed E-Stop ─────────────────
