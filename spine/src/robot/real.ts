@@ -275,6 +275,14 @@ export class RealRobotSDK implements RobotSDK {
     this.status.isMoving = true;
   }
 
+  /** Drive to the charging dock (vendor goHome; the dock self-aligns via IR). */
+  async goDock(): Promise<void> {
+    const ws = await this.ensureConnected('chassis');
+    console.log('[Real SDK] goDock → {cmd: go_home}');
+    ws.send(JSON.stringify({ cmd: 'go_home' }));
+    this.status.isMoving = true;
+  }
+
   /** Cancel an in-progress navigation. */
   async cancelNavi(): Promise<void> {
     const ws = await this.ensureConnected('chassis');

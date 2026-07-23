@@ -73,6 +73,24 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
     }
   }
 
+  Future<void> _onEdit(NavPoint p) async {
+    final result = await _promptName(
+      title: 'Edit point',
+      confirmLabel: 'Save',
+      initialName: p.name,
+      initialSay: p.description,
+    );
+    if (result == null || result.$1.trim().isEmpty) return;
+    try {
+      await ref
+          .read(navPointsProvider.notifier)
+          .update(p.id, name: result.$1.trim(), description: result.$2 ?? '');
+      _snack('Updated "${result.$1.trim()}"');
+    } catch (e) {
+      _snack(_clean(e), error: true);
+    }
+  }
+
   Future<void> _onGoTo(NavPoint p) async {
     final ok = await ref.read(navPointsProvider.notifier).goTo(p);
     if (!ok) {
@@ -349,6 +367,7 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
           busy: navigatingTo != null,
           isTarget: navigatingTo?.id == p.id,
           onGoTo: () => _onGoTo(p),
+          onEdit: () => _onEdit(p),
           onDelete: () => _onDelete(p),
         );
       },
@@ -421,17 +440,22 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
       );
 
   /// Returns (name, arrivalAnnouncement) — announcement null when left empty.
-  Future<(String, String?)?> _promptName() {
-    final nameCtrl = TextEditingController();
-    final sayCtrl = TextEditingController();
+  Future<(String, String?)?> _promptName({
+    String title = 'Name this point',
+    String confirmLabel = 'Capture',
+    String? initialName,
+    String? initialSay,
+  }) {
+    final nameCtrl = TextEditingController(text: initialName ?? '');
+    final sayCtrl = TextEditingController(text: initialSay ?? '');
     return showDialog<(String, String?)>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _panel,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Name this point',
-            style: TextStyle(
+        title: Text(title,
+            style: const TextStyle(
                 color: _ink, fontSize: 20, fontWeight: FontWeight.w700)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -488,9 +512,9 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
-            child: const Text('Capture',
+            child: Text(confirmLabel,
                 style:
-                    TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -544,12 +568,14 @@ class _PointTile extends StatelessWidget {
   final bool busy; // a navigation is active (any point)
   final bool isTarget; // this is the point being navigated to
   final VoidCallback onGoTo;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   const _PointTile({
     required this.point,
     required this.busy,
     required this.isTarget,
     required this.onGoTo,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -646,6 +672,16 @@ class _PointTile extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
+        SizedBox(
+          width: 56,
+          height: 56,
+          child: IconButton(
+            onPressed: busy ? null : onEdit,
+            icon: const Icon(Icons.edit_outlined, size: 24),
+            color: _muted2,
+            tooltip: 'Edit',
+          ),
+        ),
         SizedBox(
           width: 56,
           height: 56,

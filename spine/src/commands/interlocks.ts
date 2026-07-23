@@ -46,7 +46,7 @@ export async function checkInterlocks(
     console.log('[Interlocks] System is in STOPPED state');
 
     // REJECT movement intents while stopped
-    if (['drive', 'head', 'arm', 'wave', 'navi'].includes(intentType)) {
+    if (['drive', 'head', 'arm', 'wave', 'navi', 'dock', 'patrol_start'].includes(intentType)) {
       console.log(`[Interlocks] [REJECT] Intent '${intentType}' is a movement intent and system is stopped`);
       return {
         allowed: false,
@@ -58,7 +58,7 @@ export async function checkInterlocks(
     // stop_drive only HALTS the wheels, so it must always be permitted — even
     // while globally stopped — and must never be rate-limited.
     // Don't rate-limit snapshot/status when stopped
-    if (['snapshot', 'get_status', 'resume', 'stop_drive', 'get_position', 'cancel_navi'].includes(intentType)) {
+    if (['snapshot', 'get_status', 'resume', 'stop_drive', 'get_position', 'cancel_navi', 'patrol_stop'].includes(intentType)) {
       console.log(`[Interlocks] [ALLOW] Intent '${intentType}' is permitted while stopped`);
       return { allowed: true };
     }

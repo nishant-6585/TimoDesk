@@ -18,6 +18,7 @@ class NavigationScreen extends ConsumerStatefulWidget {
 
 class _NavigationScreenState extends ConsumerState<NavigationScreen> {
   bool _capturing = false;
+  bool _patrolling = false;
 
   bool get _robotOnline {
     final spine = ref.read(spineProvider);
@@ -63,15 +64,20 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
       );
 
   /// Returns (name, arrivalAnnouncement) — announcement null when left empty.
-  Future<(String, String?)?> _promptName() {
-    final nameCtrl = TextEditingController();
-    final sayCtrl = TextEditingController();
+  Future<(String, String?)?> _promptName({
+    String title = 'Name this point',
+    String confirmLabel = 'Capture',
+    String? initialName,
+    String? initialSay,
+  }) {
+    final nameCtrl = TextEditingController(text: initialName ?? '');
+    final sayCtrl = TextEditingController(text: initialSay ?? '');
     return showDialog<(String, String?)>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: MikeeColors.cardTop,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Name this point', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600)),
+        title: Text(title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('The robot\'s current position will be saved under this name.',
               style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
@@ -103,11 +109,29 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
               sayCtrl.text.trim().isEmpty ? null : sayCtrl.text.trim(),
             )),
             style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.primary, foregroundColor: Colors.white),
-            child: Text('Capture', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            child: Text(confirmLabel, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _onEdit(NavPoint point) async {
+    final result = await _promptName(
+      title: 'Edit point',
+      confirmLabel: 'Save',
+      initialName: point.name,
+      initialSay: point.description,
+    );
+    if (result == null || result.$1.trim().isEmpty) return;
+    try {
+      await ref
+          .read(navPointsProvider.notifier)
+          .update(point.id, name: result.$1.trim(), description: result.$2 ?? '');
+      _snack('Updated "${result.$1.trim()}"');
+    } catch (e) {
+      _snack('Update failed: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
   }
 
   void _onGoTo(NavPoint point) {
@@ -117,6 +141,21 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
     }
     ref.read(navPointsProvider.notifier).goTo(point);
     _snack('Sending robot to "${point.name}"…');
+  }
+
+  void _onPatrolToggle(List<NavPoint> points) {
+    if (_patrolling) {
+      ref.read(navPointsProvider.notifier).patrolStop();
+      _snack('Patrol stopped');
+    } else {
+      if (points.length < 2) {
+        _snack('Need at least 2 saved points to patrol');
+        return;
+      }
+      ref.read(navPointsProvider.notifier).patrolStart(points);
+      _snack('Patrol started — looping ${points.length} points');
+    }
+    setState(() => _patrolling = !_patrolling);
   }
 
   void _onCancelNavi() {
@@ -171,6 +210,27 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
               capturing: _capturing,
               onCapture: _onCapture,
             ),
+            const SizedBox(height: 12),
+            Row(children: [
+              const Spacer(),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: online
+                      ? () => _onPatrolToggle(pointsAsync.valueOrNull ?? const [])
+                      : null,
+                  icon: Icon(_patrolling ? Icons.stop : Icons.route, size: 16),
+                  label: Text(_patrolling ? 'Stop patrol' : 'Patrol all points',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _patrolling ? MikeeColors.error : MikeeColors.cardTop,
+                    foregroundColor: _patrolling ? Colors.white : MikeeColors.textPrimary,
+                    side: _patrolling ? null : const BorderSide(color: MikeeColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ]),
             if (naviStatus != null) ...[
               const SizedBox(height: 16),
               _NavigatingBanner(
@@ -196,6 +256,7 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
                                   point: p,
                                   online: online,
                                   onGoTo: () => _onGoTo(p),
+                                  onEdit: () => _onEdit(p),
                                   onDelete: () => _onDelete(p),
                                 ),
                               ))
@@ -378,8 +439,9 @@ class _PointTile extends StatelessWidget {
   final NavPoint point;
   final bool online;
   final VoidCallback onGoTo;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
-  const _PointTile({required this.point, required this.online, required this.onGoTo, required this.onDelete});
+  const _PointTile({required this.point, required this.online, required this.onGoTo, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +503,12 @@ class _PointTile extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
+        ),
+        IconButton(
+          onPressed: onEdit,
+          icon: const Icon(Icons.edit_outlined, size: 19),
+          color: MikeeColors.textMuted,
+          tooltip: 'Edit name & announcement',
         ),
         IconButton(
           onPressed: onDelete,

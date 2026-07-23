@@ -11,6 +11,9 @@ export interface Intent {
     | 'get_position' // capture current SLAM pose (for saving a nav point)
     | 'navi' // navigate to a saved point
     | 'cancel_navi' // cancel an in-progress navigation
+    | 'dock' // drive to the charging dock (SDK goHome; dock auto-aligns)
+    | 'patrol_start' // loop through saved points (spine-side sequencer)
+    | 'patrol_stop' // stop the patrol (cancels the active leg)
     | 'head'
     | 'arm'
     | 'wave'
@@ -30,6 +33,8 @@ export interface Intent {
   transcript?: { role: 'user' | 'assistant'; text: string; ts: string }[]; // for voice_log
   resolvedBy?: 'elevenlabs';
   point?: RobotPosition; // for navi
+  points?: (RobotPosition & { name?: string; arrivalText?: string })[]; // for patrol_start
+  loop?: boolean; // for patrol_start — repeat the route until stopped
   name?: string; // for navi — display name of the target point (broadcast to all clients)
   source?: 'admin' | 'robot'; // for navi — which UI initiated it
   arrivalText?: string; // for navi — custom phrase the robot speaks on arrival
@@ -130,6 +135,7 @@ export interface SpineMessage {
   arrived?: boolean; // one-shot: navigation completed (sent with active:false)
   stalled?: boolean; // goal active but robot not moving — nav service likely wedged
   arrivalText?: string; // custom arrival phrase (spoken by the robot on arrived)
+  patrol?: { active: boolean; index: number; total: number; lap: number }; // patrol progress
 }
 
 // Session tracking (spine-internal)

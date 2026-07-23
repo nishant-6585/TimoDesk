@@ -5,6 +5,9 @@
  */
 
 import http from 'http';
+import { spawn, ChildProcess } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
 import { SpineMessage, AdminMessage, RobotStatus, RobotEvent, RobotPosition } from './types';
@@ -76,6 +79,14 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     const ARRIVE_ROT_WAIT_MS = 3_000;
     const NAVI_WATCH_TIMEOUT_MS = 4 * 60_000;
     let naviWatchTimer: ReturnType<typeof setInterval> | null = null;
+    // Invoked when the active navigation finishes (arrived/timeout/cancelled) —
+    // the patrol sequencer uses this to advance to the next waypoint.
+    let naviDone: ((reason: 'arrived' | 'timeout' | 'cancelled') => void) | null = null;
+    const fireNaviDone = (reason: 'arrived' | 'timeout' | 'cancelled') => {
+      const cb = naviDone;
+      naviDone = null;
+      if (cb) cb(reason);
+    };
     const stopNaviWatch = () => {
       if (naviWatchTimer) {
         clearInterval(naviWatchTimer);
@@ -137,6 +148,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               } catch { /* best-effort */ }
               broadcastNaviState();
               naviState = { active: false }; // arrived is a one-shot flag
+              fireNaviDone('arrived');
             }
           } else {
             nearSince = null;
@@ -146,9 +158,157 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             stopNaviWatch();
             naviState = { active: false };
             broadcastNaviState();
+            fireNaviDone('timeout');
           }
         } catch { /* pose read failed — skip this tick */ }
       }, 1000);
+    };
+
+    // ── Patrol sequencer ────────────────────────────────────────────────────────
+    // Walks the given waypoints with the normal navi pipeline (so banners,
+    // departure/arrival announcements, and cancel all behave), dwells at each,
+    // and loops until stopped. Low battery aborts the patrol and docks.
+    const PATROL_DWELL_MS = 8_000;
+    const patrol = { active: false, index: 0, lap: 1, loop: true,
+      points: [] as (RobotPosition & { name?: string; arrivalText?: string })[] };
+
+    const stopPatrol = (reason: string) => {
+      if (!patrol.active) return;
+      console.log(`[Spine] Patrol stopped (${reason})`);
+      patrol.active = false;
+      stopNaviWatch();
+      naviDone = null;
+      try { void sdk.cancelNavi?.(); } catch { /* best-effort */ }
+      naviState = { active: false };
+      broadcastNaviState();
+    };
+
+    const patrolNext = async () => {
+      if (!patrol.active) return;
+      if (patrol.index >= patrol.points.length) {
+        if (!patrol.loop) { stopPatrol('route complete'); return; }
+        patrol.index = 0;
+        patrol.lap++;
+      }
+      const p = patrol.points[patrol.index];
+      const name = p.name ?? `Waypoint ${patrol.index + 1}`;
+      console.log(`[Spine] Patrol → ${name} (lap ${patrol.lap}, ${patrol.index + 1}/${patrol.points.length})`);
+      try {
+        await sdk.navi?.(p);
+      } catch (err) {
+        console.error('[Spine] Patrol navi failed:', err);
+      }
+      naviState = {
+        active: true, point: p, name, arrivalText: p.arrivalText,
+        source: 'patrol', startedAt: Date.now(),
+      };
+      broadcastNaviState();
+      naviDone = () => {
+        if (!patrol.active) return;
+        patrol.index++;
+        setTimeout(() => void patrolNext(), PATROL_DWELL_MS);
+      };
+      startNaviWatch();
+    };
+
+    const startPatrol = (
+      points: (RobotPosition & { name?: string; arrivalText?: string })[],
+      loop: boolean,
+    ) => {
+      stopPatrol('restart');
+      patrol.active = true;
+      patrol.points = points;
+      patrol.index = 0;
+      patrol.lap = 1;
+      patrol.loop = loop;
+      void patrolNext();
+    };
+
+    // ── Charging dock ───────────────────────────────────────────────────────────
+    // The dock has no known map coordinates, so arrival = isCharging flipping
+    // true (polled), not the distance watcher. 6-min timeout clears stale state.
+    let dockWatch: ReturnType<typeof setInterval> | null = null;
+    const stopDockWatch = () => { if (dockWatch) { clearInterval(dockWatch); dockWatch = null; } };
+    const startDockState = (source: string) => {
+      stopPatrol('docking');
+      stopNaviWatch();
+      naviState = {
+        active: true, name: 'Charging Dock',
+        arrivalText: 'I have docked, and I am charging now.',
+        source, startedAt: Date.now(),
+      };
+      broadcastNaviState();
+      stopDockWatch();
+      const started = Date.now();
+      dockWatch = setInterval(async () => {
+        if (!naviState.active) { stopDockWatch(); return; }
+        try {
+          const st = await sdk.getStatus();
+          if (st.isCharging) {
+            console.log('[Spine] Docked — charging confirmed');
+            stopDockWatch();
+            naviState = { active: false, arrived: true, name: 'Charging Dock',
+              arrivalText: 'I have docked, and I am charging now.' };
+            broadcastNaviState();
+            naviState = { active: false };
+          } else if (Date.now() - started > 6 * 60_000) {
+            console.log('[Spine] Dock watch timeout');
+            stopDockWatch();
+            naviState = { active: false };
+            broadcastNaviState();
+          }
+        } catch { /* skip tick */ }
+      }, 3000);
+    };
+
+    // Auto-dock on low battery (AUTO_DOCK_BATTERY env, 0 disables; default 15%).
+    const AUTO_DOCK_AT = parseInt(process.env.AUTO_DOCK_BATTERY || '15', 10);
+    let lastAutoDock = 0;
+    if (AUTO_DOCK_AT > 0) {
+      setInterval(async () => {
+        if (naviState.active || patrol.active) return;
+        if (Date.now() - lastAutoDock < 10 * 60_000) return;
+        try {
+          const st = await sdk.getStatus();
+          if (st.online && !st.isCharging && st.battery > 0 && st.battery <= AUTO_DOCK_AT) {
+            console.log(`[Spine] Battery ${st.battery}% ≤ ${AUTO_DOCK_AT}% — auto-docking`);
+            lastAutoDock = Date.now();
+            await sdk.goDock?.();
+            startDockState('auto');
+            await logEvent('command_dock', { session_id: 'auto', reason: 'low_battery', battery: st.battery });
+          }
+        } catch { /* skip */ }
+      }, 60_000);
+    }
+
+    // ── Video recording (spine-side, ffmpeg over the MJPEG stream) ─────────────
+    const RECORDINGS_DIR = path.join(process.cwd(), 'recordings');
+    let recorder: { proc: ChildProcess; file: string } | null = null;
+    const startRecording = (): { ok: boolean; file?: string; error?: string } => {
+      if (recorder) return { ok: false, error: 'already recording' };
+      try {
+        fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+        const file = path.join(RECORDINGS_DIR, `rec-${new Date().toISOString().replace(/[:.]/g, '-')}.mp4`);
+        const streamUrl = `http://${process.env.ROBOT_IP}:8080/stream`;
+        const proc = spawn('ffmpeg', ['-y', '-i', streamUrl, '-c:v', 'libx264',
+          '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '15', file],
+          { stdio: 'ignore' });
+        proc.on('exit', (code) => {
+          console.log(`[Spine] Recording ended (ffmpeg exit ${code})`);
+          recorder = null;
+        });
+        recorder = { proc, file };
+        console.log(`[Spine] Recording started → ${file}`);
+        return { ok: true, file: path.basename(file) };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    };
+    const stopRecording = (): { ok: boolean; file?: string } => {
+      if (!recorder) return { ok: false };
+      const file = path.basename(recorder.file);
+      recorder.proc.kill('SIGINT'); // lets ffmpeg finalize the mp4
+      return { ok: true, file };
     };
 
     // Initialize face-api models BEFORE server starts (required for enrollment)
@@ -224,6 +384,19 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/voice/log' && req.method === 'POST') {
         await handleVoiceLog(req, res, supabase);
+        return;
+      }
+
+      if (url === '/record/start' && req.method === 'POST') {
+        const r = startRecording();
+        res.writeHead(r.ok ? 200 : 409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r));
+        return;
+      }
+      if (url === '/record/stop' && req.method === 'POST') {
+        const r = stopRecording();
+        res.writeHead(r.ok ? 200 : 409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r));
         return;
       }
 
@@ -363,6 +536,23 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             return;
           }
 
+          // Patrol runs entirely in the spine (sequencer above) — intercept.
+          if (msg.type === 'intent' && msg.intent?.intent === 'patrol_start') {
+            const pts = msg.intent.points ?? [];
+            if (!pts.length) {
+              ws.send(JSON.stringify({ type: 'error', message: 'patrol_start needs points' } as SpineMessage));
+              return;
+            }
+            startPatrol(pts, msg.intent.loop !== false);
+            ws.send(JSON.stringify({ type: 'ack', intent: 'patrol_start', ok: true } as SpineMessage));
+            return;
+          }
+          if (msg.type === 'intent' && msg.intent?.intent === 'patrol_stop') {
+            stopPatrol('user');
+            ws.send(JSON.stringify({ type: 'ack', intent: 'patrol_stop', ok: true } as SpineMessage));
+            return;
+          }
+
           // 3. Route the message
           console.log(`[Spine WebSocket] Authenticated message, routing to handler...`);
           const response = await routeMessage(msg, ws.sessionId!, ws.userId!, sdk);
@@ -385,6 +575,8 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               };
               broadcastNaviState();
               startNaviWatch();
+            } else if (it === 'dock') {
+              startDockState(msg.intent?.source ?? 'admin');
             } else if (it === 'cancel_navi' && naviState.active) {
               naviState = { ...naviState, cancelling: true };
               broadcastNaviState();
@@ -463,10 +655,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       });
       // The robot confirmed a navigation cancel → clear the shared navi state.
       if (eventType === 'navi_event' && (event.payload as Record<string, any>)?.event === 'cancel_result') {
+        patrol.active = false; // a confirmed cancel always ends any patrol
+        stopDockWatch();
         if (naviState.active || naviState.cancelling) {
           naviState = { active: false };
           broadcastNaviState();
         }
+        fireNaviDone('cancelled');
       }
       // Push trigger (#90): battery low → notify admins (best-effort, never throws).
       if (eventType === 'battery_update' && supabase) {

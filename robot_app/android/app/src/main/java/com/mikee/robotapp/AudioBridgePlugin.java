@@ -116,6 +116,14 @@ public class AudioBridgePlugin
     @Override
     public void onMethodCall(MethodCall call, MethodChannel.Result result) {
         switch (call.method) {
+            case "startSpeechEngine":
+                startSpeechEngine();
+                result.success(null);
+                break;
+            case "stopSpeechEngine":
+                stopSpeechEngine();
+                result.success(null);
+                break;
             case "startMic":
                 startMic(result);
                 break;
@@ -295,6 +303,42 @@ public class AudioBridgePlugin
             Log.e(TAG, "startAudioRecordMic failed: " + e.getMessage());
             if (result != null) result.error("MIC_ERROR", e.getMessage(), null);
         }
+    }
+
+    // ── Session-gated speech engine ─────────────────────────────────────────────
+    // The vendor's boot-time audio pipeline (robotsdk.ten → asragent) has proven
+    // unreliable (AIDL wedges, cached-app freezer kills, engine simply not started
+    // on some boots). startIsr() is the vendor-confirmed call that makes the system
+    // stream mic PCM to OnSpeechListener.onAudio — running it 24/7 pegged the CPU,
+    // so it is started ONLY while a voice session is active and stopped right after.
+    private volatile boolean engineRunning = false;
+
+    private void startSpeechEngine() {
+        if (engineRunning) return;
+        try {
+            try {
+                CsjRobot.getInstance().getSpeech().startSpeechService();
+            } catch (Throwable t) {
+                Log.w(TAG, "startSpeechService: " + t.getMessage());
+            }
+            CsjRobot.getInstance().getSpeech().startIsr();
+            engineRunning = true;
+            Log.d(TAG, "speech engine STARTED (session-gated)");
+        } catch (Throwable t) {
+            Log.w(TAG, "startSpeechEngine failed: " + t.getMessage());
+        }
+    }
+
+    private void stopSpeechEngine() {
+        if (!engineRunning) return;
+        try {
+            // stopIsr() only — closeSpeechService() crashes the iFlytek AIUI on teardown.
+            CsjRobot.getInstance().getSpeech().stopIsr();
+            Log.d(TAG, "speech engine STOPPED");
+        } catch (Throwable t) {
+            Log.w(TAG, "stopSpeechEngine: " + t.getMessage());
+        }
+        engineRunning = false;
     }
 
     private void stopMic() {

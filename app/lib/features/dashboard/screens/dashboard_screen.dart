@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
 import '../../../services/spine/spine_provider.dart';
@@ -169,6 +171,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     });
   }
 
+  bool _recording = false;
+
   void _pushToast(IconData icon, Color color, String message) {
     final id = _nextToastId++;
     final toast = ToastModel(id: id, icon: icon, color: color, message: message);
@@ -207,9 +211,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _addEvent({'type': 'command_head', 'details': 'gesture: wave', 'session': 'admin'});
         break;
       case 'home':
-        notifier.sendIntent({'intent': 'drive', 'dir': 'home_dock'});
-        _pushToast(Icons.home, MikeeColors.success, 'Returning to home base');
-        _addEvent({'type': 'command_drive', 'details': 'dest: home_dock', 'session': 'admin'});
+        notifier.sendIntent({'intent': 'dock'});
+        _pushToast(Icons.home, MikeeColors.success, 'Returning to charging dock');
+        _addEvent({'type': 'command_dock', 'details': 'auto-dock + charge', 'session': 'admin'});
+        break;
+      case 'record':
+        final starting = !_recording;
+        setState(() => _recording = starting);
+        http
+            .post(Uri.parse('$spineHttpBase/record/${starting ? 'start' : 'stop'}'))
+            .then((r) {
+          if (r.statusCode != 200 && mounted) setState(() => _recording = !starting);
+        }).catchError((_) {
+          if (mounted) setState(() => _recording = !starting);
+        });
+        _pushToast(Icons.videocam, starting ? MikeeColors.error : MikeeColors.success,
+            starting ? 'Recording started' : 'Recording saved on spine (recordings/)');
+        _addEvent({'type': 'video_record', 'details': starting ? 'start' : 'stop', 'session': 'admin'});
         break;
       case 'control':
         context.go('/control');
@@ -341,6 +359,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _quickActions(bool stopped) {
     return _QuickActionsPanel(
       stopped: stopped,
+      recording: _recording,
       onStop: _onStop,
       onAction: _onAction,
       headLR: _headLR,
@@ -849,6 +868,7 @@ class _LiveFeedWidget extends ConsumerWidget {
 
 class _QuickActionsPanel extends StatelessWidget {
   final bool stopped;
+  final bool recording;
   final VoidCallback onStop;
   final void Function(String) onAction;
   final double headLR;
@@ -858,6 +878,7 @@ class _QuickActionsPanel extends StatelessWidget {
 
   const _QuickActionsPanel({
     required this.stopped,
+    required this.recording,
     required this.onStop,
     required this.onAction,
     required this.headLR,
@@ -909,6 +930,8 @@ class _QuickActionsPanel extends StatelessWidget {
           Expanded(child: _ActionButton(icon: Icons.photo_camera, label: 'Take Snapshot', onTap: stopped ? null : () => onAction('snapshot'))),
           const SizedBox(width: 12),
           Expanded(child: _ActionButton(icon: Icons.home, label: 'Go Home', onTap: stopped ? null : () => onAction('home'))),
+          const SizedBox(width: 10),
+          Expanded(child: _ActionButton(icon: Icons.videocam, label: recording ? 'Stop Rec' : 'Record', onTap: () => onAction('record'))),
         ]),
         const SizedBox(height: 20),
         _SliderRow(label: 'HEAD POSITION', value: headLR, min: 0, max: 100, suffix: 'LR ${headLR.round()}', leading: Icons.smart_toy, enabled: !stopped, onChanged: onHeadChange),

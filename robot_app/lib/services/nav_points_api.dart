@@ -119,6 +119,25 @@ class NavPointsApi {
     return NavPoint.fromJson(rows.first as Map<String, dynamic>);
   }
 
+  /// Update a point's name and/or arrival announcement (description).
+  /// Coordinates are left untouched — re-capture to move a point.
+  Future<void> update(String id, {String? name, String? description}) async {
+    final body = <String, dynamic>{
+      if (name != null && name.isNotEmpty) 'name': name,
+      'description': (description == null || description.isEmpty) ? null : description,
+    };
+    final res = await http
+        .patch(
+          _u('id=eq.${Uri.encodeComponent(id)}'),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception('Update failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
   /// Delete a point by id.
   Future<void> delete(String id) async {
     final res = await http

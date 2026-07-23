@@ -392,7 +392,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
-      _speakGreeting('Please follow me to ${p.name}.');
+      // The departure phrase is spoken by the navi_state broadcast handler
+      // (nav_points_provider) — speaking it here too would double up.
       ref.read(navPointsProvider.notifier).goTo(p);
     } else {
       final known = points.map((p) => p.name).take(3).join(', ');
@@ -552,6 +553,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // switch reconnect) so we don't talk over the new session.
         _suppressTeardown = false; // a new session is live — clear any pending recovery
         _audioBridge.stopPlayback();
+        _audioBridge.startSpeechEngine(); // session-gated mic engine (startIsr)
         setState(() {
           _voiceActive = true;
           _face = _face.copyWith(state: FaceStateKind.listening);
@@ -608,11 +610,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         break;
       case VoiceEventKind.sessionEnded:
         // Recovering from an unexpected drop → ignore this teardown; the scheduled
-        // reconnect owns recovery and will reopen the session.
+        // reconnect owns recovery and will reopen the session (engine keeps running
+        // through the gap — startSpeechEngine on the reopened session is idempotent).
         if (_suppressTeardown) {
           _suppressTeardown = false;
           return;
         }
+        _audioBridge.stopSpeechEngine(); // session over → stop the mic engine
         _intentionalClose = false;
         _reconnectAttempts = 0;
         _stopIdleWatch();

@@ -38,6 +38,25 @@ class AudioBridge {
   /// Start mic capture. Each 16 kHz/mono/16-bit PCM chunk is delivered to
   /// [onChunk] — wire it to voiceAgent.sendAudioChunk. Returns false if the mic
   /// can't start (permission denied / no device — e.g. on an emulator).
+  /// Start/stop the vendor speech engine (startIsr) — session-gated: the engine
+  /// makes the system stream mic PCM to our listener but is too CPU-hungry to
+  /// run 24/7. Call start on voice-session start, stop on session end.
+  Future<void> startSpeechEngine() async {
+    try {
+      await _method.invokeMethod('startSpeechEngine');
+    } catch (e) {
+      debugPrint('AudioBridge.startSpeechEngine: $e');
+    }
+  }
+
+  Future<void> stopSpeechEngine() async {
+    try {
+      await _method.invokeMethod('stopSpeechEngine');
+    } catch (e) {
+      debugPrint('AudioBridge.stopSpeechEngine: $e');
+    }
+  }
+
   Future<bool> startMic(void Function(Uint8List chunk) onChunk) async {
     try {
       await _method.invokeMethod('startMic');

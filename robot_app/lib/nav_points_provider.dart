@@ -123,6 +123,10 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
           sortOrder: 0,
         );
     state = state.copyWith(navigatingTo: target, clearArrived: true);
+    // Departure announcement — fires exactly once per navigation (the early
+    // return above dedupes the cancelling/stalled re-broadcasts) for BOTH
+    // admin- and robot-initiated navs.
+    _speakArrival('Please follow me to $name.');
   }
 
   /// What the robot says on arrival: the point's custom announcement (stored in
@@ -206,6 +210,12 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     } finally {
       if (mounted) state = state.copyWith(capturing: false);
     }
+  }
+
+  /// Update a point's name / arrival announcement and reload.
+  Future<void> update(String id, {String? name, String? description}) async {
+    await _api.update(id, name: name, description: description);
+    await load();
   }
 
   /// Delete a saved point and reload.

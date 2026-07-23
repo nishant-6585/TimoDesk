@@ -63,6 +63,14 @@ export async function handleIntent(
         return { type: 'ack', intent: 'navi', ok: true };
       }
 
+      case 'dock': {
+        if (!sdk.goDock) return { type: 'error', message: 'dock not supported' };
+        console.log('[Handlers] dock — returning to charging station');
+        await sdk.goDock();
+        await logEvent('command_dock', { session_id: sessionId });
+        return { type: 'ack', intent: 'dock', ok: true };
+      }
+
       case 'cancel_navi': {
         if (!sdk.cancelNavi) return { type: 'error', message: 'cancel_navi not supported' };
         console.log('[Handlers] cancel_navi');

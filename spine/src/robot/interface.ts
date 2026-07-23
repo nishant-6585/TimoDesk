@@ -83,4 +83,5 @@ export interface RobotSDK {
 
   /** Cancel an in-progress navigation. */
   cancelNavi?(): Promise<void>;
+  goDock?(): Promise<void>; // drive to the charging dock (vendor goHome)
 }

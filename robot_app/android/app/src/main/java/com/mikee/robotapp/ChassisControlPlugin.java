@@ -769,6 +769,27 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                         naviInProgress = false;
                         Log.e(TAG, "navi error: " + e.getMessage());
                     }
+                } else if ("go_home".equals(cmd)) {
+                    // Drive to the charging dock. goHome() is the SDK's return-to-
+                    // charge action; the dock's IR guides handle final alignment.
+                    // Same async mode-settle as navi (see that case).
+                    Log.d(TAG, "go_home requested (charging dock)");
+                    naviInProgress = true;
+                    try {
+                        CsjRobot.getInstance().getAction().setNaviMode(0);
+                        scheduler.schedule(() -> {
+                            try {
+                                CsjRobot.getInstance().getAction().goHome(naviCb);
+                                Log.d(TAG, "goHome dispatched after mode-settle delay");
+                            } catch (Exception e) {
+                                naviInProgress = false;
+                                Log.e(TAG, "goHome dispatch error: " + e.getMessage());
+                            }
+                        }, NAVI_MODE_SETTLE_MS, TimeUnit.MILLISECONDS);
+                    } catch (Exception e) {
+                        naviInProgress = false;
+                        Log.e(TAG, "go_home error: " + e.getMessage());
+                    }
                 } else if ("cancel_navi".equals(cmd)) {
                     Log.d(TAG, "cancel_navi requested");
                     naviInProgress = false;

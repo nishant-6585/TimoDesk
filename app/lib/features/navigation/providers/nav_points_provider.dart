@@ -93,6 +93,16 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
     await load();
   }
 
+  /// Update a point's name / arrival announcement and reload the list.
+  /// Coordinates are left untouched — re-capture to move a point.
+  Future<void> update(String id, {String? name, String? description}) async {
+    await supabaseClient.from('nav_points').update({
+      if (name != null && name.isNotEmpty) 'name': name,
+      'description': (description == null || description.isEmpty) ? null : description,
+    }).eq('id', id);
+    await load();
+  }
+
   /// Delete a saved point and reload the list.
   Future<void> delete(String id) async {
     await supabaseClient.from('nav_points').delete().eq('id', id);
@@ -108,6 +118,28 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
           arrivalText: (say != null && say.isNotEmpty) ? say : null,
         );
     _ref.read(naviStatusProvider.notifier).start(point.name);
+  }
+
+  /// Start a patrol over the given points (spine-side sequencer loops them).
+  void patrolStart(List<NavPoint> points) {
+    _ref.read(spineProvider.notifier).sendIntent({
+      'intent': 'patrol_start',
+      'loop': true,
+      'points': [
+        for (final p in points)
+          {
+            'x': p.x, 'y': p.y, 'z': p.z, 'rotation': p.rotation,
+            'name': p.name,
+            if (p.description?.trim().isNotEmpty == true)
+              'arrivalText': p.description!.trim(),
+          }
+      ],
+    });
+  }
+
+  /// Stop the running patrol (also cancels the active leg).
+  void patrolStop() {
+    _ref.read(spineProvider.notifier).sendIntent({'intent': 'patrol_stop'});
   }
 
   /// Cancel the in-flight navigation. The banner clears when the robot's
