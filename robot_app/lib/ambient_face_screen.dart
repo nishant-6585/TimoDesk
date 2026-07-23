@@ -123,7 +123,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   static const int _maxReconnects = 1; // one silent retry per incident
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
-  static const Duration _regreetWindow = Duration(minutes: 10);
+  static const Duration _regreetWindow = Duration(minutes: 2);
   // How long after motion we wait for face recognition before greeting anonymously.
   // Long enough for the CSJBot recogniser to return a match on an enrolled face,
   // short enough that an unknown visitor isn't left waiting for a hello.
@@ -298,10 +298,25 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // ── Wire 2: spine identity + presence ───────────────────────────────────────
   void _onFaceDetected(FaceDetectedEvent e) {
-    if (_voiceActive) return; // don't greet over a conversation
+    // A recognised staff face must ALWAYS be greeted by name (once per debounce
+    // window) — even mid-session — unless Mikee is literally mid-utterance;
+    // then we skip WITHOUT recording the greet so the next recognition tick
+    // (~500ms) retries until his mouth is free.
     final now = DateTime.now();
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
+    final talking = _face.state == FaceStateKind.speaking ||
+        _face.state == FaceStateKind.thinking;
+    if (talking) return;
+    if (_voiceActive) {
+      // In an open session: speak the personal hello but don't touch the
+      // session/mic state.
+      _greetedAt[e.name] = now;
+      final lang = languageForCode(RobotConfig.voiceLanguageCode);
+      _showGreeting(lang.greetText(e.name));
+      _speakGreeting(lang.greetSpeech(e.name));
+      return;
+    }
     _greetedAt[e.name] = now;
     // A NAMED greeting is allowed to fire even after the generic approach
     // greeting already went out — the spine's identity often lands a beat late,

@@ -65,6 +65,7 @@ enum _Act { greet, listen, checkIn, directions, pageStaff, rest }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with TickerProviderStateMixin {
+  bool _patrolling = false;
   // Dashboard mini-face (independent rig from the ambient face).
   final FaceRig _rig = FaceRig();
   final _FaceRepaint _repaint = _FaceRepaint();
@@ -975,12 +976,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           );
       return SizedBox(
         height: _dockH,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: points.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (_, i) => tile(points[i]),
-        ),
+        child: Row(children: [
+          SizedBox(
+            width: 96,
+            child: Material(
+              color: _patrolling ? const Color(0xFF7F1D1D) : const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: points.length < 2
+                    ? null
+                    : () {
+                        final spine = ref.read(navSpineClientProvider);
+                        if (_patrolling) {
+                          spine.sendIntent({'intent': 'patrol_stop'});
+                        } else {
+                          spine.sendIntent({
+                            'intent': 'patrol_start',
+                            'loop': true,
+                            'points': [
+                              for (final p in points)
+                                {
+                                  'x': p.x, 'y': p.y, 'z': p.z,
+                                  'rotation': p.rotation, 'name': p.name,
+                                  if (p.description?.trim().isNotEmpty == true)
+                                    'arrivalText': p.description!.trim(),
+                                }
+                            ],
+                          });
+                        }
+                        setState(() => _patrolling = !_patrolling);
+                      },
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(_patrolling ? Icons.stop_rounded : Icons.route_rounded,
+                          color: kOrange, size: 22),
+                      const SizedBox(height: 6),
+                      Text(_patrolling ? 'Stop' : 'Patrol',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: _tileLabel,
+                              fontWeight: FontWeight.w700)),
+                    ]),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: points.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => tile(points[i]),
+            ),
+          ),
+        ]),
       );
     });
   }
