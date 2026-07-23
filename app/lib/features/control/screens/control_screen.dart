@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/face_detection_provider.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../../services/spine/spine_state.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
@@ -280,7 +281,9 @@ class _ControlContent extends StatelessWidget {
           ]
         ])),
       ]),
-      const SizedBox(height: 20),
+      const SizedBox(height: 14),
+      const _FaceDetectionStrip(),
+      const SizedBox(height: 14),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: _DriveCard(status: driveStatus, onJoystick: onDriveJoystick, disabled: stopped)),
         const SizedBox(width: 20),
@@ -467,6 +470,75 @@ class _McSlider extends StatelessWidget {
         max: max,
         onChanged: onChanged,
       ),
+    );
+  }
+}
+
+
+/// Live face-recognition readout between the camera and the joysticks — the
+/// same signal the dashboard event feed shows, surfaced where the operator is
+/// looking while teleoperating. Hidden until the first detection; fades to a
+/// muted "last seen" once the detection is stale.
+class _FaceDetectionStrip extends ConsumerStatefulWidget {
+  const _FaceDetectionStrip();
+  @override
+  ConsumerState<_FaceDetectionStrip> createState() => _FaceDetectionStripState();
+}
+
+class _FaceDetectionStripState extends ConsumerState<_FaceDetectionStrip> {
+  Timer? _tick;
+  @override
+  void initState() {
+    super.initState();
+    // Re-evaluate staleness even when no new detections arrive.
+    _tick = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = ref.watch(faceDetectionProvider);
+    if (d == null) return const SizedBox.shrink();
+    final age = DateTime.now().difference(d.at);
+    if (age > const Duration(minutes: 2)) return const SizedBox.shrink();
+    final fresh = age <= const Duration(seconds: 6);
+    final color = !fresh
+        ? MikeeColors.textMuted
+        : d.matched
+            ? MikeeColors.success
+            : MikeeColors.info;
+    final label = d.matched ? d.name : 'Unknown visitor';
+    final ago = fresh
+        ? 'in view'
+        : '${age.inSeconds < 60 ? '${age.inSeconds}s' : '${age.inMinutes}m'} ago';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        border: Border.all(color: color.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        Icon(d.matched ? Icons.face_retouching_natural : Icons.face, size: 18, color: color),
+        const SizedBox(width: 10),
+        Text('FACE DETECTED',
+            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.1, color: MikeeColors.textSecondary)),
+        const SizedBox(width: 12),
+        Text(label,
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+        const SizedBox(width: 10),
+        Text('· $ago', style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted)),
+        const Spacer(),
+        Text('L2 ${d.distance.toStringAsFixed(2)}',
+            style: GoogleFonts.jetBrainsMono(fontSize: 11, color: MikeeColors.textMuted)),
+      ]),
     );
   }
 }
