@@ -82,6 +82,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     // Invoked when the active navigation finishes (arrived/timeout/cancelled) —
     // the patrol sequencer uses this to advance to the next waypoint.
     let naviDone: ((reason: 'arrived' | 'timeout' | 'cancelled') => void) | null = null;
+    let arrivalCancelPending = false; // arrival-triggered cancelNavi in flight
     const fireNaviDone = (reason: 'arrived' | 'timeout' | 'cancelled') => {
       const cb = naviDone;
       naviDone = null;
@@ -142,7 +143,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               const name = naviState.name;
               const arrivalText = naviState.arrivalText;
               naviState = { active: false, arrived: true, name, arrivalText };
-              // Kill any residual rotation-hunting at the goal.
+              // Kill any residual rotation-hunting at the goal. This produces a
+              // cancel_result from the robot that must NOT be read as a
+              // user-cancel (it was ending every patrol after waypoint 1).
+              arrivalCancelPending = true;
               try {
                 await sdk.cancelNavi?.();
               } catch { /* best-effort */ }
@@ -655,7 +659,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       });
       // The robot confirmed a navigation cancel → clear the shared navi state.
       if (eventType === 'navi_event' && (event.payload as Record<string, any>)?.event === 'cancel_result') {
-        patrol.active = false; // a confirmed cancel always ends any patrol
+        if (arrivalCancelPending) {
+          arrivalCancelPending = false; // arrival cleanup, not a user cancel
+          return;
+        }
+        patrol.active = false; // a confirmed USER cancel ends any patrol
         stopDockWatch();
         if (naviState.active || naviState.cancelling) {
           naviState = { active: false };
