@@ -8,6 +8,7 @@ import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
 import '../../../services/spine/spine_provider.dart';
+import '../../navigation/providers/nav_points_provider.dart';
 import '../../../services/spine/face_detection_provider.dart';
 import '../../../services/spine/visitor_arrived_provider.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
@@ -172,6 +173,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   bool _recording = false;
+  bool _patrolling = false;
 
   void _pushToast(IconData icon, Color color, String message) {
     final id = _nextToastId++;
@@ -357,6 +359,91 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _quickActions(bool stopped) {
+    return Column(children: [
+      _quickActionsPanelOnly(stopped),
+      const SizedBox(height: 16),
+      _navPointsCard(stopped),
+    ]);
+  }
+
+  /// Saved navigation points + patrol — live from the shared provider, so
+  /// newly captured points appear here immediately.
+  Widget _navPointsCard(bool stopped) {
+    final pointsAsync = ref.watch(navPointsProvider);
+    final points = pointsAsync.valueOrNull ?? const <NavPoint>[];
+    return _McCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('Navigation Points',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          SizedBox(
+            height: 32,
+            child: ElevatedButton.icon(
+              onPressed: (stopped || points.length < 2)
+                  ? null
+                  : () {
+                      final n = ref.read(navPointsProvider.notifier);
+                      if (_patrolling) {
+                        n.patrolStop();
+                        _pushToast(Icons.route, MikeeColors.success, 'Patrol stopped');
+                      } else {
+                        n.patrolStart(points);
+                        _pushToast(Icons.route, MikeeColors.primary,
+                            'Patrolling ${points.length} points');
+                      }
+                      setState(() => _patrolling = !_patrolling);
+                    },
+              icon: Icon(_patrolling ? Icons.stop : Icons.route, size: 14),
+              label: Text(_patrolling ? 'Stop patrol' : 'Patrol',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    _patrolling ? MikeeColors.error : MikeeColors.inset,
+                foregroundColor:
+                    _patrolling ? Colors.white : MikeeColors.textPrimary,
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        if (points.isEmpty)
+          Text('No saved points yet — capture them on the Navigation screen.',
+              style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textMuted))
+        else
+          ...points.map((pt) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  const Icon(Icons.place, size: 15, color: MikeeColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(pt.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                              fontSize: 13, color: MikeeColors.textPrimary))),
+                  SizedBox(
+                    height: 28,
+                    child: TextButton.icon(
+                      onPressed: stopped
+                          ? null
+                          : () {
+                              ref.read(navPointsProvider.notifier).goTo(pt);
+                              _pushToast(Icons.navigation, MikeeColors.primary,
+                                  'Going to "${pt.name}"');
+                            },
+                      icon: const Icon(Icons.navigation, size: 13),
+                      label: Text('Go',
+                          style: GoogleFonts.inter(
+                              fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              )),
+      ]),
+    );
+  }
+
+  Widget _quickActionsPanelOnly(bool stopped) {
     return _QuickActionsPanel(
       stopped: stopped,
       recording: _recording,
