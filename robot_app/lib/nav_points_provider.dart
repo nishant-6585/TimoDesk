@@ -126,7 +126,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // Departure announcement — fires exactly once per navigation (the early
     // return above dedupes the cancelling/stalled re-broadcasts) for BOTH
     // admin- and robot-initiated navs.
-    _speakArrival('Please follow me to $name.');
+    _speakArrival('Okay, follow me to $name.');
   }
 
   /// What the robot says on arrival: the point's custom announcement (stored in
