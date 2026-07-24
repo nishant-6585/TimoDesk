@@ -32,7 +32,7 @@ class LiveFeedScreen extends ConsumerStatefulWidget {
 
 class _LiveFeedScreenState extends ConsumerState<LiveFeedScreen> {
   bool _enrollmentMode = false;
-  bool _streaming = false;
+  bool _streaming = true; // auto-start: the feed is the point of the panel
   // Default to this device's webcam in the browser so the person, the camera,
   // and the on-screen guidance are all in one place.
   _EnrollSource _enrollSource = _EnrollSource.device;

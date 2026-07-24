@@ -313,7 +313,7 @@ class _LiveFeedCard extends ConsumerStatefulWidget {
 }
 
 class _LiveFeedCardState extends ConsumerState<_LiveFeedCard> {
-  bool _streaming = false;
+  bool _streaming = true; // auto-start: the feed is the point of the panel
 
   @override
   Widget build(BuildContext context) {
