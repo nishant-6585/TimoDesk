@@ -58,8 +58,11 @@ class _MjpegViewState extends State<MjpegView> {
     if (_busy || !mounted) return;
     _busy = true;
     try {
+      // Cache-buster: without it the browser serves the first snapshot from
+      // HTTP cache forever ("frozen frame" — the endpoint sends no no-cache).
       final r = await http
-          .get(Uri.parse(_snapshotUrl))
+          .get(Uri.parse(
+              '$_snapshotUrl?ts=${DateTime.now().millisecondsSinceEpoch}'))
           .timeout(const Duration(seconds: 2));
       if (r.statusCode == 200 && r.bodyBytes.isNotEmpty && mounted) {
         setState(() {
