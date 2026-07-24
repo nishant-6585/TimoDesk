@@ -131,7 +131,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Long enough for the CSJBot recogniser to return a match on an enrolled face,
   // short enough that an unknown visitor isn't left waiting for a hello.
   static const Duration _recognitionWindow = Duration(milliseconds: 2000);
-  static const Duration _engageWindow = Duration(seconds: 10); // no greeting response → close
+  static const Duration _engageWindow = Duration(seconds: 25); // no greeting response → close
   static const Duration _conversationIdle = Duration(seconds: 25); // mid-chat silence → close
   // Mic stays muted this long after Mikee's last speaker output — must exceed the
   // AudioTrack buffer drain (~400ms) so the speaker tail doesn't leak into the mic
@@ -434,7 +434,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     final result = NavVoice.match(transcript, points);
     if (!result.isCommand) return false;
 
-    _audioBridge.stopPlayback(); // don't talk over the agent's partial audio
+    // A nav command is OURS end-to-end: stop any in-flight agent audio AND
+    // drop the agent's next turn so it can't talk over the departure phrase
+    // or answer a navigation question it knows nothing about.
+    _dropFirstAgentTurn = true;
+    _audioBridge.stopPlayback();
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');

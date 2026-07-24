@@ -72,14 +72,42 @@ class NavVoice {
       .trim();
 
   /// Token-overlap score: fraction of the point-name's tokens present in the
-  /// heard text (or vice versa), favouring full containment.
+  /// heard text (or vice versa), favouring full containment. Tokens match
+  /// exactly OR within edit distance 1 for words of 4+ letters — STT regularly
+  /// swaps a vowel ("dock" for "Deck Cabin"), and a miss there sends the
+  /// visitor to the not-found reply for a point that plainly exists.
   static double _score(String heard, String name) {
     if (heard == name) return 1.0;
     if (heard.contains(name) || name.contains(heard)) return 0.9;
-    final ht = heard.split(' ').toSet();
-    final nt = name.split(' ').toSet();
+    final ht = heard.split(' ').where((t) => t.isNotEmpty).toList();
+    final nt = name.split(' ').where((t) => t.isNotEmpty).toList();
     if (nt.isEmpty) return 0;
-    final overlap = ht.intersection(nt).length;
+    var overlap = 0;
+    for (final n in nt) {
+      if (ht.any((h) => _tokensMatch(h, n))) overlap++;
+    }
     return overlap / nt.length;
+  }
+
+  static bool _tokensMatch(String a, String b) {
+    if (a == b) return true;
+    if (a.length < 4 || b.length < 4) return false;
+    return _editDistance(a, b) <= 1;
+  }
+
+  static int _editDistance(String a, String b) {
+    final m = a.length, n = b.length;
+    if ((m - n).abs() > 1) return 2; // early out — we only care about ≤1
+    var prev = List<int>.generate(n + 1, (j) => j);
+    for (var i = 1; i <= m; i++) {
+      final cur = List<int>.filled(n + 1, 0)..[0] = i;
+      for (var j = 1; j <= n; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        cur[j] = [cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost]
+            .reduce((x, y) => x < y ? x : y);
+      }
+      prev = cur;
+    }
+    return prev[n];
   }
 }

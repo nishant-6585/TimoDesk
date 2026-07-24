@@ -125,8 +125,12 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     state = state.copyWith(navigatingTo: target, clearArrived: true);
     // Departure announcement — fires exactly once per navigation (the early
     // return above dedupes the cancelling/stalled re-broadcasts) for BOTH
-    // admin- and robot-initiated navs.
-    _speakArrival('Okay, follow me to $name.');
+    // admin- and robot-initiated navs. Patrol legs are EXCLUDED (per product
+    // decision): a looping patrol announcing every departure is noise — the
+    // per-waypoint arrival announcements carry the patrol narration.
+    if (m['source'] != 'patrol') {
+      _speakArrival('Okay, follow me to $name.');
+    }
   }
 
   /// What the robot says on arrival: the point's custom announcement (stored in
