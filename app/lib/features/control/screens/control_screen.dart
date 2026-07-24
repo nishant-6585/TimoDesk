@@ -386,7 +386,9 @@ class _StatTile extends StatelessWidget {
   const _StatTile(this.label, this.value, this.icon);
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF141414), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 16, color: MikeeColors.textSecondary), const SizedBox(height: 6), Text(label, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textMuted)), Text(value, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.bold))]));
+    // FittedBox: the tile height varies with the grid's aspect ratio — scale
+    // the content down instead of overflowing (was an 18px RenderFlex error).
+    return Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF141414), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(12)), child: FittedBox(fit: BoxFit.scaleDown, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 16, color: MikeeColors.textSecondary), const SizedBox(height: 6), Text(label, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.1, color: MikeeColors.textMuted)), Text(value, style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.bold))])));
   }
 }
 
