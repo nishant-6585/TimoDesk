@@ -144,6 +144,15 @@ class VoiceAgent {
 
   /// Stream a chunk of 16-bit PCM mic audio to the agent.
   /// Phase B: fed by the CSJBot microphone capture.
+  /// Send the user's utterance as TEXT (ElevenLabs convai user_message).
+  /// Used when speech-to-text comes from the robot's vendor ASR instead of
+  /// streaming raw audio — the agent replies in voice exactly as usual.
+  void sendUserText(String text) {
+    final ws = _channel;
+    if (ws == null || text.trim().isEmpty) return;
+    ws.add(jsonEncode({'type': 'user_message', 'text': text.trim()}));
+  }
+
   void sendAudioChunk(Uint8List pcmBytes) {
     final ws = _channel;
     if (ws == null) return;

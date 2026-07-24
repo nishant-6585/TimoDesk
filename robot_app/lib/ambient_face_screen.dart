@@ -90,6 +90,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   final AudioBridge _audioBridge = AudioBridge();
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
+  StreamSubscription<String>? _asrSub;
+  Timer? _asrFinalTimer;
+  String _asrUtterance = '';
   StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
   bool _voiceActive = false; // a session is open (toggles the debug button)
   double _micLevel = 0; // smoothed mic RMS 0..1 — drives the "listening" meter
@@ -175,6 +178,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // Wake word (Phase B): CSJBot "wakeup" → start a session. Silent stream on
     // the emulator (the native plugin swallows the SDK absence). The face tap is
     // the other trigger (debug overlay today; whole-face tap later).
+    // Vendor ASR text (SPEECH_ISR partials) → utterance aggregation → nav
+    // commands / ElevenLabs text turn. This is the working speech path on this
+    // robot: recognized TEXT flows, raw PCM does not.
+    _asrSub = _audioBridge.asrTextStream.listen(_onVendorAsr);
     _wakeSub = _audioBridge.wakeWordStream.listen((_) {
       if (!_voiceAgent.isActive) _startVoice();
     });
@@ -216,6 +223,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _idleWatch?.cancel();
     _voiceSub?.cancel();
     _wakeSub?.cancel();
+    _asrSub?.cancel();
+    _asrFinalTimer?.cancel();
     _playbackSub?.cancel();
     _voiceAgent.dispose();
     _tts.dispose();
@@ -391,6 +400,28 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _speakGreeting(String text) {
     _tts.speak(text).then((ok) {
       if (!ok) _audioBridge.speak(text);
+    });
+  }
+
+  // ── Vendor ASR text path ────────────────────────────────────────────────────
+  // Partial transcriptions stream in while the user talks; 900ms of silence
+  // finalizes the utterance. Nav commands are handled locally; anything else
+  // becomes a TEXT turn to the ElevenLabs agent (voice reply as usual).
+  void _onVendorAsr(String partial) {
+    if (partial.trim().isEmpty) return;
+    _asrUtterance = partial.trim();
+    _bumpActivity(); // real user speech — keep the session alive
+    _asrFinalTimer?.cancel();
+    _asrFinalTimer = Timer(const Duration(milliseconds: 900), () {
+      final utterance = _asrUtterance;
+      _asrUtterance = '';
+      if (utterance.isEmpty) return;
+      debugPrint('VendorASR utterance: "$utterance"');
+      if (_handleNavVoice(utterance)) return;
+      if (_voiceActive) {
+        _voiceAgent.sendUserText(utterance);
+        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+      }
     });
   }
 
