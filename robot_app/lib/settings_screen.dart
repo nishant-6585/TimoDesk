@@ -31,6 +31,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _regreetMins;
   late final TextEditingController _gateYaw;
   late final TextEditingController _gateFacePct;
+  late final TextEditingController _escortSecs;
+  late final TextEditingController _escortText;
+  late final TextEditingController _escortLost;
   bool _gateEnabled = RobotConfig.attentionGateEnabled;
   bool _saved = false;
 
@@ -54,6 +57,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         text: RobotConfig.attentionMaxYawDeg.toStringAsFixed(0));
     _gateFacePct = TextEditingController(
         text: (RobotConfig.attentionMinFaceRatio * 100).toStringAsFixed(0));
+    _escortSecs = TextEditingController(
+        text: RobotConfig.escortReassureSeconds.toString());
+    _escortText = TextEditingController(text: RobotConfig.escortReassureText);
+    _escortLost = TextEditingController(text: RobotConfig.escortLostText);
   }
 
   @override
@@ -69,6 +76,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _regreetMins.dispose();
     _gateYaw.dispose();
     _gateFacePct.dispose();
+    _escortSecs.dispose();
+    _escortText.dispose();
+    _escortLost.dispose();
     super.dispose();
   }
 
@@ -90,6 +100,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       gateMinFaceRatio: (double.tryParse(_gateFacePct.text.trim()) ??
               RobotConfig.attentionMinFaceRatio * 100) /
           100,
+    );
+    await RobotConfig.updateEscortConfig(
+      reassureSeconds: int.tryParse(_escortSecs.text.trim()) ??
+          RobotConfig.escortReassureSeconds,
+      reassureText: _escortText.text,
+      lostText: _escortLost.text,
     );
     if (!mounted) return;
     setState(() => _saved = true);
@@ -310,6 +326,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ]),
+          const SizedBox(height: 28),
+          const Text('ESCORT ("FOLLOW ME")',
+              style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _escortSecs,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(fontSize: 16),
+            decoration: _dec('Reassure every (seconds)',
+                'Mid-route "stay with me" cadence. 0 = off.'),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _escortText,
+            style: const TextStyle(fontSize: 16),
+            decoration: _dec('Reassurance phrase',
+                'Spoken repeatedly while leading a visitor'),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _escortLost,
+            style: const TextStyle(fontSize: 16),
+            decoration: _dec('Lost-visitor phrase (after arrival)',
+                'Spoken when nobody appears after arriving. {name} = the point. '
+                'Empty = off.'),
+          ),
           const SizedBox(height: 28),
           FilledButton.icon(
             onPressed: _save,

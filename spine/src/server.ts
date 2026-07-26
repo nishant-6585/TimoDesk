@@ -22,6 +22,14 @@ import { handleVoiceLog } from './handlers/voice';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { handleListCaptures } from './handlers/captures';
 import { handleAsk } from './handlers/ask';
+import {
+  handleKbIngest,
+  handleKbIngestUrl,
+  handleKbList,
+  handleKbDelete,
+  handleElevenLabsAsk,
+} from './handlers/kb';
+import { handleEntraSync } from './handlers/entra';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -416,6 +424,37 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/ask' && req.method === 'POST') {
         await handleAsk(req, res, supabase);
+        return;
+      }
+
+      // KB platform — manage the knowledge base the voice brain answers from.
+      if (url === '/kb/ingest' && req.method === 'POST') {
+        await handleKbIngest(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/ingest-url' && req.method === 'POST') {
+        await handleKbIngestUrl(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/chunks' && req.method === 'GET') {
+        await handleKbList(req, res, supabase);
+        return;
+      }
+      const kbMatch = url.match(/^\/kb\/chunks\/([^/]+)$/);
+      if (kbMatch && req.method === 'DELETE') {
+        await handleKbDelete(req, res, supabase, decodeURIComponent(kbMatch[1]));
+        return;
+      }
+
+      // ElevenLabs server-tool webhook → grounded RAG answer (two-brains fix).
+      if (url === '/elevenlabs/ask' && req.method === 'POST') {
+        await handleElevenLabsAsk(req, res, supabase);
+        return;
+      }
+
+      // Microsoft Entra ID (Azure AD) → staff directory sync.
+      if (url === '/entra/sync' && req.method === 'POST') {
+        await handleEntraSync(req, res, supabase);
         return;
       }
 

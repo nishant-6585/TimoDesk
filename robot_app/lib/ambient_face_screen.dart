@@ -17,6 +17,8 @@ import 'models/voice_language.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
+import 'services/checkin_voice.dart';
+import 'services/checkin_api.dart';
 import 'waving_hand_overlay.dart';
 import 'face_rig.dart';
 import 'gaze_tracker.dart';
@@ -90,6 +92,21 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
   late final ElevenLabsTts _tts;
+
+  // ── Voice visitor check-in ("I'm here to see <host>") ──────────────────────
+  // Two-turn dialog: intent+host → ask the visitor's name → POST /visit.
+  final CheckinApi _checkinApi = CheckinApi();
+  StaffMember? _checkinHost; // resolved host while awaiting the visitor's name
+  Timer? _checkinTimeout; // abandon the dialog if no name arrives
+  List<StaffMember>? _staffCache; // GET /staff cache for host matching
+  DateTime? _staffCacheAt;
+  static const Duration _staffCacheTtl = Duration(minutes: 5);
+  static const Duration _checkinNameWindow = Duration(seconds: 25);
+
+  // ── Escort arrival check ────────────────────────────────────────────────────
+  // After a non-patrol "follow me" arrival, wait briefly for a face; if nobody
+  // appears the visitor was lost en route → speak the configurable line.
+  Timer? _escortArrivalCheck;
 
   // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
   late final VoiceAgent _voiceAgent;
@@ -230,6 +247,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _presenceHold?.cancel();
     _greetTimer?.cancel();
     _recognitionWaitTimer?.cancel();
+    _checkinTimeout?.cancel();
+    _escortArrivalCheck?.cancel();
     _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
@@ -463,6 +482,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
       if (_handleNavVoice(utterance)) return;
+      if (_handleCheckinVoice(utterance)) return;
       if (_voiceActive) {
         _voiceAgent.sendUserText(utterance);
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
@@ -499,6 +519,115 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
               'I can take you to: $known.');
     }
     return true;
+  }
+
+  // ── Voice visitor check-in ("I'm here to see <host>") ──────────────────────
+  // Returns true when [transcript] belongs to the check-in dialog (intent turn
+  // OR the follow-up name turn) — handled here with our own spoken replies, so
+  // the conversational agent never answers a flow it knows nothing about.
+  bool _handleCheckinVoice(String transcript) {
+    // Turn 2: we asked for the visitor's name — this utterance IS the answer.
+    if (_checkinHost != null) {
+      _dropFirstAgentTurn = true;
+      _audioBridge.stopPlayback();
+      _completeCheckin(transcript);
+      return true;
+    }
+    final result = CheckinVoice.match(transcript);
+    if (!result.isCommand) return false;
+    _dropFirstAgentTurn = true;
+    _audioBridge.stopPlayback();
+    _beginCheckin(result.hostHeard);
+    return true;
+  }
+
+  Future<void> _beginCheckin(String hostHeard) async {
+    List<StaffMember> staff;
+    try {
+      staff = await _staffList();
+    } catch (e) {
+      debugPrint('Checkin: staff fetch failed: $e');
+      _speakGreeting("I'm sorry — I can't reach the reception system right now. "
+          'Please check in at the front desk.');
+      return;
+    }
+    final host = CheckinVoice.bestHost(hostHeard, staff);
+    if (host == null) {
+      debugPrint('Checkin: no staff match for "$hostHeard"');
+      _speakGreeting("I couldn't find $hostHeard in our staff directory. "
+          'You can also check in at the front desk.');
+      return;
+    }
+    debugPrint('Checkin: host "$hostHeard" → ${host.fullName} (${host.id})');
+    _checkinHost = host;
+    _checkinTimeout?.cancel();
+    _checkinTimeout = Timer(_checkinNameWindow, () {
+      debugPrint('Checkin: name window expired — dialog abandoned');
+      _checkinHost = null;
+    });
+    _speakGreeting('Sure — I will let ${host.fullName} know. '
+        'May I have your name, please?');
+  }
+
+  Future<void> _completeCheckin(String transcript) async {
+    final host = _checkinHost;
+    _checkinHost = null;
+    _checkinTimeout?.cancel();
+    if (host == null) return;
+    if (CheckinVoice.isCancel(transcript)) {
+      _speakGreeting('No problem.');
+      return;
+    }
+    final name = CheckinVoice.extractVisitorName(transcript);
+    if (name.isEmpty) {
+      _speakGreeting("Sorry, I didn't catch your name — "
+          'please check in at the front desk.');
+      return;
+    }
+    var ok = false;
+    try {
+      ok = await _checkinApi.postVisit(visitorName: name, hostStaffId: host.id);
+    } catch (e) {
+      debugPrint('Checkin: POST /visit failed: $e');
+    }
+    _speakGreeting(ok
+        ? 'Thank you, $name. I have let ${host.fullName} know you are here — '
+            'please have a seat.'
+        : "I'm sorry, I couldn't record your check-in. "
+            'Please contact the front desk.');
+  }
+
+  /// GET /staff with a short cache — the directory changes rarely; a visitor
+  /// dialog shouldn't wait on a fresh fetch every turn.
+  Future<List<StaffMember>> _staffList() async {
+    final now = DateTime.now();
+    if (_staffCache != null &&
+        _staffCacheAt != null &&
+        now.difference(_staffCacheAt!) < _staffCacheTtl) {
+      return _staffCache!;
+    }
+    final staff = await _checkinApi.fetchStaff();
+    _staffCache = staff;
+    _staffCacheAt = now;
+    return staff;
+  }
+
+  // ── Escort arrival check ────────────────────────────────────────────────────
+  // Mid-route we cannot see the follower (the chest camera faces the direction
+  // of travel) — but after arriving we should be face-to-face again. If nobody
+  // shows up in front of the camera shortly after a non-patrol arrival, the
+  // visitor was lost en route: say so (configurable, {name} = the point).
+  void _onEscortArrived(String pointName) {
+    if (ref.read(navPointsProvider).navSource == 'patrol') return;
+    final template = RobotConfig.escortLostText;
+    if (template.isEmpty) return;
+    _escortArrivalCheck?.cancel();
+    _escortArrivalCheck = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _present || _voiceActive) return;
+      if (ref.read(navPointsProvider).navigatingTo != null) return; // re-tasked
+      debugPrint('Escort: nobody in view after arriving at "$pointName"');
+      _speakGreeting(template.replaceAll('{name}', pointName));
+    });
   }
 
   // Speak the greeting, then auto-open the mic so a visitor can talk without
@@ -668,6 +797,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // transcript is a nav command WE handle the reply + action and drop the
         // agent's own answer to this turn (it doesn't know the saved points).
         if (e.text != null && _handleNavVoice(e.text!)) {
+          _dropFirstAgentTurn = true;
+          break;
+        }
+        // Visitor check-in ("I'm here to see <host>") — ours end-to-end too:
+        // the agent doesn't know the staff directory or the /visit flow.
+        if (e.text != null && _handleCheckinVoice(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }
@@ -958,6 +1093,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
       if (curr == true) _startControlServers();
+    });
+
+    // Escort: a "follow me" navigation just arrived → check the visitor made it.
+    ref.listen(navPointsProvider.select((s) => s.arrivedAt), (prev, curr) {
+      if (curr != null && curr != prev) _onEscortArrived(curr);
     });
 
     return Scaffold(

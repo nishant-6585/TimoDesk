@@ -1,4 +1,5 @@
 import '../services/nav_points_api.dart';
+import 'voice_fuzzy.dart';
 
 /// Outcome of matching a spoken transcript against navigation commands.
 ///
@@ -47,12 +48,12 @@ class NavVoice {
     // Guard: the generic drive commands ("go to sleep", "go forward") are not
     // locations — leave them to the existing keyword command handler.
     const reserved = ['sleep', 'forward', 'back', 'left', 'right', 'home'];
-    if (reserved.contains(_normalize(heard))) return NavVoiceResult.notACommand;
+    if (reserved.contains(fuzzyNormalize(heard))) return NavVoiceResult.notACommand;
 
     NavPoint? best;
     double bestScore = 0;
     for (final p in points) {
-      final s = _score(_normalize(heard), _normalize(p.name));
+      final s = fuzzyScore(fuzzyNormalize(heard), fuzzyNormalize(p.name));
       if (s > bestScore) {
         bestScore = s;
         best = p;
@@ -62,52 +63,5 @@ class NavVoice {
       return NavVoiceResult.found(best, heard);
     }
     return NavVoiceResult.unknown(heard);
-  }
-
-  static String _normalize(String s) => s
-      .toLowerCase()
-      .replaceAll(RegExp(r"[''`]s\b"), '') // "nishant's" → "nishant"
-      .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-
-  /// Token-overlap score: fraction of the point-name's tokens present in the
-  /// heard text (or vice versa), favouring full containment. Tokens match
-  /// exactly OR within edit distance 1 for words of 4+ letters — STT regularly
-  /// swaps a vowel ("dock" for "Deck Cabin"), and a miss there sends the
-  /// visitor to the not-found reply for a point that plainly exists.
-  static double _score(String heard, String name) {
-    if (heard == name) return 1.0;
-    if (heard.contains(name) || name.contains(heard)) return 0.9;
-    final ht = heard.split(' ').where((t) => t.isNotEmpty).toList();
-    final nt = name.split(' ').where((t) => t.isNotEmpty).toList();
-    if (nt.isEmpty) return 0;
-    var overlap = 0;
-    for (final n in nt) {
-      if (ht.any((h) => _tokensMatch(h, n))) overlap++;
-    }
-    return overlap / nt.length;
-  }
-
-  static bool _tokensMatch(String a, String b) {
-    if (a == b) return true;
-    if (a.length < 4 || b.length < 4) return false;
-    return _editDistance(a, b) <= 1;
-  }
-
-  static int _editDistance(String a, String b) {
-    final m = a.length, n = b.length;
-    if ((m - n).abs() > 1) return 2; // early out — we only care about ≤1
-    var prev = List<int>.generate(n + 1, (j) => j);
-    for (var i = 1; i <= m; i++) {
-      final cur = List<int>.filled(n + 1, 0)..[0] = i;
-      for (var j = 1; j <= n; j++) {
-        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
-        cur[j] = [cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost]
-            .reduce((x, y) => x < y ? x : y);
-      }
-      prev = cur;
-    }
-    return prev[n];
   }
 }

@@ -1,0 +1,191 @@
+/**
+ * KB platform endpoints — manage the reception knowledge base over HTTP.
+ *
+ *   POST   /kb/ingest       { text, topic?, is_faq? }  → chunk + embed + store
+ *   POST   /kb/ingest-url   { url, topic? }            → fetch page → same
+ *   GET    /kb/chunks                                  → list (id, topic, …)
+ *   DELETE /kb/chunks/{id}                             → remove a chunk
+ *
+ * Same auth model as the other endpoints (JWT / kiosk token / dev bypass).
+ *
+ * Also here: POST /elevenlabs/ask — the ElevenLabs Conversational-AI server
+ * tool webhook. The agent calls this mid-conversation to answer from OUR KB
+ * (RAG /ask) instead of its ungrounded hosted LLM — HANDOFF "two brains"
+ * resolution, option B. Authenticated by a dedicated shared secret because
+ * ElevenLabs can't hold a Supabase JWT; fail-closed when the secret is unset.
+ */
+
+import { IncomingMessage, ServerResponse } from 'http';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../auth/middleware';
+import { logEvent } from '../supabase/events';
+import { ingestText, ingestUrl } from '../services/kb-ingest';
+import { askQuestion } from '../services/rag';
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise(resolve => {
+    let b = '';
+    req.on('data', c => (b += c.toString()));
+    req.on('end', () => resolve(b));
+  });
+}
+
+function json(res: ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+/** POST /kb/ingest — chunk + embed + store a block of text. */
+export async function handleKbIngest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  let body: { text?: unknown; topic?: unknown; is_faq?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  if (!text) return json(res, 400, { ok: false, reason: 'text is required' });
+
+  try {
+    const result = await ingestText(supabase, {
+      text,
+      topic: typeof body.topic === 'string' ? body.topic : undefined,
+      is_faq: body.is_faq === true,
+    });
+    await logEvent('kb_ingested', { actor: auth.userId, kind: 'text', chunks: result.chunks });
+    return json(res, 200, { ok: true, chunks: result.chunks });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[kb/ingest] failed:', reason);
+    return json(res, 500, { ok: false, reason });
+  }
+}
+
+/** POST /kb/ingest-url — fetch a public page, strip to text, ingest. */
+export async function handleKbIngestUrl(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  let body: { url?: unknown; topic?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!url) return json(res, 400, { ok: false, reason: 'url is required' });
+
+  try {
+    const result = await ingestUrl(supabase, {
+      url,
+      topic: typeof body.topic === 'string' ? body.topic : undefined,
+    });
+    await logEvent('kb_ingested', { actor: auth.userId, kind: 'url', url, chunks: result.chunks });
+    return json(res, 200, { ok: true, chunks: result.chunks, source: url });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[kb/ingest-url] failed:', reason);
+    // Bad URLs / unusable pages are caller errors, not server faults.
+    const status = /only http|unsupported content-type|no usable text|Invalid URL/.test(reason) ? 400 : 500;
+    return json(res, status, { ok: false, reason });
+  }
+}
+
+/** GET /kb/chunks — list the knowledge base (no embeddings in the payload). */
+export async function handleKbList(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  const { data, error } = await supabase
+    .from('kb_chunk')
+    .select('id, topic, content, is_faq, source, updated_at')
+    .order('updated_at', { ascending: false });
+  if (error) return json(res, 500, { ok: false, reason: error.message });
+  return json(res, 200, { ok: true, chunks: data ?? [] });
+}
+
+/** DELETE /kb/chunks/{id} — remove a chunk. Audit-logged (KB shapes answers). */
+export async function handleKbDelete(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient,
+  chunkId: string
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  const { error, count } = await supabase
+    .from('kb_chunk')
+    .delete({ count: 'exact' })
+    .eq('id', chunkId);
+  if (error) return json(res, 500, { ok: false, reason: error.message });
+  if (!count) return json(res, 404, { ok: false, reason: 'chunk not found' });
+
+  await logEvent('kb_chunk_deleted', { actor: auth.userId, chunk_id: chunkId });
+  return json(res, 200, { ok: true });
+}
+
+/**
+ * POST /elevenlabs/ask — server-tool webhook for the ElevenLabs agent.
+ *
+ * Configure in the ElevenLabs dashboard as a webhook tool:
+ *   URL:    https://<spine>/elevenlabs/ask
+ *   Header: x-tool-secret: <ELEVENLABS_TOOL_SECRET>
+ *   Body:   { "question": "<the visitor's question>" }
+ *
+ * Returns { answer, source } — the agent speaks `answer` verbatim-ish, which
+ * keeps its replies grounded in our KB (never its own hosted LLM's guesses).
+ * Fail-closed: without the env secret the endpoint refuses every call.
+ */
+export async function handleElevenLabsAsk(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const secret = process.env.ELEVENLABS_TOOL_SECRET;
+  if (!secret) {
+    return json(res, 503, { ok: false, reason: 'ELEVENLABS_TOOL_SECRET not configured' });
+  }
+  const presented = req.headers['x-tool-secret'];
+  if (presented !== secret) {
+    return json(res, 401, { ok: false, reason: 'invalid tool secret' });
+  }
+
+  let body: { question?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  const question = typeof body.question === 'string' ? body.question.trim() : '';
+  if (!question) return json(res, 400, { ok: false, reason: 'question is required' });
+
+  try {
+    const result = await askQuestion(supabase, question);
+    // Flat shape — ElevenLabs feeds the tool result straight to the agent.
+    return json(res, 200, { answer: result.answer, source: result.source });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[elevenlabs/ask] failed:', reason);
+    // Give the agent a speakable fallback rather than an opaque 500.
+    return json(res, 200, {
+      answer: "I couldn't reach the knowledge base just now — let me connect you to a team member.",
+      source: 'handoff',
+    });
+  }
+}

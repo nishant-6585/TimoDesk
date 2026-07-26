@@ -18,6 +18,9 @@ class RobotConfig {
   static const _kGateEnabled = 'attention_gate_enabled';
   static const _kGateMaxYaw = 'attention_max_yaw_deg';
   static const _kGateMinFace = 'attention_min_face_ratio';
+  static const _kEscortReassureSecs = 'escort_reassure_seconds';
+  static const _kEscortReassureText = 'escort_reassure_text';
+  static const _kEscortLostText = 'escort_lost_text';
 
   // Defaults = the values enroll_screen previously hardcoded. (DHCP — editable
   // in Settings; spine host changes between sessions.)
@@ -82,6 +85,14 @@ class RobotConfig {
   static double attentionMaxYawDeg = 18; // |head yaw| beyond this = looking away
   static double attentionMinFaceRatio = 0.12; // face-box height / frame height
 
+  // ── Escort ("follow me" navigation) ────────────────────────────────────────
+  // Mid-route reassurance cadence (0 = off) + phrase; and what to say after
+  // arrival when nobody appears in front of the camera ({name} = the point).
+  static int escortReassureSeconds = 12;
+  static String escortReassureText = 'This way — please stay with me.';
+  static String escortLostText =
+      'It looks like we got separated. I am at {name} if you still need me.';
+
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
@@ -99,6 +110,25 @@ class RobotConfig {
     attentionGateEnabled = p.getBool(_kGateEnabled) ?? true;
     attentionMaxYawDeg = p.getDouble(_kGateMaxYaw) ?? 18;
     attentionMinFaceRatio = p.getDouble(_kGateMinFace) ?? 0.12;
+    escortReassureSeconds = p.getInt(_kEscortReassureSecs) ?? 12;
+    escortReassureText =
+        p.getString(_kEscortReassureText) ?? escortReassureText;
+    escortLostText = p.getString(_kEscortLostText) ?? escortLostText;
+  }
+
+  /// Persist the escort settings (Settings screen SAVE).
+  static Future<void> updateEscortConfig({
+    required int reassureSeconds,
+    required String reassureText,
+    required String lostText,
+  }) async {
+    escortReassureSeconds = reassureSeconds.clamp(0, 120);
+    escortReassureText = reassureText.trim();
+    escortLostText = lostText.trim();
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_kEscortReassureSecs, escortReassureSeconds);
+    await p.setString(_kEscortReassureText, escortReassureText);
+    await p.setString(_kEscortLostText, escortLostText);
   }
 
   /// Persist the greeting + attention-gate settings (Settings screen SAVE).

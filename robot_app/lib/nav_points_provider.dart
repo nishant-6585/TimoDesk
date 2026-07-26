@@ -30,12 +30,16 @@ class NavPointsState {
   final bool capturing;
   final NavPoint? navigatingTo; // non-null while a go-to is active
   final String? arrivedAt; // name of the point just reached (transient banner)
+  final String? navSource; // 'robot' | 'admin' | 'patrol' — who started the nav.
+  //                          Survives arrival (the escort arrival check needs it);
+  //                          overwritten by the next departure.
 
   const NavPointsState({
     this.points = const AsyncValue.loading(),
     this.capturing = false,
     this.navigatingTo,
     this.arrivedAt,
+    this.navSource,
   });
 
   NavPointsState copyWith({
@@ -45,12 +49,14 @@ class NavPointsState {
     bool clearNavigating = false,
     String? arrivedAt,
     bool clearArrived = false,
+    String? navSource,
   }) =>
       NavPointsState(
         points: points ?? this.points,
         capturing: capturing ?? this.capturing,
         navigatingTo: clearNavigating ? null : (navigatingTo ?? this.navigatingTo),
         arrivedAt: clearArrived ? null : (arrivedAt ?? this.arrivedAt),
+        navSource: navSource ?? this.navSource,
       );
 }
 
@@ -78,6 +84,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   );
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
+  Timer? _escortTimer; // periodic "please stay with me" while escorting
 
   /// Speak an arrival announcement through Mikee's real voice (ElevenLabs →
   /// proven speaker path). The device-TTS fallback exists because ElevenLabs
@@ -92,10 +99,36 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     }
   }
 
+  /// Escort reassurance: while leading a visitor ("follow me"), speak a short
+  /// configurable phrase every N seconds so they know to keep following. The
+  /// chest camera faces the direction of travel, so we CANNOT see whether the
+  /// follower is still behind us mid-route — time-based reassurance is the
+  /// honest tool here; the camera check happens after arrival (ambient screen).
+  /// Patrol legs never reassure (nobody is being escorted).
+  void _startEscortTimer() {
+    _stopEscortTimer();
+    final secs = RobotConfig.escortReassureSeconds;
+    final text = RobotConfig.escortReassureText;
+    if (secs <= 0 || text.isEmpty) return;
+    _escortTimer = Timer.periodic(Duration(seconds: secs), (_) {
+      if (!mounted || state.navigatingTo == null) {
+        _stopEscortTimer();
+        return;
+      }
+      _speakArrival(text);
+    });
+  }
+
+  void _stopEscortTimer() {
+    _escortTimer?.cancel();
+    _escortTimer = null;
+  }
+
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
   void _onSpineNaviState(Map<String, dynamic> m) {
     if (!mounted) return;
     if (m['active'] != true) {
+      _stopEscortTimer();
       if (m['arrived'] == true) {
         // Spine's arrival watcher confirmed the robot reached the point.
         final name =
@@ -122,7 +155,11 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
           kind: 'navigation',
           sortOrder: 0,
         );
-    state = state.copyWith(navigatingTo: target, clearArrived: true);
+    state = state.copyWith(
+      navigatingTo: target,
+      clearArrived: true,
+      navSource: (m['source'] as String?) ?? 'admin',
+    );
     // Departure announcement — fires exactly once per navigation (the early
     // return above dedupes the cancelling/stalled re-broadcasts) for BOTH
     // admin- and robot-initiated navs. Patrol legs are EXCLUDED (per product
@@ -130,6 +167,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // per-waypoint arrival announcements carry the patrol narration.
     if (m['source'] != 'patrol') {
       _speakArrival('Okay, follow me to $name.');
+      _startEscortTimer();
     }
   }
 
@@ -146,6 +184,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// surface a transient "arrived" banner.
   void _onNaviEvent(NaviEvent e) {
     if (!mounted) return;
+    if (e.isArrival || e.kind == 'cancel_result') _stopEscortTimer();
     if (e.isArrival) {
       final target = state.navigatingTo;
       final name = target?.name ?? 'the destination';
@@ -165,6 +204,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   void dispose() {
     _naviSub?.cancel();
     _naviStateSub?.cancel();
+    _stopEscortTimer();
     super.dispose();
   }
 
@@ -236,7 +276,8 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// Falls back to the native MethodChannel when the spine is unreachable
   /// (standalone mode — no cross-device sync then).
   Future<bool> goTo(NavPoint point) async {
-    state = state.copyWith(navigatingTo: point, clearArrived: true);
+    state = state.copyWith(
+        navigatingTo: point, clearArrived: true, navSource: 'robot');
     final spine = _ref.read(navSpineClientProvider);
     if (spine.isConnected) {
       // isConnected can be STALE after a silent Wi-Fi drop (half-open socket) —
