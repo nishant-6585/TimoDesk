@@ -37,12 +37,18 @@ class SpineClient {
   bool _authed = false;
 
   final _faceCtrl = StreamController<FaceDetectedEvent>.broadcast();
+  final _unknownCtrl = StreamController<void>.broadcast();
   final _presenceCtrl = StreamController<bool>.broadcast();
   final _connCtrl = StreamController<bool>.broadcast();
   final _naviCtrl = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
+
+  /// A face was detected but matched NO enrolled staff (spine emits
+  /// name:'unknown'). Lets the greeting flow welcome a visitor immediately
+  /// instead of waiting out the recognition window.
+  Stream<void> get unknownFace => _unknownCtrl.stream;
 
   /// CSJBot presence boolean from robot_status updates.
   Stream<bool> get personDetected => _presenceCtrl.stream;
@@ -174,7 +180,11 @@ class SpineClient {
     if (payload is! Map) return;
     final name = payload['name'] as String?;
     final staffId = payload['staff_id'] as String?;
-    if (name == null || name == 'unknown' || staffId == null) return; // matched only
+    if (name == null || name == 'unknown' || staffId == null) {
+      // Face present but not an enrolled match → visitor signal.
+      if (name == 'unknown' && !_unknownCtrl.isClosed) _unknownCtrl.add(null);
+      return;
+    }
     if (!_faceCtrl.isClosed) {
       _faceCtrl.add(
         FaceDetectedEvent(name, staffId, (payload['distance'] as num?)?.toDouble()),
@@ -204,6 +214,7 @@ class SpineClient {
     await _ws?.close();
     _ws = null;
     await _faceCtrl.close();
+    await _unknownCtrl.close();
     await _presenceCtrl.close();
     await _connCtrl.close();
     await _naviCtrl.close();

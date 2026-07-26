@@ -27,6 +27,27 @@ class VoiceLanguage {
   /// Spoken greeting phrase (fed to TTS). [name] localises the named greet.
   String greetSpeech([String? name]) =>
       name == null ? '$hello!' : '$hello $name! $welcome!';
+
+  /// Render a configurable greeting template in this language.
+  ///
+  /// Placeholders: {hello} → the localised greeting word, {welcome} → the
+  /// localised welcome line (with [company] substituted for the default brand),
+  /// {name} → the recognised staff name, {company} → the company name itself.
+  /// Templates are language-agnostic — the tokens carry the localisation.
+  String renderGreeting(String template, {String? name, String? company}) {
+    final c = (company == null || company.trim().isEmpty) ? 'xboom' : company.trim();
+    final rendered = template
+        .replaceAll('{hello}', hello)
+        .replaceAll('{welcome}', welcome.replaceAll('xboom', c))
+        .replaceAll('{company}', c)
+        .replaceAll('{name}', name ?? '');
+    // A staff template used without a name leaves a gap — collapse whitespace
+    // and stray space-before-punctuation so the phrase still reads naturally.
+    return rendered
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAllMapped(RegExp(r'\s+([!,.?])'), (m) => m[1]!)
+        .trim();
+  }
 }
 
 /// The 8 languages Mikee supports (matches the ElevenLabs agent config).

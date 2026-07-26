@@ -15,6 +15,7 @@ import 'services/audio_bridge.dart';
 import 'services/elevenlabs_tts.dart';
 import 'services/robot_gestures.dart';
 import 'services/voice_command_handler.dart';
+import 'models/voice_language.dart';
 import 'screens/language_selection_screen.dart';
 import 'config.dart';
 import 'enroll_screen.dart';
@@ -432,7 +433,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _setKind(FaceStateKind.greeting);
         ref.read(armProvider.notifier).wave(); // real wave gesture
         _toast('Greeting visitor', Icons.waving_hand_rounded);
-        _say('Hello! Welcome to xboom. How can I help you today?');
+        // Same Settings-editable template the ambient face uses for visitors.
+        _say(languageForCode(RobotConfig.voiceLanguageCode).renderGreeting(
+            RobotConfig.greetVisitorTemplate,
+            company: RobotConfig.companyName));
         _revertAfter(2600);
         break;
       case _Act.listen:

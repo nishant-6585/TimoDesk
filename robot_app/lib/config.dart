@@ -11,6 +11,13 @@ class RobotConfig {
   static const _kElevenAgent = 'elevenlabs_agent_id';
   static const _kVoiceLangCode = 'voice_language_code';
   static const _kVoiceLangName = 'voice_language_name';
+  static const _kCompanyName = 'company_name';
+  static const _kGreetStaff = 'greet_staff_template';
+  static const _kGreetVisitor = 'greet_visitor_template';
+  static const _kRegreetMinutes = 'regreet_minutes';
+  static const _kGateEnabled = 'attention_gate_enabled';
+  static const _kGateMaxYaw = 'attention_max_yaw_deg';
+  static const _kGateMinFace = 'attention_min_face_ratio';
 
   // Defaults = the values enroll_screen previously hardcoded. (DHCP — editable
   // in Settings; spine host changes between sessions.)
@@ -32,15 +39,13 @@ class RobotConfig {
   // ElevenLabs dashboard.
   static const String defaultElevenLabsAgentId = 'agent_0101kvhwdrnce6p8phkzj93e4kvb';
 
-  // SECURITY NOTE: the API key is a secret. Baking it here commits it to git AND
-  // ships it in the APK (extractable by anyone who has the build) — acceptable only
-  // for a PRIVATE internal kiosk fleet. Restrict/rotate the key in the ElevenLabs
-  // dashboard. To keep it OUT of git, blank the defaultValue below and pass the key
-  // at build time: `flutter build apk --flavor robot --dart-define=ELEVENLABS_API_KEY=sk_...`.
-  static const String defaultElevenLabsApiKey = String.fromEnvironment(
-    'ELEVENLABS_API_KEY',
-    defaultValue: 'sk_ad407f90175e1d153937e02d826a6cd2187ca02c329099f7',
-  );
+  // SECURITY: the API key is a secret and must NEVER be committed. Pass it at
+  // build time (`flutter build apk --flavor robot --dart-define=ELEVENLABS_API_KEY=sk_...`)
+  // or set it per device in Settings (persisted via SharedPreferences). The key
+  // that used to live here as a defaultValue is in git history — rotate it in the
+  // ElevenLabs dashboard.
+  static const String defaultElevenLabsApiKey =
+      String.fromEnvironment('ELEVENLABS_API_KEY');
 
   static String elevenLabsApiKey = defaultElevenLabsApiKey;
   static String elevenLabsAgentId = defaultElevenLabsAgentId;
@@ -56,6 +61,27 @@ class RobotConfig {
   static String voiceLanguageCode = 'en';
   static String voiceLanguageName = 'English';
 
+  // ── Greetings (editable in Settings — the reception "voice" of the robot) ──
+  // Templates use {hello} / {welcome} (localised via voice_language.dart) and
+  // {name} (recognised staff). {welcome} substitutes {company} for the brand.
+  static const String defaultCompanyName = 'xboom';
+  static const String defaultGreetStaffTemplate = '{hello} {name}! {welcome}!';
+  static const String defaultGreetVisitorTemplate = '{hello}! {welcome}!';
+
+  static String companyName = defaultCompanyName;
+  static String greetStaffTemplate = defaultGreetStaffTemplate;
+  static String greetVisitorTemplate = defaultGreetVisitorTemplate;
+
+  // Minutes before the same person is greeted by name again.
+  static int regreetMinutes = 2;
+
+  // ── Attention gate (greet only when a face is LOOKING at the camera) ──────
+  // Gate on head pose + face size from the on-device ML Kit pass; when disabled
+  // the old behaviour (greet on any fresh face presence) applies.
+  static bool attentionGateEnabled = true;
+  static double attentionMaxYawDeg = 18; // |head yaw| beyond this = looking away
+  static double attentionMinFaceRatio = 0.12; // face-box height / frame height
+
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
@@ -65,6 +91,45 @@ class RobotConfig {
     elevenLabsAgentId = p.getString(_kElevenAgent) ?? defaultElevenLabsAgentId;
     voiceLanguageCode = p.getString(_kVoiceLangCode) ?? 'en';
     voiceLanguageName = p.getString(_kVoiceLangName) ?? 'English';
+    companyName = p.getString(_kCompanyName) ?? defaultCompanyName;
+    greetStaffTemplate = p.getString(_kGreetStaff) ?? defaultGreetStaffTemplate;
+    greetVisitorTemplate =
+        p.getString(_kGreetVisitor) ?? defaultGreetVisitorTemplate;
+    regreetMinutes = p.getInt(_kRegreetMinutes) ?? 2;
+    attentionGateEnabled = p.getBool(_kGateEnabled) ?? true;
+    attentionMaxYawDeg = p.getDouble(_kGateMaxYaw) ?? 18;
+    attentionMinFaceRatio = p.getDouble(_kGateMinFace) ?? 0.12;
+  }
+
+  /// Persist the greeting + attention-gate settings (Settings screen SAVE).
+  static Future<void> updateGreetingConfig({
+    required String company,
+    required String staffTemplate,
+    required String visitorTemplate,
+    required int regreetMins,
+    required bool gateEnabled,
+    required double gateMaxYawDeg,
+    required double gateMinFaceRatio,
+  }) async {
+    companyName = company.trim().isEmpty ? defaultCompanyName : company.trim();
+    greetStaffTemplate = staffTemplate.trim().isEmpty
+        ? defaultGreetStaffTemplate
+        : staffTemplate.trim();
+    greetVisitorTemplate = visitorTemplate.trim().isEmpty
+        ? defaultGreetVisitorTemplate
+        : visitorTemplate.trim();
+    regreetMinutes = regreetMins.clamp(1, 24 * 60);
+    attentionGateEnabled = gateEnabled;
+    attentionMaxYawDeg = gateMaxYawDeg.clamp(5, 60);
+    attentionMinFaceRatio = gateMinFaceRatio.clamp(0.02, 0.6);
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kCompanyName, companyName);
+    await p.setString(_kGreetStaff, greetStaffTemplate);
+    await p.setString(_kGreetVisitor, greetVisitorTemplate);
+    await p.setInt(_kRegreetMinutes, regreetMinutes);
+    await p.setBool(_kGateEnabled, attentionGateEnabled);
+    await p.setDouble(_kGateMaxYaw, attentionMaxYawDeg);
+    await p.setDouble(_kGateMinFace, attentionMinFaceRatio);
   }
 
   /// Persist the selected voice language (code + display name).

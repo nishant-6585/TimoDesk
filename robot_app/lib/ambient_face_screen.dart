@@ -28,9 +28,14 @@ import 'dashboard_screen.dart';
 
 /// The robot's front-of-house home: an ambient animated face (Beam/OLED
 /// CustomPainter, #82). #82 P2 wires it to live perception:
-///   • LOCAL ML Kit on /snapshot → gaze x/y + presence → attentive (anonymous).
-///   • SPINE WS face_detected → greeting-by-name (authoritative identity).
-///   • CSJBot personDetected → coarse presence fallback.
+///   • LOCAL ML Kit on /snapshot → gaze x/y + presence → attentive (anonymous),
+///     PLUS the attention gate: a greeting fires only when a face is LOOKING at
+///     the camera (frontal pose + proximity + dwell) — never from the person
+///     sensor (LIDAR/RGBD/ultrasonic), which only wakes the eyes.
+///   • SPINE WS face_detected → greeting-by-name (authoritative identity);
+///     spine "unknown" → immediate visitor greeting (no name).
+///   • CSJBot personDetected → coarse presence fallback (attentive only).
+///   • CSJBot on-device recognizer → identity FALLBACK when spine is offline.
 /// #80 voice: an ElevenLabs Conversational AI session drives listening/thinking/
 /// speaking + amplitude lip-sync, and logs the transcript to spine. (Phase A —
 /// triggered manually from the debug overlay; wake word + mic are Phase B.)
@@ -56,14 +61,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   final SpineClient _spine = SpineClient();
   StreamSubscription<GazeResult>? _gazeSub;
   StreamSubscription<FaceDetectedEvent>? _faceSub;
+  StreamSubscription<void>? _unknownSub; // spine saw a face, matched no staff
   StreamSubscription<bool>? _presenceSub;
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
-  bool _sdkPersonPresent = false; // rising-edge tracking for greet-on-approach
   StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
   String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
 
   bool _useLivePerception = true; // toggle in debug card; drives gaze when on
   bool _present = false; // a face box is currently visible
+  bool _wasLooking = false; // attention-gate edge tracking (greet on rising edge)
   double _liveGazeX = 0, _liveGazeY = 0;
   Timer? _presenceHold;
 
@@ -71,7 +77,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   String _greetText = '';
   bool _greetVisible = false;
   Timer? _greetTimer;
-  final Map<String, DateTime> _greetedAt = {}; // 10-min re-greet debounce
+  final Map<String, DateTime> _greetedAt = {}; // per-name re-greet debounce
 
   // Greeting coordinator: on motion/presence we hold off greeting for a brief
   // window so face recognition can identify a known staff member FIRST (→ greet
@@ -126,10 +132,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   static const int _maxReconnects = 1; // one silent retry per incident
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
-  static const Duration _regreetWindow = Duration(minutes: 2);
-  // How long after motion we wait for face recognition before greeting anonymously.
-  // Long enough for the CSJBot recogniser to return a match on an enrolled face,
-  // short enough that an unknown visitor isn't left waiting for a hello.
+  // Same-name re-greet debounce — Settings-tunable (RobotConfig.regreetMinutes).
+  Duration get _regreetWindow => Duration(minutes: RobotConfig.regreetMinutes);
+  // How long after the attention gate opens we wait for identity before greeting
+  // anonymously. Long enough for the spine recogniser (500ms cadence + 2-of-3
+  // voting) to land a match on an enrolled face, short enough that an unknown
+  // visitor isn't left waiting for a hello. Spine's explicit "unknown" short-
+  // circuits this window — the timeout only covers spine being slow/offline.
   static const Duration _recognitionWindow = Duration(milliseconds: 2000);
   static const Duration _engageWindow = Duration(seconds: 25); // no greeting response → close
   static const Duration _conversationIdle = Duration(seconds: 25); // mid-chat silence → close
@@ -150,11 +159,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // Live perception streams.
     _gazeSub = _gaze.results.listen(_onGaze);
     _faceSub = _spine.faceDetected.listen(_onFaceDetected);
+    _unknownSub = _spine.unknownFace.listen(_onUnknownFace);
     _presenceSub = _spine.personDetected.listen(_onPersonDetected);
-    // On-device person sensors (laser/RGBD/ultrasonic) → same idle→active logic,
-    // plus a greeting wave on a fresh approach. Works without cloud or mic.
-    _sdkPersonSub = PersonDetect.presence.listen(_onSdkPerson);
-    // Staff face recognition (CSJBot SDK) → greet by name. Silent off-robot.
+    // On-device person sensors (laser/RGBD/ultrasonic) → idle→attentive ONLY.
+    // Deliberately NOT a greeting trigger: greetings fire exclusively from the
+    // camera attention gate (a face looking at the robot), never from LIDAR.
+    _sdkPersonSub = PersonDetect.presence.listen(_onPersonDetected);
+    // Staff face recognition (CSJBot SDK) — identity FALLBACK when spine is
+    // offline (spine's face_detected is authoritative). Silent off-robot.
     _faceRecgSub = FaceRecognition.events.listen(_onFaceRecognized);
     _gaze.start();
     _spine.start();
@@ -231,6 +243,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _audioBridge.dispose();
     _gazeSub?.cancel();
     _faceSub?.cancel();
+    _unknownSub?.cancel();
     _presenceSub?.cancel();
     _sdkPersonSub?.cancel();
     _faceRecgSub?.cancel();
@@ -265,7 +278,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _repaint.ping(); // repaint the face only (no full-tree rebuild)
   }
 
-  // ── Wire 1: local gaze + presence ───────────────────────────────────────────
+  // ── Wire 1: local gaze + presence + attention gate ──────────────────────────
   void _onGaze(GazeResult r) {
     if (r.facePresent) {
       final fresh = !_present; // rising edge → a new person just approached
@@ -277,12 +290,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (_useLivePerception && _face.state == FaceStateKind.idle) {
         _setStateKind(FaceStateKind.attentive);
       }
-      // Obvious reception reaction on a fresh approach (the ML-Kit camera path is
-      // what actually fires here; the CSJBot sensor stays silent on this unit).
-      // Recognise-first: hold the greeting briefly so an enrolled staff member is
-      // greeted by name; unknown faces fall back to a plain hello.
-      if (fresh && !_voiceActive) _beginGreetSequence();
+      // Greeting trigger — attention gate: greet only when the face is LOOKING
+      // at the camera (frontal pose + proximity, sustained — see GazeTracker),
+      // on the rising edge of that attention. Mere presence turns the eyes; it
+      // never speaks. With the gate disabled (Settings), fall back to the old
+      // greet-on-fresh-presence behaviour.
+      // Recognise-first either way: hold the greeting briefly so an enrolled
+      // staff member is greeted by name; unknown faces get the visitor hello.
+      if (RobotConfig.attentionGateEnabled) {
+        if (r.lookingAtCamera && !_wasLooking && !_voiceActive) {
+          _beginGreetSequence();
+        }
+        _wasLooking = r.lookingAtCamera;
+      } else if (fresh && !_voiceActive) {
+        _beginGreetSequence();
+      }
     } else {
+      _wasLooking = false;
       // Hold attentive briefly before returning to idle (kills jitter).
       if (_present && _presenceHold == null) {
         final hold = _face.state == FaceStateKind.greeting
@@ -323,7 +347,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       _greetedAt[e.name] = now;
       final lang = languageForCode(RobotConfig.voiceLanguageCode);
       _showGreeting(lang.greetText(e.name));
-      _speakGreeting(lang.greetSpeech(e.name));
+      _speakGreeting(_staffSpeech(lang, e.name));
       return;
     }
     _greetedAt[e.name] = now;
@@ -333,22 +357,43 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // debounce window). It just must not re-open the mic a second time.
     final upgradeAfterGeneric = _greeted;
     _greeted = true; // counts as this visit's one greeting
-    _awaitingRecognition = false; // spine identity beat the local recogniser
+    _awaitingRecognition = false; // spine identity won the recognition window
     _recognitionWaitTimer?.cancel();
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(e.name));
     if (upgradeAfterGeneric) {
-      _speakGreeting(lang.greetSpeech(e.name));
+      _speakGreeting(_staffSpeech(lang, e.name));
     } else {
-      _greetThenListen(lang.greetSpeech(e.name));
+      _greetThenListen(_staffSpeech(lang, e.name));
     }
   }
 
-  // Motion/presence detected → give face recognition a brief head start so a
-  // known staff member is greeted BY NAME, before falling back to a plain hello.
-  // The recogniser (_onFaceRecognized) cancels this window and greets by name if
-  // it matches within [_recognitionWindow]; otherwise the timer fires a generic
-  // greeting. Guarded so exactly one greeting happens per visit.
+  // Spine saw a face that matched NO enrolled staff → this is a visitor. Don't
+  // make them wait out the recognition window: greet (without a name) now.
+  void _onUnknownFace(void _) {
+    if (!_awaitingRecognition || _greeted || _voiceActive) return;
+    _awaitingRecognition = false;
+    _recognitionWaitTimer?.cancel();
+    _greetOnApproach();
+  }
+
+  // Rendered spoken phrases — Settings-editable templates (RobotConfig), with
+  // {hello}/{welcome} localised by the active voice language.
+  String _staffSpeech(VoiceLanguage lang, String name) => lang.renderGreeting(
+      RobotConfig.greetStaffTemplate,
+      name: name,
+      company: RobotConfig.companyName);
+
+  String _visitorSpeech(VoiceLanguage lang) => lang.renderGreeting(
+      RobotConfig.greetVisitorTemplate,
+      company: RobotConfig.companyName);
+
+  // Attention gate passed → give face recognition a brief head start so a
+  // known staff member is greeted BY NAME, before falling back to the visitor
+  // hello. Spine identity (_onFaceDetected) or its "unknown" verdict
+  // (_onUnknownFace) resolves the window early; the on-device recogniser
+  // (_onFaceRecognized) covers spine-offline. Otherwise the timer fires the
+  // visitor greeting. Guarded so exactly one greeting happens per visit.
   void _beginGreetSequence() {
     if (_greeted || _voiceActive || _awaitingRecognition) return;
     // Don't greet passers-by mid-navigation — it talks over the "follow me" /
@@ -364,7 +409,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     });
   }
 
-  // Greeting reaction on a fresh approach — on-screen wave + voice.
+  // Visitor greeting (no name) — on-screen wave + voice, template-rendered.
   // Fires once per visit; resets when the person actually leaves (_greeted = false
   // in the presence-hold callback) so every new approach gets a fresh greeting.
   bool _greeted = false;
@@ -373,7 +418,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greeted = true;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText());
-    _greetThenListen(lang.greetSpeech());
+    _greetThenListen(_visitorSpeech(lang));
   }
 
   // Shared: set greeting state, show overlay, start hold timer.
@@ -525,23 +570,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
   }
 
-  /// On-device CSJBot person sensors. Reuses the coarse-presence logic
-  /// (idle → attentive) and, on a fresh approach (rising edge), greets with a
-  /// physical wave. Independent of the cloud and the microphone.
-  void _onSdkPerson(bool present) {
-    _onPersonDetected(present);
-    if (present && !_sdkPersonPresent && !_voiceActive) {
-      _beginGreetSequence(); // recognise-first, then greet (by name if matched)
-    }
-    _sdkPersonPresent = present;
-  }
-
-  /// CSJBot staff face recognition → personalised greeting.
-  ///   • near present → wake the face (idle/sleepy → attentive).
-  ///   • recognized, confidence ≥ 60 → greet that staff member BY NAME via
-  ///     ElevenLabs (humorous, see the agent's STAFF_RECOGNIZED prompt).
-  ///   • recognized but uncertain (< 60) → treat as an anonymous visitor.
-  /// Never interrupts a live conversation.
+  /// CSJBot on-device staff face recognition — identity FALLBACK only.
+  ///   • near present → wake the face (idle/sleepy → attentive). Always.
+  ///   • recognized, confidence ≥ 60 → greet BY NAME, but ONLY while spine is
+  ///     offline — connected, spine's face_detected is the sole identity source
+  ///     (one calibrated pipeline; the two must never race).
+  ///   • recognized but uncertain (< 60) → ignored; the recognition window's
+  ///     timeout delivers the visitor hello.
+  /// Never interrupts a live conversation. Never triggers on mere presence —
+  /// greetings stay gated on the camera attention gate.
   void _onFaceRecognized(FaceEvent e) {
     if (_voiceActive) return; // mid-conversation — don't greet over it
     switch (e.type) {
@@ -553,7 +590,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         }
         return;
       case 'recognized':
+        if (_spine.isConnected) return; // spine identity is authoritative
         if (_greeted) return; // already greeted this visit — don't repeat
+        // Fallback identity must still wait for the attention gate — only greet
+        // inside an open recognition window (i.e. someone is looking at us).
+        if (!_awaitingRecognition) return;
         final name = e.name?.trim() ?? '';
         if (e.confidence >= 60 && name.isNotEmpty) {
           // Matched → win the recognise-first window and greet BY NAME.
@@ -561,19 +602,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           _recognitionWaitTimer?.cancel();
           _greetStaff(name);
         }
-        // Uncertain (<60): don't greet yet. If a presence window is open it falls
-        // back to a plain hello on timeout; a stronger match may still arrive. If
-        // recognition fired without a presence window, the visitor's motion edge
-        // will open one — so an unknown face still gets its plain hello.
         return;
     }
   }
 
-  // Greet a recognised staff member by name. The on-screen overlay shows the
-  // visual greeting; the SPOKEN, by-name, humorous line is delivered by
-  // ElevenLabs — we inject "STAFF_RECOGNIZED: <name>" as the first turn so the
-  // agent opens the conversation itself (no separate TTS greeting → no overlap).
-  // Shares the 10-minute _greetedAt debounce with the spine face_detected path.
+  // Greet a recognised staff member by name (spine-offline fallback path). The
+  // on-screen overlay shows the visual greeting; the SPOKEN, by-name, humorous
+  // line is delivered by ElevenLabs — we inject "STAFF_RECOGNIZED: <name>" as
+  // the first turn so the agent opens the conversation itself (no separate TTS
+  // greeting → no overlap). Shares the Settings-tunable _regreetWindow debounce
+  // with the spine face_detected path.
   void _greetStaff(String name) {
     final now = DateTime.now();
     final last = _greetedAt[name];
@@ -1147,6 +1185,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             const SizedBox(height: 4),
             Text('present: $_present  gaze ${_gaze.last.gazeX.toStringAsFixed(2)},'
                 ' ${_gaze.last.gazeY.toStringAsFixed(2)}'),
+            Text('looking: ${_gaze.last.lookingAtCamera}'
+                '  yaw ${_gaze.last.yawDeg.toStringAsFixed(0)}°'
+                '  face ${(_gaze.last.faceRatio * 100).toStringAsFixed(0)}%'),
             Text('spine: ${_spine.isConnected ? "connected" : "…"}'),
             Text('voice: ${_voiceActive ? "on" : "off"}  mic: ${_micLevel.toStringAsFixed(3)}'),
             const SizedBox(height: 8),

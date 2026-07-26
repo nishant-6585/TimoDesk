@@ -11,12 +11,29 @@ import 'config.dart';
 
 /// One detection result from the local (on-device) gaze pipeline.
 ///
-/// ANONYMOUS — position/presence only, never identity (CHEST_UX_REDESIGN §3).
+/// ANONYMOUS — position/presence/pose only, never identity (CHEST_UX_REDESIGN §3).
 class GazeResult {
   final bool facePresent;
   final double gazeX; // -1..1 relative to frame center
   final double gazeY; // -1..1 relative to frame center
-  const GazeResult(this.facePresent, this.gazeX, this.gazeY);
+
+  /// Attention gate: true only when the face has been LOOKING AT the camera
+  /// (frontal head pose + near enough + eyes open) for [GazeTracker.dwellFrames]
+  /// consecutive polls. This — not mere presence — is what triggers a greeting.
+  final bool lookingAtCamera;
+
+  // Raw gate inputs, surfaced for the debug overlay / on-site tuning.
+  final double yawDeg; // head Euler Y — 0 = facing the camera
+  final double faceRatio; // face-box height / frame height — proximity proxy
+
+  const GazeResult(
+    this.facePresent,
+    this.gazeX,
+    this.gazeY, {
+    this.lookingAtCamera = false,
+    this.yawDeg = 0,
+    this.faceRatio = 0,
+  });
 
   static const GazeResult none = GazeResult(false, 0, 0);
 }
@@ -36,8 +53,23 @@ class GazeTracker {
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.fast,
       minFaceSize: 0.15,
+      // Eye-open probabilities for the attention gate (head Euler Y/Z come free).
+      enableClassification: true,
     ),
   );
+
+  // ── Attention gate (greet only when looking at the camera) ─────────────────
+  // Frontal yaw + proximity thresholds live in RobotConfig (Settings-tunable);
+  // roll / eye-open / dwell are fixed here. Eye-open is null-safe: when ML Kit
+  // can't score the eyes (small/backlit face) the check passes rather than
+  // silencing greetings entirely.
+  static const double _maxRollDeg = 20;
+  static const double _minEyeOpen = 0.3;
+
+  /// Consecutive looking-at-camera polls required before the gate opens
+  /// (2 × 400ms poll ≈ 0.8s of deliberate attention — filters walk-pasts).
+  static const int dwellFrames = 2;
+  int _lookStreak = 0;
 
   // ── Gaze mapping (device-tunable — see HANDOFF #82 device-session notes) ────
   // gaze is derived from the face-box CENTER (not headEulerAngleY). On a
@@ -103,6 +135,7 @@ class GazeTracker {
   }
 
   void _emit(GazeResult r) {
+    if (!r.facePresent) _lookStreak = 0; // covers snapshot/detector failures too
     _last = r;
     if (!_controller.isClosed) _controller.add(r);
   }
@@ -139,7 +172,10 @@ class GazeTracker {
     final tmp = File('${Directory.systemTemp.path}/mikee_gaze_frame.jpg');
     await tmp.writeAsBytes(bytes, flush: true);
     final faces = await _detector.processImage(InputImage.fromFilePath(tmp.path));
-    if (faces.isEmpty) return GazeResult.none;
+    if (faces.isEmpty) {
+      _lookStreak = 0;
+      return GazeResult.none;
+    }
 
     // Largest face wins (closest / most relevant person).
     Face biggest = faces.first;
@@ -154,6 +190,29 @@ class GazeTracker {
     double gazeX = (cx - 0.5) * 2 * _gazeXScale;
     if (_mirrorX) gazeX = -gazeX;
     final gazeY = (cy - 0.5) * 2 * _gazeYScale;
-    return GazeResult(true, gazeX.clamp(-1.0, 1.0), gazeY.clamp(-1.0, 1.0));
+
+    // Attention gate: frontal head pose + close enough + eyes open, sustained
+    // for [dwellFrames] polls. abs(yaw) is mirroring-proof.
+    final yaw = biggest.headEulerAngleY ?? 0;
+    final roll = biggest.headEulerAngleZ ?? 0;
+    final faceRatio = box.height / h;
+    final le = biggest.leftEyeOpenProbability;
+    final re = biggest.rightEyeOpenProbability;
+    final eyesOpen =
+        (le == null || re == null) ? true : (le > _minEyeOpen || re > _minEyeOpen);
+    final lookingNow = yaw.abs() <= RobotConfig.attentionMaxYawDeg &&
+        roll.abs() <= _maxRollDeg &&
+        faceRatio >= RobotConfig.attentionMinFaceRatio &&
+        eyesOpen;
+    _lookStreak = lookingNow ? _lookStreak + 1 : 0;
+
+    return GazeResult(
+      true,
+      gazeX.clamp(-1.0, 1.0),
+      gazeY.clamp(-1.0, 1.0),
+      lookingAtCamera: _lookStreak >= dwellFrames,
+      yawDeg: yaw,
+      faceRatio: faceRatio,
+    );
   }
 }
