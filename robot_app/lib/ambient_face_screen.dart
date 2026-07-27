@@ -157,8 +157,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // visitor isn't left waiting for a hello. Spine's explicit "unknown" short-
   // circuits this window — the timeout only covers spine being slow/offline.
   static const Duration _recognitionWindow = Duration(milliseconds: 2000);
-  static const Duration _engageWindow = Duration(seconds: 25); // no greeting response → close
-  static const Duration _conversationIdle = Duration(seconds: 25); // mid-chat silence → close
+  static const Duration _engageWindow = Duration(seconds: 15); // no greeting response → close
+  static const Duration _conversationIdle = Duration(seconds: 15); // mid-chat silence → close
   // Mic stays muted this long after Mikee's last speaker output — must exceed the
   // AudioTrack buffer drain (~400ms) so the speaker tail doesn't leak into the mic
   // and re-trigger ElevenLabs (echo loop). No hardware AEC covers our audio path.
@@ -653,19 +653,26 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _startVoice(auto: true);
   }
 
-  // Single idle watchdog for AUTO sessions. Closes the session after
-  // _engageWindow of silence before the first exchange (passer-by who never
-  // talks), or after _conversationIdle once a real conversation has started.
-  // "Activity" = Mikee speaking (playback) OR the user speaking (agentThinking /
-  // userSpeaking) — see _bumpActivity — so an active back-and-forth keeps it open
-  // on EITHER screen, while genuine silence closes it. Manual sessions (mic button)
-  // are exempt and stay open until ended. Replaces the old engage + hard-cap timers.
+  // Single idle watchdog for ALL sessions — auto AND manual (mic button). Closes
+  // the session after _engageWindow of silence before the first exchange
+  // (passer-by / mic pressed but nobody talks), or after _conversationIdle once a
+  // real conversation has started. "Activity" = Mikee speaking (playback) OR the
+  // user speaking (agentThinking / userSpeaking) — see _bumpActivity — so an
+  // active back-and-forth keeps it open on EITHER screen, while genuine silence
+  // closes it (mic button reverts to the idle orange mic). A held push-to-talk
+  // never counts as idle. Replaces the old engage + hard-cap timers.
   void _startIdleWatch() {
     _conversed = false;
     _bumpActivity();
     _idleWatch?.cancel();
     _idleWatch = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!_voiceActive || !_autoSession) return;
+      if (!_voiceActive) return;
+      if (_pushToTalk) {
+        // The visitor is physically holding the button — that IS activity, even
+        // in silence; don't let the countdown close the session under their finger.
+        _bumpActivity();
+        return;
+      }
       // Idle is measured from the last USER activity (speech heard / push-to-talk),
       // NOT from Mikee's own speech — otherwise an agent that keeps talking with no
       // visitor perpetually resets the timer and never returns to idle (obs 1).
@@ -891,9 +898,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _spine.sendVoiceState(e.kind);
   }
 
-  // [auto] = true when opened automatically after a greeting (→ auto-closes on
-  // silence). The mic-button / wake-word callers use the default (false) so a
-  // deliberately opened session stays open until the user ends it.
+  // [auto] = true when opened automatically after a greeting. Both auto and
+  // manual (mic button / wake word) sessions are closed by the idle watchdog on
+  // genuine silence; [auto] still controls greeting/first-turn behaviour.
   void _startVoice({bool auto = false, bool reconnect = false}) {
     _pendingAutoListen = false; // a session is starting — cancel any greeting hand-off
     _autoListenFallback?.cancel();

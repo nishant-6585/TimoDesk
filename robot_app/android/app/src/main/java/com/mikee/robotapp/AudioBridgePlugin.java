@@ -322,6 +322,19 @@ public class AudioBridgePlugin
                 Log.w(TAG, "startSpeechService: " + t.getMessage());
             }
             CsjRobot.getInstance().getSpeech().startIsr();
+            // The in-process AIUI boots into STATE_READY ("等待唤醒") and streams NO
+            // mic audio until woken — and the stock wake word is Chinese, so wake it
+            // programmatically. openMicro() proved a no-op (it routes to the SDK
+            // service's speech stack, not our in-process engine). The real trigger is
+            // the in-process manager's startAudioRecognize(): AIUI_SOFT mode starts
+            // the CAE recorder directly, otherwise it sends CMD_WAKEUP(7). With
+            // interact_timeout=-1 the engine then stays awake for the whole session.
+            try {
+                com.csjbot.asragent.aiui_soft.AIUIMixedManager.getInstance().startAudioRecognize();
+                Log.d(TAG, "startAudioRecognize() sent — AIUI recording for this session");
+            } catch (Throwable t) {
+                Log.w(TAG, "startAudioRecognize: " + t.getMessage());
+            }
             engineRunning = true;
             Log.d(TAG, "speech engine STARTED (session-gated)");
         } catch (Throwable t) {
@@ -332,6 +345,12 @@ public class AudioBridgePlugin
     private void stopSpeechEngine() {
         if (!engineRunning) return;
         try {
+            // Deliberately DO NOT stop the CAE recorder here. /dev/snd/pcmC1D0c (the
+            // USB 4-mic array) is exclusive-open, and com.csjbot.robotsdk.ten's own
+            // CAE grabs it the moment it's free — after which every startRecord() in
+            // OUR process fails ("open pcm device failed") and Mikee is deaf until
+            // reboot. Holding the recorder across sessions matches the historically
+            // working state (in-process AIUI owned the mic 24/7). CPU cost accepted.
             // stopIsr() only — closeSpeechService() crashes the iFlytek AIUI on teardown.
             CsjRobot.getInstance().getSpeech().stopIsr();
             Log.d(TAG, "speech engine STOPPED");
