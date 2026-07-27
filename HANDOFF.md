@@ -1,5 +1,14 @@
 # Session Handoff
 
+> **🧭 2026-07-27 (late night) — voice-nav UX batch, all live-verified same night.**
+> 1. **New nav points voice-actionable instantly** — points list refreshes at session start + no-match triggers refresh-and-retry (was: loaded once at app start, so admin-captured points were invisible until restart).
+> 2. **Compound-word matcher** — "restroom" ↔ "Rest Room" via space-squashed comparison (was score 0 → apology).
+> 3. **Stopword guard** — a garbled "take me to the…" containment-matched "The Dock Cabin" at 0.9 and DROVE THERE (live incident); trivial fragments (stopwords) can no longer anchor a match. 13/13 tests.
+> 4. **Greeting vs speech priority** — nav > active session > greeting; losers are cancelled (recorded as greeted), never queued/retried; no more mid-session spoken hellos muting the mic via the half-duplex gate.
+> 5. **Mid-conversation cutoff** — idle clock now RESTARTS when Mikee's audio drains, so the visitor always gets the full 15s window (was measured from the user's last speech, so long answers ate the reply window). Window stays 15s (was asked "raise to 25?" — root cause was the clock, not the length).
+> 6. **Navigation speech choreography** — nav start (any source) closes the agent session (motor noise was triggering stray agent turns mid-route); failed dispatch now SPEAKS an apology instead of silent standstill; on arrival with the visitor in view the mic auto-opens for the next command (lost-visitor line still fires when nobody's there).
+> Verified live: "take me to the restroom" → "Rest Room" drive; "dancing station" garble → still Charging Station via token overlap; escort lost-visitor line fired at Charging Station. **Battery was 20% at close — charge before tomorrow's testing.**
+
 > **🎙️ 2026-07-27 — Deafness trilogy solved; voice→navigation proven END-TO-END on hardware.**
 > Robot was deaf+mute all day after installing the f40df1e build. THREE stacked root causes, all found and fixed; by night the full chain — English speech → ElevenLabs transcript → NavVoice/Checkin matcher → SDK → SLAM `MoveToGoals` → wheels — ran live ("take me to the command cabin" drove the robot).
 >

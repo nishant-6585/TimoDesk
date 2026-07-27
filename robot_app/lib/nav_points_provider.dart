@@ -230,6 +230,21 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     }
   }
 
+  /// Background refresh: re-fetch WITHOUT dropping to loading, so the last
+  /// list stays usable for concurrent voice matching / UI while we fetch. On
+  /// failure the old list is kept (a stale list beats an empty one mid-escort).
+  /// This is what makes points captured from the admin app voice-actionable
+  /// without restarting the robot app.
+  Future<void> refresh() async {
+    try {
+      final list = await _api.list();
+      if (!mounted) return;
+      state = state.copyWith(points: AsyncValue.data(list));
+    } catch (_) {
+      // keep the previous list
+    }
+  }
+
   /// Capture the robot's CURRENT pose (drive it there first) and save under
   /// [name]. Throws on failure (not localized / insert error) so the screen can
   /// surface the reason; reloads on success.

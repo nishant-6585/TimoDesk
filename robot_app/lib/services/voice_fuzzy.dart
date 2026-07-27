@@ -14,14 +14,37 @@ String fuzzyNormalize(String s) => s
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
 
+/// Fragments too generic to identify anything on their own — a containment
+/// match against one of these is noise, not a hit. ("take me to the…" cut off
+/// by STT must NOT match "The Dock Cabin" just because it contains "the".)
+const Set<String> _stopwords = {
+  'the', 'a', 'an', 'to', 'of', 'my', 'me', 'please', 'room', 'station'
+};
+
+/// True when [s] (already normalized) is too trivial to act as a match anchor.
+bool fuzzyTrivial(String s) =>
+    s.isEmpty || s.split(' ').every(_stopwords.contains);
+
 /// Token-overlap score in [0,1]: fraction of [name]'s tokens present in
 /// [heard] (exactly, or within edit distance 1 for 4+ letter tokens).
-/// Full equality → 1.0, containment either way → 0.9. Inputs must already be
-/// [fuzzyNormalize]d.
+/// Full equality → 1.0, containment either way → 0.9 — but ONLY when the
+/// contained side is a meaningful fragment (see [fuzzyTrivial]). Inputs must
+/// already be [fuzzyNormalize]d.
 double fuzzyScore(String heard, String name) {
   if (heard == name) return 1.0;
   if (heard.isEmpty || name.isEmpty) return 0;
-  if (heard.contains(name) || name.contains(heard)) return 0.9;
+  if (heard.contains(name) && !fuzzyTrivial(name)) return 0.9;
+  if (name.contains(heard) && !fuzzyTrivial(heard)) return 0.9;
+  // STT freely fuses or splits compound words ("restroom" ↔ "Rest Room");
+  // compare space-squashed forms so word-boundary differences never lose a
+  // match: equality/containment either way, or edit distance 1 for typos.
+  // Same trivial-fragment guard: "the" squashed is still just "the".
+  if (!fuzzyTrivial(heard) && !fuzzyTrivial(name)) {
+    final hs = heard.replaceAll(' ', '');
+    final ns = name.replaceAll(' ', '');
+    if (hs == ns || hs.contains(ns) || ns.contains(hs)) return 0.9;
+    if (fuzzyTokensMatch(hs, ns)) return 0.85;
+  }
   final ht = heard.split(' ').where((t) => t.isNotEmpty).toList();
   final nt = name.split(' ').where((t) => t.isNotEmpty).toList();
   if (nt.isEmpty) return 0;

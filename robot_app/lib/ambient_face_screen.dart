@@ -350,23 +350,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // ── Wire 2: spine identity + presence ───────────────────────────────────────
   void _onFaceDetected(FaceDetectedEvent e) {
-    // A recognised staff face must ALWAYS be greeted by name (once per debounce
-    // window) — even mid-session — unless Mikee is literally mid-utterance;
-    // then we skip WITHOUT recording the greet so the next recognition tick
-    // (~500ms) retries until his mouth is free.
+    // PRIORITY RULE (one interaction path at a time, nothing queued):
+    //   navigation/escort  >  active voice interaction  >  face greeting.
+    // A greeting that loses is CANCELLED outright — we record the greet so the
+    // ~500ms recognition tick doesn't re-fire it as a delayed retry (the old
+    // behaviour queued it until Mikee's mouth was free, which made greetings
+    // land on top of the visitor's next command). Speaking a hello mid-session
+    // is also banned: it trips the half-duplex gate and MUTES the mic exactly
+    // while the visitor is giving a command.
     final now = DateTime.now();
     final last = _greetedAt[e.name];
     if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     final talking = _face.state == FaceStateKind.speaking ||
         _face.state == FaceStateKind.thinking;
-    if (talking) return;
-    if (_voiceActive) {
-      // In an open session: speak the personal hello but don't touch the
-      // session/mic state.
-      _greetedAt[e.name] = now;
-      final lang = languageForCode(RobotConfig.voiceLanguageCode);
-      _showGreeting(lang.greetText(e.name));
-      _speakGreeting(_staffSpeech(lang, e.name));
+    if (ref.read(navPointsProvider).navigatingTo != null ||
+        _voiceActive ||
+        talking) {
+      _greetedAt[e.name] = now; // cancel, don't queue
       return;
     }
     _greetedAt[e.name] = now;
@@ -507,16 +507,45 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
+      // One interaction at a time: navigation OWNS the speaker from here
+      // (departure phrase → escort reassurance → arrival). Close the agent
+      // session so motor noise can't trigger stray agent replies mid-route.
+      // The mic re-opens automatically on arrival if the visitor is in view.
+      if (_voiceActive) _endVoice();
       // The departure phrase is spoken by the navi_state broadcast handler
       // (nav_points_provider) — speaking it here too would double up.
-      ref.read(navPointsProvider.notifier).goTo(p);
+      ref.read(navPointsProvider.notifier).goTo(p).then((ok) {
+        // Never fail silently: if BOTH the spine and native dispatch failed,
+        // the visitor is standing there waiting — tell them.
+        if (!ok && mounted) {
+          _speakGreeting("Sorry, I couldn't start navigating to ${p.name}. "
+              'Please try again in a moment.');
+        }
+      });
     } else {
-      final known = points.map((p) => p.name).take(3).join(', ');
-      debugPrint('NavVoice: "$transcript" → no point matches "${result.heard}"');
-      _speakGreeting(points.isEmpty
-          ? "I don't have any saved locations yet."
-          : "I couldn't find a place called ${result.heard}. "
-              'I can take you to: $known.');
+      // The spoken place may be a point captured AFTER our list was loaded
+      // (e.g. just added from the admin app) — refresh from spine and retry
+      // once before apologising, so new locations are voice-actionable
+      // immediately, no app restart needed.
+      () async {
+        await ref.read(navPointsProvider.notifier).refresh();
+        if (!mounted) return;
+        final fresh =
+            ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+        final retry = NavVoice.match(transcript, fresh);
+        if (retry.point != null) {
+          debugPrint(
+              'NavVoice: "$transcript" → go to "${retry.point!.name}" (after refresh)');
+          ref.read(navPointsProvider.notifier).goTo(retry.point!);
+          return;
+        }
+        final known = fresh.map((p) => p.name).take(3).join(', ');
+        debugPrint('NavVoice: "$transcript" → no point matches "${result.heard}"');
+        _speakGreeting(fresh.isEmpty
+            ? "I don't have any saved locations yet."
+            : "I couldn't find a place called ${result.heard}. "
+                'I can take you to: $known.');
+      }();
     }
     return true;
   }
@@ -619,12 +648,22 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // visitor was lost en route: say so (configurable, {name} = the point).
   void _onEscortArrived(String pointName) {
     if (ref.read(navPointsProvider).navSource == 'patrol') return;
-    final template = RobotConfig.escortLostText;
-    if (template.isEmpty) return;
     _escortArrivalCheck?.cancel();
     _escortArrivalCheck = Timer(const Duration(seconds: 8), () {
-      if (!mounted || _present || _voiceActive) return;
+      if (!mounted || _voiceActive) return;
       if (ref.read(navPointsProvider).navigatingTo != null) return; // re-tasked
+      if (_present) {
+        // Visitor followed us here (face-to-face again) → don't just stand
+        // there mute: re-open the mic so "take me somewhere else" / a question
+        // works immediately. The arrival announcement has already played; the
+        // idle watchdog closes this session after 15s of silence as usual.
+        debugPrint('Escort: visitor in view after arriving at "$pointName" '
+            '→ auto-opening mic');
+        _startVoice(auto: true);
+        return;
+      }
+      final template = RobotConfig.escortLostText;
+      if (template.isEmpty) return;
       debugPrint('Escort: nobody in view after arriving at "$pointName"');
       _speakGreeting(template.replaceAll('{name}', pointName));
     });
@@ -904,6 +943,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _startVoice({bool auto = false, bool reconnect = false}) {
     _pendingAutoListen = false; // a session is starting — cancel any greeting hand-off
     _autoListenFallback?.cancel();
+    // Fire-and-forget: pull the latest saved points so a location captured
+    // since the last session (robot or admin side) matches on the FIRST try.
+    // The no-match handler also refreshes+retries as a safety net.
+    ref.read(navPointsProvider.notifier).refresh();
     _autoSession = auto;
     // A fresh (non-reconnect) start clears the retry budget; a reconnect keeps it so
     // a server that immediately drops again can't loop forever.
@@ -1044,8 +1087,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       return;
     }
     if (level < 0) {
-      // Turn ended (queue drained) → back to listening. The idle watchdog keeps
-      // counting from the last activity; the user now has the idle window to reply.
+      // Turn ended (queue drained) → back to listening. RESTART the idle clock
+      // here: it began at the user's last speech, so Mikee's own thinking +
+      // talking time was eating the reply window — after a long answer the mic
+      // closed almost immediately ("mid-conversation cutoff"). Bumping on drain
+      // guarantees the visitor the FULL idle window of actual silence to reply.
+      _bumpActivity();
       debugPrint('Playback: drained → listening');
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
     } else if (level < _speechFloor) {
@@ -1105,6 +1152,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // Escort: a "follow me" navigation just arrived → check the visitor made it.
     ref.listen(navPointsProvider.select((s) => s.arrivedAt), (prev, curr) {
       if (curr != null && curr != prev) _onEscortArrived(curr);
+    });
+
+    // Navigation started from ANY source (admin Go-To, patrol, robot voice) →
+    // navigation owns the speaker: close an open agent session so motor noise
+    // can't trigger stray replies over the departure/reassurance announcements.
+    // (The robot-voice path already closes it at command time; this covers the
+    // rest.) The mic re-opens on arrival when the visitor is in view.
+    ref.listen(navPointsProvider.select((s) => s.navigatingTo), (prev, curr) {
+      if (curr != null && prev == null && _voiceActive) {
+        debugPrint('AmbientFace: navigation started → closing voice session');
+        _endVoice();
+      }
     });
 
     return Scaffold(

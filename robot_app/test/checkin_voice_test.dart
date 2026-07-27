@@ -98,5 +98,26 @@ void main() {
           closeTo(2 / 3, 0.001));
       expect(fuzzyScore('go to the moon', 'reception'), 0);
     });
+
+    test('score: fused/split compound words match (STT word boundaries)', () {
+      // STT hears "restroom" but the point is saved as "Rest Room" — the
+      // space-squashed comparison must bridge the word boundary both ways.
+      expect(fuzzyScore('restroom', 'rest room'), 0.9);
+      expect(fuzzyScore('rest room', 'restroom'), 0.9);
+      expect(fuzzyScore('restrom', 'rest room'), 0.85); // + one typo
+      expect(fuzzyScore('kitchen', 'rest room'), 0); // no false positives
+    });
+
+    test('score: trivial fragments never containment-match', () {
+      // Live incident 2026-07-27: STT garble left heard="the", which
+      // containment-matched "The Dock Cabin" at 0.9 and DROVE THE ROBOT to
+      // the wrong place. Stopword-only fragments must score ~0.
+      expect(fuzzyScore('the', 'the dock cabin'), lessThan(0.5));
+      expect(fuzzyScore('to the', 'the dock cabin'), lessThan(0.5));
+      expect(fuzzyTrivial('the'), isTrue);
+      expect(fuzzyTrivial('dock cabin'), isFalse);
+      // Meaningful fragments still match.
+      expect(fuzzyScore('dock cabin', 'the dock cabin'), 0.9);
+    });
   });
 }
