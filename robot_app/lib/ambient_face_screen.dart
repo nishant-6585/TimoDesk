@@ -389,12 +389,33 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
   }
 
-  // Spine saw a face that matched NO enrolled staff → this is a visitor. Don't
-  // make them wait out the recognition window: greet (without a name) now.
+  // Spine saw a face that matched NO enrolled staff → this is a VISITOR.
+  // Greet them directly — do NOT require the attention-gate window first: in a
+  // busy lobby people rarely look dead-on, and the one-shot `_greeted` flag
+  // never resets while foot traffic keeps presence continuously true, which
+  // left visitors standing in front of a silent robot. Unknown faces can't be
+  // told apart, so a global cooldown stands in for the per-name debounce.
+  DateTime? _lastVisitorGreetAt;
+  static const Duration _visitorRegreetCooldown = Duration(seconds: 90);
+
   void _onUnknownFace(void _) {
-    if (!_awaitingRecognition || _greeted || _voiceActive) return;
+    // Same priority rules as named greetings: never interrupt an interaction.
+    final talking = _face.state == FaceStateKind.speaking ||
+        _face.state == FaceStateKind.thinking;
+    if (_voiceActive ||
+        talking ||
+        ref.read(navPointsProvider).navigatingTo != null) {
+      return;
+    }
     _awaitingRecognition = false;
     _recognitionWaitTimer?.cancel();
+    final now = DateTime.now();
+    if (_lastVisitorGreetAt != null &&
+        now.difference(_lastVisitorGreetAt!) < _visitorRegreetCooldown) {
+      return;
+    }
+    _lastVisitorGreetAt = now;
+    _greeted = false; // a fresh visitor deserves a fresh greeting
     _greetOnApproach();
   }
 
