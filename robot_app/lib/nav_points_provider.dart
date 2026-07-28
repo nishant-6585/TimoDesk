@@ -116,8 +116,19 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     final secs = RobotConfig.escortReassureSeconds;
     final text = RobotConfig.escortReassureText;
     if (secs <= 0 || text.isEmpty) return;
+    // FAILSAFE CAP: if arrival detection misses for ANY reason (chassis parks
+    // outside the arrival radius, position path hiccup, missed broadcast), the
+    // robot must not chant the reassurance forever at the destination — stop
+    // after a handful of repeats; the nav state itself is untouched.
+    var repeats = 0;
     _escortTimer = Timer.periodic(Duration(seconds: secs), (_) {
       if (!mounted || state.navigatingTo == null) {
+        _stopEscortTimer();
+        return;
+      }
+      if (++repeats > 6) {
+        debugPrint('escort: reassurance capped after $repeats repeats');
+        InteractionLog.log('escort_reassure_capped', state.navigatingTo!.name);
         _stopEscortTimer();
         return;
       }
@@ -130,15 +141,17 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     _escortTimer = null;
   }
 
-  /// Speak "Okay, follow me to X" + start the escort reassurance timer —
-  /// exactly once per navigation, whichever path gets there first (goTo's
-  /// instant call or the spine broadcast).
-  void _announceDeparture(String name) {
+  /// Speak "Okay, follow me to X" — exactly once per navigation, whichever
+  /// path gets there first (goTo's instant call or the spine broadcast).
+  /// The escort reassurance loop runs ONLY for robot-initiated navs (a
+  /// visitor said "take me to…" and is walking behind) — an admin Go-To has
+  /// nobody to reassure and was chanting at an empty room.
+  void _announceDeparture(String name, String source) {
     if (_announcedDeparture == name) return;
     _announcedDeparture = name;
-    InteractionLog.log('departure', name);
+    InteractionLog.log('departure', '$name (source: $source)');
     _speakArrival('Okay, follow me to $name.');
-    _startEscortTimer();
+    if (source == 'robot') _startEscortTimer();
   }
 
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
@@ -169,7 +182,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // announcing every departure is noise — the per-waypoint arrival
     // announcements carry the patrol narration.
     if (m['source'] != 'patrol') {
-      _announceDeparture(name);
+      _announceDeparture(name, (m['source'] as String?) ?? 'admin');
     }
     if (state.navigatingTo?.name == name) return; // state already up to date
     final list = state.points.valueOrNull ?? const <NavPoint>[];
@@ -316,7 +329,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // Speak BEFORE dispatching: the visitor must hear an acknowledgement the
     // moment their command is accepted, not after the spine round-trip. The
     // navi_state broadcast that follows is deduped by _announceDeparture.
-    _announceDeparture(point.name);
+    _announceDeparture(point.name, 'robot');
     final spine = _ref.read(navSpineClientProvider);
     if (spine.isConnected) {
       // isConnected can be STALE after a silent Wi-Fi drop (half-open socket) —

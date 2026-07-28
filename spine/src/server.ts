@@ -84,8 +84,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     // The chassis's own goal tolerance stops it 0.5–0.8m short of the target
     // (measured repeatedly), so the arrival radius must be wider than that or
     // arrival never triggers — the robot then rotation-hunts forever and no
-    // arrived/speech broadcast fires.
-    const ARRIVE_DIST_M = 0.85;
+    // arrived/speech broadcast fires. 2026-07-28: 0.85 → 1.0 after a live nav
+    // parked ~0.9m short (tight corner) and never "arrived" — the escort
+    // reassurance then looped at the destination until the watch timeout.
+    const ARRIVE_DIST_M = 1.0;
     // Loose heading tolerance + short grace: the chassis's own final alignment
     // usually lands within ~30°, and every second here is silence between the
     // robot stopping and it speaking. Announce fast; precision isn't the point.
