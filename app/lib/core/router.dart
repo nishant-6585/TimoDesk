@@ -13,6 +13,7 @@ import '../features/patrol_routes/screens/patrol_routes_screen.dart';
 import '../features/navigation/screens/navigation_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
+import '../features/knowledge_base/screens/knowledge_base_screen.dart';
 import '../features/shared/layouts/app_shell.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -162,6 +163,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/patrol-routes',
             name: 'patrol_routes',
             builder: (context, state) => const PatrolRoutesScreen(),
+          ),
+          GoRoute(
+            path: '/knowledge-base',
+            name: 'knowledge_base',
+            builder: (context, state) => const KnowledgeBaseScreen(),
           ),
           GoRoute(
             path: '/settings',

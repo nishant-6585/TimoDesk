@@ -26,6 +26,7 @@ import {
   handleKbIngest,
   handleKbIngestUrl,
   handleKbList,
+  handleKbStatus,
   handleKbDelete,
   handleElevenLabsAsk,
 } from './handlers/kb';
@@ -438,6 +439,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
       if (url === '/kb/chunks' && req.method === 'GET') {
         await handleKbList(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/status' && req.method === 'GET') {
+        await handleKbStatus(req, res, supabase);
         return;
       }
       const kbMatch = url.match(/^\/kb\/chunks\/([^/]+)$/);

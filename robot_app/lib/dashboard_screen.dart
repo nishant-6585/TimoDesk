@@ -23,6 +23,7 @@ import 'nav_points_screen.dart';
 import 'status_screen.dart';
 import 'control_screen.dart';
 import 'settings_screen.dart';
+import 'qa_screen.dart';
 
 // ── Color & type tokens (DASHBOARD_REDESIGN.md §2) ───────────────────────────
 const _bg = Color(0xFF0F0F0F);
@@ -709,7 +710,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           child: Divider(height: 1, color: _line),
         ),
         _navLabel('Services'),
-        const _NavItem(icon: Icons.mic_rounded, label: 'Voice Q&A', soon: true),
+        _NavItem(icon: Icons.mic_rounded, label: 'Voice Q&A',
+            onTap: () => _open(const VoiceQaScreen())),
         const _NavItem(icon: Icons.payments_rounded, label: 'Pay', soon: true),
         const _NavItem(icon: Icons.menu_book_rounded, label: 'Directory', soon: true),
         const Spacer(),

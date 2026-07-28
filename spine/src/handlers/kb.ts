@@ -141,6 +141,51 @@ export async function handleKbDelete(
 }
 
 /**
+ * Pure payload builder for /kb/status — split out so the readiness logic is
+ * unit-testable without HTTP plumbing.
+ */
+export function kbStatusPayload(
+  chunkCount: number,
+  faqCount: number,
+  env: NodeJS.ProcessEnv
+): Record<string, unknown> {
+  const embeddings = Boolean(env.VOYAGE_API_KEY);
+  const llm = Boolean(env.ANTHROPIC_API_KEY);
+  const voice = Boolean(env.ELEVENLABS_TOOL_SECRET);
+  return {
+    ok: true,
+    chunks: chunkCount,
+    faq_chunks: faqCount,
+    // What the UIs surface: which halves of the brain are configured.
+    embeddings_ready: embeddings, // VOYAGE_API_KEY — required to ingest & search
+    llm_ready: llm, // ANTHROPIC_API_KEY — required for non-FAQ RAG answers
+    voice_grounding_ready: voice, // ELEVENLABS_TOOL_SECRET — agent webhook auth
+    ready: embeddings && llm,
+  };
+}
+
+/** GET /kb/status — chunk counts + which KB capabilities are configured. */
+export async function handleKbStatus(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  const { count, error } = await supabase
+    .from('kb_chunk')
+    .select('id', { count: 'exact', head: true });
+  if (error) return json(res, 500, { ok: false, reason: error.message });
+  const { count: faqCount } = await supabase
+    .from('kb_chunk')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_faq', true);
+
+  return json(res, 200, kbStatusPayload(count ?? 0, faqCount ?? 0, process.env));
+}
+
+/**
  * POST /elevenlabs/ask — server-tool webhook for the ElevenLabs agent.
  *
  * Configure in the ElevenLabs dashboard as a webhook tool:

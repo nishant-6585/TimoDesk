@@ -24,6 +24,7 @@ class AppShell extends ConsumerWidget {
     'events': '/event-log',
     'navigation': '/navigation',
     'patrol_routes': '/patrol-routes',
+    'knowledge_base': '/knowledge-base',
     'settings': '/settings',
   };
 
@@ -35,6 +36,7 @@ class AppShell extends ConsumerWidget {
     if (location.startsWith('/event-log')) return 'events';
     if (location.startsWith('/navigation')) return 'navigation';
     if (location.startsWith('/patrol-routes')) return 'patrol_routes';
+    if (location.startsWith('/knowledge-base')) return 'knowledge_base';
     if (location.startsWith('/settings')) return 'settings';
     return 'dashboard';
   }
@@ -226,6 +228,7 @@ class _ShellSidebar extends StatelessWidget {
               _NavItem('Event Log', Icons.receipt_long, active == 'events', () => onNav('events')),
               _NavItem('Navigation', Icons.pin_drop, active == 'navigation', () => onNav('navigation')),
               _NavItem('Patrol Routes', Icons.route, active == 'patrol_routes', () => onNav('patrol_routes')),
+              _NavItem('Knowledge Base', Icons.menu_book, active == 'knowledge_base', () => onNav('knowledge_base')),
               _NavItem('Settings', Icons.settings, active == 'settings', () => onNav('settings')),
             ],
           ),
