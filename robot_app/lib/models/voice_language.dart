@@ -32,14 +32,17 @@ class VoiceLanguage {
   ///
   /// Placeholders: {hello} → the localised greeting word, {welcome} → the
   /// localised welcome line (with [company] substituted for the default brand),
-  /// {name} → the recognised staff name, {company} → the company name itself.
+  /// {name} → the recognised staff name, {company} → the company name itself,
+  /// {robot} → the robot's own (renameable) name.
   /// Templates are language-agnostic — the tokens carry the localisation.
-  String renderGreeting(String template, {String? name, String? company}) {
+  String renderGreeting(String template,
+      {String? name, String? company, String? robot}) {
     final c = (company == null || company.trim().isEmpty) ? 'xboom' : company.trim();
     final rendered = template
         .replaceAll('{hello}', hello)
         .replaceAll('{welcome}', welcome.replaceAll('xboom', c))
         .replaceAll('{company}', c)
+        .replaceAll('{robot}', robot ?? '')
         .replaceAll('{name}', name ?? '');
     // A staff template used without a name leaves a gap — collapse whitespace
     // and stray space-before-punctuation so the phrase still reads naturally.

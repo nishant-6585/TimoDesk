@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
+import '../config.dart';
 import 'audio_bridge.dart';
 
 /// One-shot ElevenLabs text-to-speech in the SAME voice as the conversational
@@ -21,16 +22,24 @@ class ElevenLabsTts {
   });
 
   final String apiKey;
+
+  /// Constructor value kept for call-site compatibility; speak() always reads
+  /// the CURRENT config so a runtime voice change ("change your voice to…")
+  /// applies to every later utterance without rebuilding the callers'
+  /// long-lived ElevenLabsTts instances.
   final String voiceId;
   final AudioBridge audio;
 
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
 
   Future<bool> speak(String text) async {
-    if (apiKey.isEmpty || voiceId.isEmpty || text.trim().isEmpty) return false;
+    final liveVoiceId = RobotConfig.elevenLabsVoiceId.isNotEmpty
+        ? RobotConfig.elevenLabsVoiceId
+        : voiceId;
+    if (apiKey.isEmpty || liveVoiceId.isEmpty || text.trim().isEmpty) return false;
     try {
       final uri = Uri.parse(
-        'https://api.elevenlabs.io/v1/text-to-speech/$voiceId/stream?output_format=pcm_16000',
+        'https://api.elevenlabs.io/v1/text-to-speech/$liveVoiceId/stream?output_format=pcm_16000',
       );
       final req = await _client.postUrl(uri);
       req.headers.set('xi-api-key', apiKey);

@@ -111,11 +111,11 @@ class _VoiceQaScreenState extends State<VoiceQaScreen> {
           icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.psychology_alt_rounded, color: _accent, size: 22),
-          SizedBox(width: 10),
-          Text('Ask Mikee',
-              style: TextStyle(
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.psychology_alt_rounded, color: _accent, size: 22),
+          const SizedBox(width: 10),
+          Text('Ask ${RobotConfig.robotName}',
+              style: const TextStyle(
                   color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
         ]),
         centerTitle: true,

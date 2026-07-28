@@ -17,6 +17,7 @@ import 'models/voice_language.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
+import 'services/persona_voice.dart';
 import 'services/checkin_voice.dart';
 import 'services/checkin_api.dart';
 import 'waving_hand_overlay.dart';
@@ -401,11 +402,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   String _staffSpeech(VoiceLanguage lang, String name) => lang.renderGreeting(
       RobotConfig.greetStaffTemplate,
       name: name,
-      company: RobotConfig.companyName);
+      company: RobotConfig.companyName,
+      robot: RobotConfig.robotName);
 
   String _visitorSpeech(VoiceLanguage lang) => lang.renderGreeting(
       RobotConfig.greetVisitorTemplate,
-      company: RobotConfig.companyName);
+      company: RobotConfig.companyName,
+      robot: RobotConfig.robotName);
 
   // Attention gate passed → give face recognition a brief head start so a
   // known staff member is greeted BY NAME, before falling back to the visitor
@@ -482,6 +485,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
       if (_handleNavVoice(utterance)) return;
+      if (_handlePersonaVoice(utterance)) return;
       if (_handleCheckinVoice(utterance)) return;
       if (_voiceActive) {
         _voiceAgent.sendUserText(utterance);
@@ -546,6 +550,46 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             : "I couldn't find a place called ${result.heard}. "
                 'I can take you to: $known.');
       }();
+    }
+    return true;
+  }
+
+  // ── Persona voice commands ("change your name / voice") ────────────────────
+  // Rename persists instantly (UI titles, greetings' {robot}, EL dynamic var).
+  // A voice change persists + applies to TTS immediately; the OPEN agent
+  // session keeps its old voice, so we close it after confirming — the next
+  // session starts with the new voice via the tts override.
+  bool _handlePersonaVoice(String transcript) {
+    final result = PersonaVoice.match(transcript);
+    if (!result.isCommand) return false;
+    _dropFirstAgentTurn = true;
+    _audioBridge.stopPlayback();
+    switch (result.kind!) {
+      case PersonaCommandKind.rename:
+        final name = result.newName!;
+        debugPrint('Persona: rename → "$name"');
+        RobotConfig.setRobotName(name);
+        _speakGreeting("Okay! From now on, my name is $name. "
+            'Nice to meet you again.');
+        break;
+      case PersonaCommandKind.voice:
+        final preset = result.preset;
+        if (preset == null) {
+          final options =
+              kVoicePresets.map((p) => p.name.split(' ').first).join(', ');
+          debugPrint('Persona: voice "${result.heard}" → no preset');
+          _speakGreeting("I don't have a ${result.heard} voice yet. "
+              'I can sound like: $options.');
+          break;
+        }
+        debugPrint('Persona: voice → ${preset.name}');
+        RobotConfig.setVoice(preset.voiceId, preset.name);
+        // Confirm IN THE NEW VOICE (TTS reads the config per utterance)…
+        _speakGreeting('How do I sound? This is my ${preset.name} voice.');
+        // …then retire the open session so the conversational agent comes
+        // back with the same new voice.
+        if (_voiceActive) _endVoice();
+        break;
     }
     return true;
   }
@@ -843,6 +887,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // transcript is a nav command WE handle the reply + action and drop the
         // agent's own answer to this turn (it doesn't know the saved points).
         if (e.text != null && _handleNavVoice(e.text!)) {
+          _dropFirstAgentTurn = true;
+          break;
+        }
+        // Persona ("change your name to Rocky" / "change your voice…") — ours:
+        // the agent can't rename itself or swap its own voice.
+        if (e.text != null && _handlePersonaVoice(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }

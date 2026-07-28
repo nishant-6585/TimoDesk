@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../config.dart';
+
 /// Voice pipeline events surfaced to the face state machine (#80).
 enum VoiceEventKind {
   sessionStarted, // connected + ready
@@ -114,8 +116,17 @@ class VoiceAgent {
           // Force 16 kHz mono 16-bit PCM out — exactly what AudioTrack playback +
           // _rms() expect. Without this ElevenLabs sends MP3 and the bytes decode
           // as garbled noise (#80 Phase B critical fix).
-          'tts': {'output_format': 'pcm_16000'},
+          // voice_id: the CURRENT persona voice ("change your voice to…" /
+          // Settings preset) so the agent and the TTS phrases sound the same.
+          'tts': {
+            'output_format': 'pcm_16000',
+            'voice_id': RobotConfig.elevenLabsVoiceId,
+          },
         },
+        // The robot's editable name — reference {{robot_name}} in the agent's
+        // dashboard system prompt so it introduces itself correctly after a
+        // rename ("change your name to Rocky").
+        'dynamic_variables': {'robot_name': RobotConfig.robotName},
       }));
 
       // One-shot recognised-staff context → first user turn, so the agent opens

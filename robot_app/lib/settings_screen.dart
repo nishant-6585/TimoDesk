@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'config.dart';
 import 'models/voice_language.dart';
+import 'services/persona_voice.dart';
 import 'services/voice_agent.dart';
 
 const _orange = Color(0xFFFF6B35);
@@ -34,6 +35,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _escortSecs;
   late final TextEditingController _escortText;
   late final TextEditingController _escortLost;
+  late final TextEditingController _robotName;
+  String _voicePreset = RobotConfig.voicePresetName;
   bool _gateEnabled = RobotConfig.attentionGateEnabled;
   bool _saved = false;
 
@@ -61,6 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         text: RobotConfig.escortReassureSeconds.toString());
     _escortText = TextEditingController(text: RobotConfig.escortReassureText);
     _escortLost = TextEditingController(text: RobotConfig.escortLostText);
+    _robotName = TextEditingController(text: RobotConfig.robotName);
   }
 
   @override
@@ -79,6 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _escortSecs.dispose();
     _escortText.dispose();
     _escortLost.dispose();
+    _robotName.dispose();
     super.dispose();
   }
 
@@ -107,6 +112,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       reassureText: _escortText.text,
       lostText: _escortLost.text,
     );
+    await RobotConfig.setRobotName(_robotName.text);
+    final preset = kVoicePresets
+        .where((p) => p.name == _voicePreset)
+        .firstOrNull;
+    if (preset != null) {
+      await RobotConfig.setVoice(preset.voiceId, preset.name);
+    }
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -213,6 +225,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
             decoration: _dec('Kiosk token',
                 "Must match spine's KIOSK_TOKEN. Empty = dev bypass only."),
+          ),
+          const SizedBox(height: 28),
+          const Text('IDENTITY',
+              style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _robotName,
+            style: const TextStyle(fontSize: 16),
+            decoration: _dec('Robot name',
+                'Used in titles, greetings ({robot}) and self-introductions. '
+                'Also by voice: "change your name to Rocky".'),
+          ),
+          const SizedBox(height: 20),
+          DropdownButtonFormField<String>(
+            initialValue: kVoicePresets.any((p) => p.name == _voicePreset)
+                ? _voicePreset
+                : kVoicePresets.first.name,
+            dropdownColor: const Color(0xFF1A1A1A),
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+            decoration: _dec('Speaking voice',
+                'Applies to greetings/announcements instantly; conversations '
+                'from the next session. Also by voice: "change your voice to rocky".'),
+            items: [
+              for (final p in kVoicePresets)
+                DropdownMenuItem(value: p.name, child: Text(p.name)),
+            ],
+            onChanged: (v) =>
+                setState(() => _voicePreset = v ?? _voicePreset),
           ),
           const SizedBox(height: 28),
           const Text('VOICE (#80 — ElevenLabs)',

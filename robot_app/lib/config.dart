@@ -11,6 +11,9 @@ class RobotConfig {
   static const _kElevenAgent = 'elevenlabs_agent_id';
   static const _kVoiceLangCode = 'voice_language_code';
   static const _kVoiceLangName = 'voice_language_name';
+  static const _kRobotName = 'robot_name';
+  static const _kElevenVoiceId = 'elevenlabs_voice_id';
+  static const _kVoicePresetName = 'voice_preset_name';
   static const _kCompanyName = 'company_name';
   static const _kGreetStaff = 'greet_staff_template';
   static const _kGreetVisitor = 'greet_visitor_template';
@@ -54,9 +57,21 @@ class RobotConfig {
   static String elevenLabsAgentId = defaultElevenLabsAgentId;
 
   // The agent's voice (from the ElevenLabs agent config) — used for dashboard
-  // action-tile TTS so Mikee speaks in the SAME voice as the face screen.
+  // action-tile TTS so the robot speaks in the SAME voice as the face screen.
+  // Mutable at runtime: Settings voice presets and the "change your voice"
+  // voice command both persist a new id here (TTS reads it per utterance; the
+  // conversational agent picks it up on the next session via the tts override).
   static const String defaultElevenLabsVoiceId = '6AUOG2nbfr0yFEeI0784';
   static String elevenLabsVoiceId = defaultElevenLabsVoiceId;
+  static String voicePresetName = 'Default';
+
+  // ── Robot identity ─────────────────────────────────────────────────────────
+  // The robot's NAME — editable in Settings and by voice ("change your name to
+  // Rocky"). Used in UI titles, spoken confirmations, the {robot} greeting
+  // placeholder, and passed to the ElevenLabs agent as the {{robot_name}}
+  // dynamic variable (reference it in the dashboard system prompt).
+  static const String defaultRobotName = 'Minee';
+  static String robotName = defaultRobotName;
 
   // Voice language for the ElevenLabs Conversational AI session (the agent is
   // configured with 8 languages in the dashboard; we override per session). The
@@ -114,6 +129,28 @@ class RobotConfig {
     escortReassureText =
         p.getString(_kEscortReassureText) ?? escortReassureText;
     escortLostText = p.getString(_kEscortLostText) ?? escortLostText;
+    robotName = p.getString(_kRobotName) ?? defaultRobotName;
+    elevenLabsVoiceId = p.getString(_kElevenVoiceId) ?? defaultElevenLabsVoiceId;
+    voicePresetName = p.getString(_kVoicePresetName) ?? 'Default';
+  }
+
+  /// Rename the robot (Settings field or the "change your name to X" voice
+  /// command). Empty → back to the default.
+  static Future<void> setRobotName(String v) async {
+    final name = v.trim();
+    robotName = name.isEmpty ? defaultRobotName : name;
+    (await SharedPreferences.getInstance()).setString(_kRobotName, robotName);
+  }
+
+  /// Switch the speaking voice (Settings preset or the "change your voice"
+  /// voice command). TTS uses it immediately; the conversational agent picks
+  /// it up when the next session opens.
+  static Future<void> setVoice(String voiceId, String presetName) async {
+    elevenLabsVoiceId = voiceId.trim().isEmpty ? defaultElevenLabsVoiceId : voiceId.trim();
+    voicePresetName = presetName;
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kElevenVoiceId, elevenLabsVoiceId);
+    await p.setString(_kVoicePresetName, voicePresetName);
   }
 
   /// Persist the escort settings (Settings screen SAVE).
