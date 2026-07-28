@@ -25,6 +25,10 @@ import { handleAsk } from './handlers/ask';
 import {
   handleKbIngest,
   handleKbIngestUrl,
+  handleKbIngestFile,
+  handleKbCrawlStart,
+  handleKbCrawlList,
+  handleKbCrawlGet,
   handleKbList,
   handleKbStatus,
   handleKbDelete,
@@ -33,6 +37,8 @@ import {
 import { handleEntraSync } from './handlers/entra';
 import { handleMcpPlugins } from './handlers/mcp-plugins';
 import { getMcpPluginRegistry } from './services/mcp-plugins';
+import { handleKbProviders } from './handlers/kb-providers';
+import { getKbProviderRegistry } from './services/kb-providers';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -438,12 +444,33 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
 
       // KB platform — manage the knowledge base the voice brain answers from.
+      // 3rd-party KB sources (local-first fallback chain) — prefix router.
+      if (await handleKbProviders(req, res, getKbProviderRegistry())) {
+        return;
+      }
       if (url === '/kb/ingest' && req.method === 'POST') {
         await handleKbIngest(req, res, supabase);
         return;
       }
       if (url === '/kb/ingest-url' && req.method === 'POST') {
         await handleKbIngestUrl(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/ingest-file' && req.method === 'POST') {
+        await handleKbIngestFile(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/crawl' && req.method === 'POST') {
+        await handleKbCrawlStart(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/crawl' && req.method === 'GET') {
+        await handleKbCrawlList(req, res);
+        return;
+      }
+      const crawlMatch = url.match(/^\/kb\/crawl\/([^/]+)$/);
+      if (crawlMatch && req.method === 'GET') {
+        await handleKbCrawlGet(req, res, decodeURIComponent(crawlMatch[1]));
         return;
       }
       if (url === '/kb/chunks' && req.method === 'GET') {

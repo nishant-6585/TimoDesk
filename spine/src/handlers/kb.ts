@@ -20,6 +20,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 import { ingestText, ingestUrl } from '../services/kb-ingest';
+import { ingestFile } from '../services/kb-file';
+import { crawlJobs } from '../services/kb-crawl';
 import { askQuestion } from '../services/rag';
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -100,6 +102,98 @@ export async function handleKbIngestUrl(
     const status = /only http|unsupported content-type|no usable text|Invalid URL/.test(reason) ? 400 : 500;
     return json(res, status, { ok: false, reason });
   }
+}
+
+/** POST /kb/ingest-file — { filename, file_b64, topic? } → extract text (pdf/docx/txt/md) → ingest. */
+export async function handleKbIngestFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  let body: { filename?: unknown; file_b64?: unknown; topic?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  const filename = typeof body.filename === 'string' ? body.filename.trim() : '';
+  const fileB64 = typeof body.file_b64 === 'string' ? body.file_b64 : '';
+  if (!filename || !fileB64) {
+    return json(res, 400, { ok: false, reason: 'filename and file_b64 are required' });
+  }
+
+  try {
+    const result = await ingestFile(supabase, {
+      filename,
+      file_b64: fileB64,
+      topic: typeof body.topic === 'string' ? body.topic : undefined,
+    });
+    await logEvent('kb_ingested', { actor: auth.userId, kind: 'file', filename, chunks: result.chunks });
+    return json(res, 200, { ok: true, chunks: result.chunks, source: filename });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[kb/ingest-file] failed:', reason);
+    const status = /unsupported file type|file is empty|file too large|no usable text/.test(reason) ? 400 : 500;
+    return json(res, status, { ok: false, reason });
+  }
+}
+
+/** POST /kb/crawl — { url, max_pages?, topic? } → background crawl job. */
+export async function handleKbCrawlStart(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  let body: { url?: unknown; max_pages?: unknown; topic?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!url) return json(res, 400, { ok: false, reason: 'url is required' });
+
+  try {
+    const job = crawlJobs.start(supabase, {
+      url,
+      max_pages: typeof body.max_pages === 'number' ? body.max_pages : undefined,
+      topic: typeof body.topic === 'string' ? body.topic : undefined,
+    });
+    await logEvent('kb_crawl_started', { actor: auth.userId, url, max_pages: job.max_pages, job_id: job.id });
+    return json(res, 202, { ok: true, job });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return json(res, 400, { ok: false, reason });
+  }
+}
+
+/** GET /kb/crawl — recent crawl jobs (newest first). */
+export async function handleKbCrawlList(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  return json(res, 200, { ok: true, jobs: crawlJobs.list() });
+}
+
+/** GET /kb/crawl/{id} — one crawl job's progress. */
+export async function handleKbCrawlGet(
+  req: IncomingMessage,
+  res: ServerResponse,
+  jobId: string
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  const job = crawlJobs.get(jobId);
+  if (!job) return json(res, 404, { ok: false, reason: 'crawl job not found' });
+  return json(res, 200, { ok: true, job });
 }
 
 /** GET /kb/chunks — list the knowledge base (no embeddings in the payload). */

@@ -3,3 +3,4 @@ dist/
 .env
 *.log
 mcp-plugins.json
+kb-providers.json

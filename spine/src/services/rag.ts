@@ -14,20 +14,27 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { searchKb, KbHit } from './kb';
 import { getMcpPluginRegistry, buildMcpRequestExtras } from './mcp-plugins';
+import { getKbProviderRegistry, queryProviders, ProviderAnswer } from './kb-providers';
 
 /** Confidence needed for a cached FAQ answer to skip the LLM entirely (blueprint §06.2). */
 export const FAQ_FAST_PATH_THRESHOLD = 0.85;
 
+/** Below this top-hit similarity the local KB counts as a MISS and 3rd-party
+ * providers get a turn (local-first priority). Grounded Claude on weak context
+ * would answer "I'll connect you to a team member" anyway. */
+export const LOCAL_MISS_THRESHOLD = 0.4;
+
 /** Latest Claude model per project convention. Grounded, on-brand concierge voice. */
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-8';
 
-export type AnswerSource = 'kb' | 'claude' | 'handoff';
+export type AnswerSource = 'kb' | 'claude' | 'handoff' | 'provider';
 
 export interface Answer {
   answer: string;
   source: AnswerSource;
   similarity: number | null; // top hit similarity, or null if the KB was empty
   chunks: KbHit[]; // the retrieved context (for observability / debugging)
+  provider?: string; // set when source === 'provider' — which 3rd-party KB answered
 }
 
 /**
@@ -139,12 +146,27 @@ async function generateWithMcpTools(
 export interface AskDeps {
   search?: (q: string) => Promise<KbHit[]>;
   generate?: (q: string, chunks: KbHit[]) => Promise<string>;
+  /** Injectable 3rd-party fallback — defaults to the provider registry chain. */
+  askProviders?: (q: string) => Promise<ProviderAnswer | null>;
+}
+
+/** Pure: does this search result count as a local-KB miss? */
+export function isLocalMiss(topSimilarity: number | null): boolean {
+  return topSimilarity === null || topSimilarity < LOCAL_MISS_THRESHOLD;
+}
+
+function defaultAskProviders(question: string): Promise<ProviderAnswer | null> {
+  return queryProviders(getKbProviderRegistry().enabledInOrder(), question);
 }
 
 /**
- * Answer a visitor question: FAQ fast-path when confident, else grounded Claude.
+ * Answer a visitor question — LOCAL-FIRST chain:
+ *   1. FAQ fast-path (confident local FAQ hit → cached answer, no LLM).
+ *   2. Decent local context → grounded Claude over local chunks.
+ *   3. Local miss → enabled 3rd-party KB providers, in priority order.
+ *   4. Nothing anywhere → grounded Claude (says it'll hand off to a human).
  * Dependencies are injectable so the orchestration is testable without hitting
- * Voyage or Anthropic.
+ * Voyage, Anthropic, or any provider.
  */
 export async function askQuestion(
   supabase: SupabaseClient,
@@ -153,6 +175,7 @@ export async function askQuestion(
 ): Promise<Answer> {
   const search = deps.search ?? ((q: string) => searchKb(supabase, q, { limit: 5 }));
   const generate = deps.generate ?? generateGroundedAnswer;
+  const askProviders = deps.askProviders ?? defaultAskProviders;
 
   const chunks = await search(question);
   const topSimilarity = chunks[0]?.similarity ?? null;
@@ -160,6 +183,19 @@ export async function askQuestion(
   const faq = pickFaqAnswer(chunks);
   if (faq) {
     return { answer: faq.content, source: 'kb', similarity: faq.similarity, chunks };
+  }
+
+  if (isLocalMiss(topSimilarity)) {
+    const external = await askProviders(question);
+    if (external) {
+      return {
+        answer: external.answer,
+        source: 'provider',
+        similarity: topSimilarity,
+        chunks,
+        provider: external.provider,
+      };
+    }
   }
 
   const answer = await generate(question, chunks);

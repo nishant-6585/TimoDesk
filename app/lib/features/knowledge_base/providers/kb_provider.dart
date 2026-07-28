@@ -129,6 +129,166 @@ Future<int> kbIngestUrl(String url, {String? topic}) async {
   return (data['chunks'] ?? 0) as int;
 }
 
+/// Upload a document (pdf, docx, txt, md) for ingestion. Bytes go as base64.
+Future<int> kbIngestFile(String filename, List<int> bytes, {String? topic}) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/ingest-file'),
+          headers: _headers,
+          body: jsonEncode({
+            'filename': filename,
+            'file_b64': base64Encode(bytes),
+            if (topic != null && topic.isNotEmpty) 'topic': topic,
+          }))
+      .timeout(const Duration(seconds: 120));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'file ingest failed');
+  return (data['chunks'] ?? 0) as int;
+}
+
+/// A background website-crawl job on the spine (BFS over same-origin pages).
+class KbCrawlJob {
+  final String id;
+  final String seedUrl;
+  final String status; // 'running' | 'done' | 'error'
+  final int maxPages;
+  final int pagesCrawled;
+  final int chunks;
+  final List<String> errors;
+
+  KbCrawlJob({
+    required this.id,
+    required this.seedUrl,
+    required this.status,
+    required this.maxPages,
+    required this.pagesCrawled,
+    required this.chunks,
+    required this.errors,
+  });
+
+  bool get running => status == 'running';
+
+  factory KbCrawlJob.fromJson(Map<String, dynamic> j) => KbCrawlJob(
+        id: j['id'].toString(),
+        seedUrl: (j['seed_url'] ?? '') as String,
+        status: (j['status'] ?? '') as String,
+        maxPages: (j['max_pages'] ?? 0) as int,
+        pagesCrawled: (j['pages_crawled'] ?? 0) as int,
+        chunks: (j['chunks'] ?? 0) as int,
+        errors: ((j['errors'] ?? []) as List).map((e) => e.toString()).toList(),
+      );
+}
+
+final kbCrawlJobsProvider = FutureProvider.autoDispose<List<KbCrawlJob>>((ref) async {
+  final res = await http
+      .get(Uri.parse('$_spineBase/kb/crawl'), headers: _headers)
+      .timeout(const Duration(seconds: 10));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'crawl list failed');
+  return (data['jobs'] as List)
+      .map((e) => KbCrawlJob.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+/// Start a website crawl. Returns the job (poll kbCrawlJobsProvider for progress).
+Future<KbCrawlJob> kbCrawlStart(String url, {int? maxPages, String? topic}) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/crawl'),
+          headers: _headers,
+          body: jsonEncode({
+            'url': url,
+            if (maxPages != null) 'max_pages': maxPages,
+            if (topic != null && topic.isNotEmpty) 'topic': topic,
+          }))
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'crawl failed to start');
+  return KbCrawlJob.fromJson(data['job'] as Map<String, dynamic>);
+}
+
+/// An external ("3rd-party") knowledge source, asked only after a local-KB miss.
+class KbSource {
+  final String name;
+  final String url;
+  final int priority;
+  final bool enabled;
+  final bool hasToken;
+  final String? description;
+
+  KbSource({
+    required this.name,
+    required this.url,
+    required this.priority,
+    required this.enabled,
+    required this.hasToken,
+    this.description,
+  });
+
+  factory KbSource.fromJson(Map<String, dynamic> j) => KbSource(
+        name: (j['name'] ?? '') as String,
+        url: (j['url'] ?? '') as String,
+        priority: (j['priority'] ?? 0) as int,
+        enabled: (j['enabled'] ?? false) as bool,
+        hasToken: (j['has_token'] ?? false) as bool,
+        description: j['description'] as String?,
+      );
+}
+
+final kbSourcesProvider = FutureProvider.autoDispose<List<KbSource>>((ref) async {
+  final res = await http
+      .get(Uri.parse('$_spineBase/kb/providers'), headers: _headers)
+      .timeout(const Duration(seconds: 10));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'sources failed');
+  return (data['providers'] as List)
+      .map((e) => KbSource.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+Future<void> kbSourceAdd({
+  required String name,
+  required String url,
+  String? authorizationToken,
+  int? priority,
+  String? description,
+}) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/providers'),
+          headers: _headers,
+          body: jsonEncode({
+            'name': name,
+            'url': url,
+            if (authorizationToken != null && authorizationToken.isNotEmpty)
+              'authorization_token': authorizationToken,
+            if (priority != null) 'priority': priority,
+            if (description != null && description.isNotEmpty) 'description': description,
+          }))
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'add source failed');
+}
+
+Future<void> kbSourceUpdate(String name, {int? priority, bool? enabled}) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/providers/${Uri.encodeComponent(name)}'),
+          headers: _headers,
+          body: jsonEncode({
+            if (priority != null) 'priority': priority,
+            if (enabled != null) 'enabled': enabled,
+          }))
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'update source failed');
+}
+
+Future<void> kbSourceRemove(String name) async {
+  final res = await http
+      .delete(Uri.parse('$_spineBase/kb/providers/${Uri.encodeComponent(name)}'),
+          headers: _headers)
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'remove source failed');
+}
+
 Future<void> kbDeleteChunk(String id) async {
   final res = await http
       .delete(Uri.parse('$_spineBase/kb/chunks/$id'), headers: _headers)

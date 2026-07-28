@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../providers/kb_provider.dart';
+import '../widgets/kb_add_dialogs.dart';
+import '../widgets/kb_sources_section.dart';
 
 /// Knowledge Base management — the content Mikee's voice answers from.
 ///
@@ -70,6 +72,25 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
     }
   }
 
+  Future<void> _addFile() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => const KbAddFileDialog(),
+    );
+    if (result == true) {
+      ref.invalidate(kbChunksProvider);
+      ref.invalidate(kbStatusProvider);
+    }
+  }
+
+  Future<void> _crawlSite() async {
+    final started = await showDialog<bool>(
+      context: context,
+      builder: (_) => const KbCrawlDialog(),
+    );
+    if (started == true) ref.invalidate(kbCrawlJobsProvider);
+  }
+
   Future<void> _delete(KbChunk c) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -125,7 +146,19 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
           ),
         ],
       ),
-      floatingActionButton: Column(mainAxisSize: MainAxisSize.min, children: [
+      floatingActionButton: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+        FloatingActionButton.extended(
+          heroTag: 'kb_crawl',
+          backgroundColor: MikeeColors.inset,
+          foregroundColor: Colors.white,
+          icon: const Icon(Icons.travel_explore),
+          label: const Text('Crawl website'),
+          onPressed: _crawlSite,
+        ),
+        const SizedBox(height: 10),
         FloatingActionButton.extended(
           heroTag: 'kb_add_url',
           backgroundColor: MikeeColors.inset,
@@ -133,6 +166,15 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
           icon: const Icon(Icons.link),
           label: const Text('Add web page'),
           onPressed: _addUrl,
+        ),
+        const SizedBox(height: 10),
+        FloatingActionButton.extended(
+          heroTag: 'kb_add_file',
+          backgroundColor: MikeeColors.inset,
+          foregroundColor: Colors.white,
+          icon: const Icon(Icons.upload_file),
+          label: const Text('Add document'),
+          onPressed: _addFile,
         ),
         const SizedBox(height: 10),
         FloatingActionButton.extended(
@@ -158,6 +200,10 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
           ),
           const SizedBox(height: 20),
           _askPanel(),
+          KbCrawlJobsStrip(onJobFinished: () {
+            ref.invalidate(kbChunksProvider);
+            ref.invalidate(kbStatusProvider);
+          }),
           const SizedBox(height: 24),
           Text('KNOWLEDGE ENTRIES',
               style: TextStyle(
@@ -180,7 +226,8 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
                 ? _emptyState()
                 : Column(children: [for (final c in chunks) _chunkCard(c)]),
           ),
-          const SizedBox(height: 90), // clear the FABs
+          const KbSourcesSection(),
+          const SizedBox(height: 230), // clear the taller FAB stack
         ],
       ),
     );
