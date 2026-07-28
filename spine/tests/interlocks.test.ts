@@ -74,6 +74,24 @@ describe('Safety Interlocks', () => {
       expect(result.allowed).toBe(true); // snapshot is allowed even when stopped
     });
 
+    it('escort_start rejected while stopped', async () => {
+      await handleStop('admin-1');
+
+      const escortIntent: Intent = { intent: 'escort_start', points: [{ x: 0, y: 0, z: 0, rotation: 0 }] };
+      const result = await checkInterlocks(escortIntent, 'admin-1');
+
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('stopped');
+    });
+
+    it('escort_stop allowed while stopped', async () => {
+      await handleStop('admin-1');
+
+      const result = await checkInterlocks({ intent: 'escort_stop' }, 'admin-1');
+
+      expect(result.allowed).toBe(true);
+    });
+
     it('get_status allowed while stopped', async () => {
       await handleStop('admin-1');
 

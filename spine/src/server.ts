@@ -15,6 +15,9 @@ import { routeMessage } from './commands/router';
 import { verifyToken } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
+import { EscortController, EscortPoint } from './escort';
+import { createPersonScanner } from './services/person-check';
+import { getStoppedState } from './commands/interlocks';
 import { handleEnroll } from './handlers/enroll';
 import { handleCheckFace } from './handlers/check-face';
 import { handleVisit } from './handlers/visit';
@@ -102,6 +105,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     // the patrol sequencer uses this to advance to the next waypoint.
     let naviDone: ((reason: 'arrived' | 'timeout' | 'cancelled') => void) | null = null;
     let arrivalCancelPending = false; // arrival-triggered cancelNavi in flight
+    let escortCancelPending = false; // escort checkpoint-pause cancelNavi in flight
     const fireNaviDone = (reason: 'arrived' | 'timeout' | 'cancelled') => {
       const cb = naviDone;
       naviDone = null;
@@ -128,6 +132,9 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         }
         try {
           const pos = await sdk.getPosition!();
+          // Feed the escort's live distance tracking off this same poll (no
+          // second get_position poller racing the SDK's single pose resolver).
+          if (escort.state.active) escort.handlePose(pos);
           const dist = Math.hypot(pos.x - target.x, pos.y - target.y);
 
           // Stall detection: goal active but the robot has not TRANSLATED
@@ -239,6 +246,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       loop: boolean,
     ) => {
       stopPatrol('restart');
+      escort.stop(); // patrol supersedes an active escort
       patrol.active = true;
       patrol.points = points;
       patrol.index = 0;
@@ -247,6 +255,70 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       void patrolNext();
     };
 
+    // ── Escort sequencer (Follow-Me) ────────────────────────────────────────────
+    // Person-verified waypoint walking: like patrol, but every leg pauses at a
+    // ~2m distance interval AND at each arrival to verify the visitor is still
+    // there (head-sweep + face-detection-only frames — no identity, nothing
+    // stored). Nobody within the timeout → the escort stops in place. Logic
+    // lives in escort.ts (testable); this block is the robot/socket wiring.
+    const escort = new EscortController({
+      navi: async (p: EscortPoint, i: number) => {
+        if (getStoppedState()) throw new Error('system stopped');
+        await sdk.navi?.(p);
+        naviState = {
+          active: true, point: p, name: p.name ?? `Waypoint ${i + 1}`,
+          arrivalText: p.arrivalText, source: 'escort', startedAt: Date.now(),
+        };
+        broadcastNaviState();
+        naviDone = (reason) => escort.handleNaviDone(reason);
+        startNaviWatch();
+      },
+      pauseNavi: async () => {
+        // Checkpoint pause: stop the watch first so the static pose can't
+        // trip stall/arrival, and flag the cancel so its cancel_result isn't
+        // read as a user cancel (same trick as arrivalCancelPending).
+        stopNaviWatch();
+        escortCancelPending = true;
+        try {
+          await sdk.cancelNavi?.();
+        } catch { /* best-effort */ }
+      },
+      resumeNavi: async (p: EscortPoint) => {
+        if (getStoppedState()) throw new Error('system stopped');
+        await sdk.navi?.(p);
+        naviDone = (reason) => escort.handleNaviDone(reason);
+        startNaviWatch();
+      },
+      scanForPerson: createPersonScanner(sdk),
+      onCheckState: () => broadcastNaviState(), // escort.state rides on navi_state
+      onFinish: (reason, goalActive) => {
+        console.log(`[Spine] Escort finished (${reason})`);
+        stopNaviWatch();
+        naviDone = null;
+        if (goalActive) {
+          // Escort-initiated cleanup cancel — flag it so its cancel_result
+          // isn't read as a user cancel (which would kill a superseding
+          // patrol/dock). The chassis keeps un-cancelled goals alive.
+          escortCancelPending = true;
+          try { void sdk.cancelNavi?.(); } catch { /* best-effort */ }
+        }
+        // nav_cancelled arrives FROM the cancel_result path, which has already
+        // cleared + broadcast naviState — don't double-clear an unrelated nav.
+        if (reason !== 'nav_cancelled') {
+          naviState = { active: false };
+          broadcastNaviState();
+        }
+        void logEvent('escort_finished', { reason });
+      },
+      onEvent: (event, payload) => {
+        broadcastRobotEvent({
+          type: 'escort_event',
+          payload: { event, ...(payload ?? {}) },
+          timestamp: Date.now(),
+        });
+      },
+    });
+
     // ── Charging dock ───────────────────────────────────────────────────────────
     // The dock has no known map coordinates, so arrival = isCharging flipping
     // true (polled), not the distance watcher. 6-min timeout clears stale state.
@@ -254,6 +326,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     const stopDockWatch = () => { if (dockWatch) { clearInterval(dockWatch); dockWatch = null; } };
     const startDockState = (source: string) => {
       stopPatrol('docking');
+      escort.stop(); // docking supersedes an active escort
       stopNaviWatch();
       naviState = {
         active: true, name: 'Charging Dock',
@@ -639,6 +712,31 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             return;
           }
 
+          // Escort (Follow-Me) also runs entirely in the spine — intercept.
+          if (msg.type === 'intent' && msg.intent?.intent === 'escort_start') {
+            const pts = msg.intent.points ?? [];
+            if (!pts.length) {
+              ws.send(JSON.stringify({ type: 'error', message: 'escort_start needs points' } as SpineMessage));
+              return;
+            }
+            // Same guard the interlocks apply to movement intents (patrol/escort
+            // are intercepted before the router, so check STOP here).
+            if (getStoppedState()) {
+              ws.send(JSON.stringify({ type: 'error', message: 'System stopped. Send resume to continue.' } as SpineMessage));
+              return;
+            }
+            stopPatrol('escort');
+            void logEvent('escort_start', { session_id: ws.sessionId, points: pts.length });
+            escort.start(pts);
+            ws.send(JSON.stringify({ type: 'ack', intent: 'escort_start', ok: true } as SpineMessage));
+            return;
+          }
+          if (msg.type === 'intent' && msg.intent?.intent === 'escort_stop') {
+            escort.stop();
+            ws.send(JSON.stringify({ type: 'ack', intent: 'escort_stop', ok: true } as SpineMessage));
+            return;
+          }
+
           // 3. Route the message
           console.log(`[Spine WebSocket] Authenticated message, routing to handler...`);
           const response = await routeMessage(msg, ws.sessionId!, ws.userId!, sdk);
@@ -717,7 +815,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     });
 
     broadcastNaviState = () => {
-      const msg = { type: 'navi_state', ...naviState } as SpineMessage;
+      const msg = {
+        type: 'navi_state',
+        ...naviState,
+        ...(escort.state.active ? { escort: escort.state } : {}),
+      } as SpineMessage;
       console.log(`[Spine] Broadcasting navi_state: ${JSON.stringify(msg)}`);
       wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
@@ -743,6 +845,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       if (eventType === 'navi_event' && (event.payload as Record<string, any>)?.event === 'cancel_result') {
         if (arrivalCancelPending) {
           arrivalCancelPending = false; // arrival cleanup, not a user cancel
+          return;
+        }
+        if (escortCancelPending) {
+          escortCancelPending = false; // escort checkpoint pause/cleanup, not a user cancel
           return;
         }
         patrol.active = false; // a confirmed USER cancel ends any patrol

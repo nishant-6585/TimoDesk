@@ -162,6 +162,26 @@ function cropFaceThumbnail(
 }
 
 /**
+ * Detection-only presence probe (escort person-check): count faces in a frame.
+ *
+ * Runs ONLY the tinyFaceDetector pass — no landmarks, no descriptors, no
+ * identity match, nothing stored (DPDP: visitor biometrics are never computed
+ * or persisted; the frame and boxes are discarded after the count).
+ */
+export async function countFaces(imageBuffer: Buffer): Promise<number> {
+  const image = await canvas.loadImage(imageBuffer);
+  const nativeCanvas = new canvas.Canvas(image.width, image.height);
+  nativeCanvas.getContext('2d').drawImage(image as any, 0, 0);
+
+  const detectorOptions = new faceapi.TinyFaceDetectorOptions({
+    inputSize: 416,
+    scoreThreshold: 0.4,
+  });
+  const detections = await faceapi.detectAllFaces(nativeCanvas, detectorOptions);
+  return detections.length;
+}
+
+/**
  * L2 (Euclidean) distance between two embeddings
  * Used by recognition pipeline to match embeddings
  */

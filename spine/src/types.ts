@@ -14,6 +14,8 @@ export interface Intent {
     | 'dock' // drive to the charging dock (SDK goHome; dock auto-aligns)
     | 'patrol_start' // loop through saved points (spine-side sequencer)
     | 'patrol_stop' // stop the patrol (cancels the active leg)
+    | 'escort_start' // walk saved points, person-verified at each step (spine-side sequencer)
+    | 'escort_stop' // stop the escort (cancels the active leg)
     | 'head'
     | 'arm'
     | 'wave'
@@ -33,7 +35,7 @@ export interface Intent {
   transcript?: { role: 'user' | 'assistant'; text: string; ts: string }[]; // for voice_log
   resolvedBy?: 'elevenlabs';
   point?: RobotPosition; // for navi
-  points?: (RobotPosition & { name?: string; arrivalText?: string })[]; // for patrol_start
+  points?: (RobotPosition & { name?: string; arrivalText?: string })[]; // for patrol_start / escort_start
   loop?: boolean; // for patrol_start — repeat the route until stopped
   name?: string; // for navi — display name of the target point (broadcast to all clients)
   source?: 'admin' | 'robot'; // for navi — which UI initiated it
@@ -97,6 +99,7 @@ export interface RobotEvent {
     | 'robot_online'
     | 'robot_offline'
     | 'navi_event'
+    | 'escort_event' // escort lifecycle (started / checkpoint / person_confirmed / finished)
     | 'visitor_arrived'
     // Voice phase, broadcast to the admin app (#80)
     | 'voice_listening'
@@ -136,6 +139,7 @@ export interface SpineMessage {
   stalled?: boolean; // goal active but robot not moving — nav service likely wedged
   arrivalText?: string; // custom arrival phrase (spoken by the robot on arrived)
   patrol?: { active: boolean; index: number; total: number; lap: number }; // patrol progress
+  escort?: { active: boolean; index: number; total: number; checking: boolean }; // escort progress
 }
 
 // Session tracking (spine-internal)
