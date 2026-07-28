@@ -93,8 +93,9 @@ class SpineClient {
 
   /// Persist a completed conversation to spine `/voice/log` (HTTP one-shot write).
   /// Best-effort — a logging failure must never affect the conversation UX.
-  Future<void> logConversation(List<Map<String, dynamic>> transcript) async {
-    if (transcript.isEmpty) return;
+  Future<void> logConversation(List<Map<String, dynamic>> transcript,
+      {List<Map<String, dynamic>> actions = const []}) async {
+    if (transcript.isEmpty && actions.isEmpty) return;
     try {
       await http
           .post(
@@ -103,7 +104,13 @@ class SpineClient {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer ${RobotConfig.authToken}',
             },
-            body: jsonEncode({'transcript': transcript, 'resolved_by': 'elevenlabs'}),
+            body: jsonEncode({
+              'transcript': transcript,
+              // The interaction LEDGER: what the robot decided/did, appended
+              // chronologically after the spoken turns (each entry timestamped).
+              if (actions.isNotEmpty) 'actions': actions,
+              'resolved_by': 'elevenlabs',
+            }),
           )
           .timeout(const Duration(seconds: 10));
     } catch (_) {

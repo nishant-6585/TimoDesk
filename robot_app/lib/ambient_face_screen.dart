@@ -19,6 +19,7 @@ import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
 import 'services/persona_voice.dart';
 import 'services/checkin_voice.dart';
+import 'services/interaction_log.dart';
 import 'services/checkin_api.dart';
 import 'waving_hand_overlay.dart';
 import 'face_rig.dart';
@@ -465,6 +466,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
 
   // Speak a greeting phrase — ElevenLabs voice first, built-in TTS as fallback.
   void _speakGreeting(String text) {
+    InteractionLog.log('robot_speech', text);
     _tts.speak(text).then((ok) {
       if (!ok) _audioBridge.speak(text);
     });
@@ -484,9 +486,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       _asrUtterance = '';
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
+      InteractionLog.log('user_utterance_vendor_asr', utterance);
       if (_handleNavVoice(utterance)) return;
       if (_handlePersonaVoice(utterance)) return;
-      if (_handleCheckinVoice(utterance)) return;
+      if (_handleCheckinVoice(utterance)) {
+        InteractionLog.log('checkin_turn', utterance);
+        return;
+      }
       if (_voiceActive) {
         _voiceAgent.sendUserText(utterance);
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
@@ -511,17 +517,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
+      InteractionLog.log('nav_command', 'heard "$transcript" → go to "${p.name}"');
       // One interaction at a time: navigation OWNS the speaker from here
       // (departure phrase → escort reassurance → arrival). Close the agent
       // session so motor noise can't trigger stray agent replies mid-route.
       // The mic re-opens automatically on arrival if the visitor is in view.
       if (_voiceActive) _endVoice();
-      // The departure phrase is spoken by the navi_state broadcast handler
-      // (nav_points_provider) — speaking it here too would double up.
+      // The departure phrase is spoken by goTo() itself (instantly, before the
+      // spine round-trip) — speaking it here too would double up.
       ref.read(navPointsProvider.notifier).goTo(p).then((ok) {
         // Never fail silently: if BOTH the spine and native dispatch failed,
         // the visitor is standing there waiting — tell them.
         if (!ok && mounted) {
+          InteractionLog.log('nav_dispatch_failed', p.name);
           _speakGreeting("Sorry, I couldn't start navigating to ${p.name}. "
               'Please try again in a moment.');
         }
@@ -540,11 +548,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (retry.point != null) {
           debugPrint(
               'NavVoice: "$transcript" → go to "${retry.point!.name}" (after refresh)');
+          InteractionLog.log('nav_command',
+              'heard "$transcript" → go to "${retry.point!.name}" (after refresh)');
           ref.read(navPointsProvider.notifier).goTo(retry.point!);
           return;
         }
         final known = fresh.map((p) => p.name).take(3).join(', ');
         debugPrint('NavVoice: "$transcript" → no point matches "${result.heard}"');
+        InteractionLog.log(
+            'nav_no_match', 'heard "$transcript" → nothing matches "${result.heard}"');
         _speakGreeting(fresh.isEmpty
             ? "I don't have any saved locations yet."
             : "I couldn't find a place called ${result.heard}. "
@@ -568,6 +580,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       case PersonaCommandKind.rename:
         final name = result.newName!;
         debugPrint('Persona: rename → "$name"');
+        InteractionLog.log('persona_rename', 'heard "$transcript" → renamed to "$name"');
         RobotConfig.setRobotName(name);
         _speakGreeting("Okay! From now on, my name is $name. "
             'Nice to meet you again.');
@@ -578,11 +591,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           final options =
               kVoicePresets.map((p) => p.name.split(' ').first).join(', ');
           debugPrint('Persona: voice "${result.heard}" → no preset');
+          InteractionLog.log('persona_voice_unknown', result.heard);
           _speakGreeting("I don't have a ${result.heard} voice yet. "
               'I can sound like: $options.');
           break;
         }
         debugPrint('Persona: voice → ${preset.name}');
+        InteractionLog.log(
+            'persona_voice', 'heard "$transcript" → voice ${preset.name}');
         RobotConfig.setVoice(preset.voiceId, preset.name);
         // Confirm IN THE NEW VOICE (TTS reads the config per utterance)…
         _speakGreeting('How do I sound? This is my ${preset.name} voice.');
@@ -703,13 +719,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // idle watchdog closes this session after 15s of silence as usual.
         debugPrint('Escort: visitor in view after arriving at "$pointName" '
             '→ auto-opening mic');
+        InteractionLog.log('escort_arrival_listen', pointName);
         _startVoice(auto: true);
         return;
       }
       final template = RobotConfig.escortLostText;
       if (template.isEmpty) return;
       debugPrint('Escort: nobody in view after arriving at "$pointName"');
+      InteractionLog.log('escort_lost_visitor', pointName);
       _speakGreeting(template.replaceAll('{name}', pointName));
+      // No session will flush this interaction (the visitor is gone) — send
+      // the ledger now so the abandoned escort is captured for analysis.
+      _spine.logConversation(const [], actions: InteractionLog.drain());
     });
   }
 
@@ -883,6 +904,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _conversed = true;
         _bumpActivity();
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
+        if (e.text != null && e.text!.trim().isNotEmpty && e.text != '...') {
+          InteractionLog.log('user_utterance_el', e.text!);
+        }
         // Voice navigation: "go to <saved point>" spoken to Mikee. When the
         // transcript is a nav command WE handle the reply + action and drop the
         // agent's own answer to this turn (it doesn't know the saved points).
@@ -899,6 +923,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Visitor check-in ("I'm here to see <host>") — ours end-to-end too:
         // the agent doesn't know the staff directory or the /visit flow.
         if (e.text != null && _handleCheckinVoice(e.text!)) {
+          InteractionLog.log('checkin_turn', e.text!);
           _dropFirstAgentTurn = true;
           break;
         }
@@ -942,7 +967,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _autoSession = false;
         _audioBridge.stopMic();
         _audioBridge.stopPlayback();
-        _spine.logConversation(_voiceAgent.transcript); // fire-and-forget
+        InteractionLog.log('session_ended', 'idle/ended');
+        // Flush the WHOLE interaction — spoken turns + the action ledger — as
+        // one chronological record (fire-and-forget).
+        _spine.logConversation(_voiceAgent.transcript,
+            actions: InteractionLog.drain());
         setState(() {
           _voiceActive = false;
           _micLevel = 0;

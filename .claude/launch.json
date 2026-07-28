@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "7788", "--directory", "robot_app/docs"],
       "port": 7788
+    },
+    {
+      "name": "spine",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "spine", "run", "dev"],
+      "port": 4000
     }
   ]
 }

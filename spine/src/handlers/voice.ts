@@ -45,9 +45,14 @@ export async function handleVoiceLog(
     return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
   }
 
-  const transcript = body.transcript;
-  if (!Array.isArray(transcript) || transcript.length === 0) {
-    return json(res, 400, { ok: false, reason: 'transcript must be a non-empty array' });
+  const transcript = Array.isArray(body.transcript) ? body.transcript : [];
+  // Interaction ledger entries (role:'action', kind, detail, t) — what the
+  // robot decided/did around the spoken turns. Stored in the SAME jsonb
+  // stream so analysis reads one chronological record per interaction.
+  const actions = Array.isArray(body.actions) ? body.actions : [];
+  const merged = [...transcript, ...actions];
+  if (merged.length === 0) {
+    return json(res, 400, { ok: false, reason: 'transcript or actions must be a non-empty array' });
   }
 
   const resolvedBy = typeof body.resolved_by === 'string' ? body.resolved_by : 'elevenlabs';
@@ -56,7 +61,7 @@ export async function handleVoiceLog(
   const { data: row, error } = await supabase
     .from('conversation')
     .insert({
-      transcript, // jsonb — PII scrubbed upstream
+      transcript: merged, // jsonb — PII scrubbed upstream
       resolved_by: resolvedBy,
       visitor_id: visitorId,
       purge_after: new Date(Date.now() + RETENTION_MS).toISOString(),

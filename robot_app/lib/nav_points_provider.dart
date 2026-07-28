@@ -7,6 +7,7 @@ import 'config.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
 import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
 import 'services/elevenlabs_tts.dart'; // arrival speech (Mikee's real voice)
+import 'services/interaction_log.dart';
 import 'services/nav_points_api.dart';
 import 'services/spine_client.dart';
 
@@ -135,6 +136,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   void _announceDeparture(String name) {
     if (_announcedDeparture == name) return;
     _announcedDeparture = name;
+    InteractionLog.log('departure', name);
     _speakArrival('Okay, follow me to $name.');
     _startEscortTimer();
   }
@@ -150,6 +152,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         final name =
             (m['name'] as String?) ?? state.navigatingTo?.name ?? 'the destination';
         debugPrint('navSync: arrived at "$name" — speaking announcement');
+        InteractionLog.log('arrival', name);
         _speakArrival(_arrivalPhrase(name, m['arrivalText'] as String?));
         state = state.copyWith(clearNavigating: true, arrivedAt: name);
       } else {
@@ -310,6 +313,10 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   Future<bool> goTo(NavPoint point) async {
     state = state.copyWith(
         navigatingTo: point, clearArrived: true, navSource: 'robot');
+    // Speak BEFORE dispatching: the visitor must hear an acknowledgement the
+    // moment their command is accepted, not after the spine round-trip. The
+    // navi_state broadcast that follows is deduped by _announceDeparture.
+    _announceDeparture(point.name);
     final spine = _ref.read(navSpineClientProvider);
     if (spine.isConnected) {
       // isConnected can be STALE after a silent Wi-Fi drop (half-open socket) —
