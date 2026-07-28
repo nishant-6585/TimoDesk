@@ -85,6 +85,11 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
   Timer? _escortTimer; // periodic "please stay with me" while escorting
+  // Departure announced for this nav target — guards the double-speak between
+  // the INSTANT announcement in goTo() (robot-initiated: speak BEFORE the
+  // spine round-trip so the visitor hears a response immediately) and the
+  // navi_state broadcast (admin-initiated navs, or our own echoed back).
+  String? _announcedDeparture;
 
   /// Speak an arrival announcement through Mikee's real voice (ElevenLabs →
   /// proven speaker path). The device-TTS fallback exists because ElevenLabs
@@ -124,11 +129,22 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     _escortTimer = null;
   }
 
+  /// Speak "Okay, follow me to X" + start the escort reassurance timer —
+  /// exactly once per navigation, whichever path gets there first (goTo's
+  /// instant call or the spine broadcast).
+  void _announceDeparture(String name) {
+    if (_announcedDeparture == name) return;
+    _announcedDeparture = name;
+    _speakArrival('Okay, follow me to $name.');
+    _startEscortTimer();
+  }
+
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
   void _onSpineNaviState(Map<String, dynamic> m) {
     if (!mounted) return;
     if (m['active'] != true) {
       _stopEscortTimer();
+      _announcedDeparture = null; // nav over → next one announces again
       if (m['arrived'] == true) {
         // Spine's arrival watcher confirmed the robot reached the point.
         final name =
@@ -142,7 +158,17 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
       return;
     }
     final name = (m['name'] as String?) ?? 'a saved point';
-    if (state.navigatingTo?.name == name) return; // already showing it
+    // Departure announcement — once per navigation via _announceDeparture's
+    // guard. IMPORTANT: this must run even when navigatingTo is already set:
+    // robot-initiated goTo() sets state BEFORE this broadcast echoes back, and
+    // the old early-return silently ate the phrase for every voice-commanded
+    // nav. Patrol legs are EXCLUDED (per product decision): a looping patrol
+    // announcing every departure is noise — the per-waypoint arrival
+    // announcements carry the patrol narration.
+    if (m['source'] != 'patrol') {
+      _announceDeparture(name);
+    }
+    if (state.navigatingTo?.name == name) return; // state already up to date
     final list = state.points.valueOrNull ?? const <NavPoint>[];
     final target = list.where((p) => p.name == name).firstOrNull ??
         NavPoint(
@@ -160,15 +186,6 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
       clearArrived: true,
       navSource: (m['source'] as String?) ?? 'admin',
     );
-    // Departure announcement — fires exactly once per navigation (the early
-    // return above dedupes the cancelling/stalled re-broadcasts) for BOTH
-    // admin- and robot-initiated navs. Patrol legs are EXCLUDED (per product
-    // decision): a looping patrol announcing every departure is noise — the
-    // per-waypoint arrival announcements carry the patrol narration.
-    if (m['source'] != 'patrol') {
-      _speakArrival('Okay, follow me to $name.');
-      _startEscortTimer();
-    }
   }
 
   /// What the robot says on arrival: the point's custom announcement (stored in

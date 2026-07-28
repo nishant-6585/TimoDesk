@@ -31,7 +31,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     // NEVER use cached/old settings from SharedPreferences
     : super(SettingsState(
         spineUrl: spineWsUrl,
-        robotIp: '192.168.1.12',
+        robotIp: '192.168.1.27',
       )) {
     _clearOldCachedSettings();
   }
@@ -46,9 +46,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
       print('[SettingsNotifier] ════════════════════════════════════════');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.1.12');
+      print('[SettingsNotifier] Robot IP: 192.168.1.27');
       print('[SettingsNotifier] Spine: $spineWsUrl');
-      print('[SettingsNotifier] Camera: http://192.168.1.12:8080/stream');
+      print('[SettingsNotifier] Camera: http://192.168.1.27:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
       print('[SettingsNotifier] ════════════════════════════════════════');
     } catch (e) {
@@ -70,7 +70,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.1.12');
+      state = state.copyWith(robotIp: '192.168.1.27');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }

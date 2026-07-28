@@ -49,7 +49,7 @@ class SpineService extends StateNotifier<SpineState> {
       print('[SpineService] ========================================');
       print('[SpineService] CONNECTING TO SPINE BROKER');
       print('[SpineService] Spine WebSocket: $_spineUrl');
-      print('[SpineService] (Camera stream from robot: http://192.168.1.12:8080)');
+      print('[SpineService] (Camera stream from robot: http://192.168.1.27:8080)');
       print('[SpineService] ========================================');
 
       await connect(_spineUrl!, _jwt!);
