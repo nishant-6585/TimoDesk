@@ -14,6 +14,7 @@ import 'services/elevenlabs_tts.dart';
 import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
+import 'greeting_provider.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
@@ -77,11 +78,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   double _liveGazeX = 0, _liveGazeY = 0;
   Timer? _presenceHold;
 
-  // Greeting overlay — text shown in WavingHandOverlay + debounce map.
-  String _greetText = '';
-  bool _greetVisible = false;
+  // Greeting overlay text + the re-greet debounce now live in greetingProvider
+  // (shared with the dashboard); this screen keeps only the face-state revert.
   Timer? _greetTimer;
-  final Map<String, DateTime> _greetedAt = {}; // per-name re-greet debounce
 
   // Greeting coordinator: on motion/presence we hold off greeting for a brief
   // window so face recognition can identify a known staff member FIRST (→ greet
@@ -151,8 +150,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   static const int _maxReconnects = 1; // one silent retry per incident
 
   static const Duration _greetHold = Duration(milliseconds: 3500);
-  // Same-name re-greet debounce — Settings-tunable (RobotConfig.regreetMinutes).
-  Duration get _regreetWindow => Duration(minutes: RobotConfig.regreetMinutes);
+  // The same-name re-greet debounce (Settings-tunable, RobotConfig.
+  // regreetMinutes) now lives in greetingProvider — shared with the dashboard.
   // How long after the attention gate opens we wait for identity before greeting
   // anonymously. Long enough for the spine recogniser (500ms cadence + 2-of-3
   // voting) to land a match on an enrolled face, short enough that an unknown
@@ -360,18 +359,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // land on top of the visitor's next command). Speaking a hello mid-session
     // is also banned: it trips the half-duplex gate and MUTES the mic exactly
     // while the visitor is giving a command.
-    final now = DateTime.now();
-    final last = _greetedAt[e.name];
-    if (last != null && now.difference(last) < _regreetWindow) return; // debounce
     final talking = _face.state == FaceStateKind.speaking ||
         _face.state == FaceStateKind.thinking;
-    if (ref.read(navPointsProvider).navigatingTo != null ||
+    final busy = ref.read(navPointsProvider).navigatingTo != null ||
         _voiceActive ||
-        talking) {
-      _greetedAt[e.name] = now; // cancel, don't queue
+        talking;
+    // Decision (debounce + priority) lives in greetingProvider now. A blocked
+    // greeting is no longer recorded as delivered, so it can still land on a
+    // later recognition tick once Mikee is free — nothing is queued.
+    if (!ref.read(greetingProvider.notifier).mayGreetStaff(e.name, busy: busy)) {
       return;
     }
-    _greetedAt[e.name] = now;
     // A NAMED greeting is allowed to fire even after the generic approach
     // greeting already went out — the spine's identity often lands a beat late,
     // and staff should always hear their personalised welcome (once per
@@ -381,7 +379,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _awaitingRecognition = false; // spine identity won the recognition window
     _recognitionWaitTimer?.cancel();
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
-    _showGreeting(lang.greetText(e.name));
+    _showGreeting(lang.greetText(e.name), staffName: e.name);
     if (upgradeAfterGeneric) {
       _speakGreeting(_staffSpeech(lang, e.name));
     } else {
@@ -393,28 +391,20 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Greet them directly — do NOT require the attention-gate window first: in a
   // busy lobby people rarely look dead-on, and the one-shot `_greeted` flag
   // never resets while foot traffic keeps presence continuously true, which
-  // left visitors standing in front of a silent robot. Unknown faces can't be
-  // told apart, so a global cooldown stands in for the per-name debounce.
-  DateTime? _lastVisitorGreetAt;
-  static const Duration _visitorRegreetCooldown = Duration(seconds: 90);
-
+  // left visitors standing in front of a silent robot. The cooldown that stands
+  // in for the per-name debounce lives in greetingProvider.
   void _onUnknownFace(void _) {
     // Same priority rules as named greetings: never interrupt an interaction.
     final talking = _face.state == FaceStateKind.speaking ||
         _face.state == FaceStateKind.thinking;
-    if (_voiceActive ||
+    final busy = _voiceActive ||
         talking ||
-        ref.read(navPointsProvider).navigatingTo != null) {
+        ref.read(navPointsProvider).navigatingTo != null;
+    if (!ref.read(greetingProvider.notifier).mayGreetVisitor(busy: busy)) {
       return;
     }
     _awaitingRecognition = false;
     _recognitionWaitTimer?.cancel();
-    final now = DateTime.now();
-    if (_lastVisitorGreetAt != null &&
-        now.difference(_lastVisitorGreetAt!) < _visitorRegreetCooldown) {
-      return;
-    }
-    _lastVisitorGreetAt = now;
     _greeted = false; // a fresh visitor deserves a fresh greeting
     _greetOnApproach();
   }
@@ -465,19 +455,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greetThenListen(_visitorSpeech(lang));
   }
 
-  // Shared: set greeting state, show overlay, start hold timer.
-  void _showGreeting(String text) {
+  // Shared: publish the greeting (every screen renders it) + drive THIS screen's
+  // face into its greeting state, reverting after the hold.
+  void _showGreeting(String text, {String? staffName}) {
     if (!mounted) return;
+    ref
+        .read(greetingProvider.notifier)
+        .show(text, staffName: staffName, hold: _greetHold);
     _greetTimer?.cancel();
-    setState(() {
-      _greetText = text;
-      _greetVisible = true;
-      _face = _face.copyWith(state: FaceStateKind.greeting);
-    });
+    setState(() => _face = _face.copyWith(state: FaceStateKind.greeting));
     _greetTimer = Timer(_greetHold, () {
       if (!mounted) return;
       setState(() {
-        _greetVisible = false;
         _face = _face.copyWith(
           state: _present ? FaceStateKind.attentive : FaceStateKind.idle,
         );
@@ -874,14 +863,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // greeting → no overlap). Shares the Settings-tunable _regreetWindow debounce
   // with the spine face_detected path.
   void _greetStaff(String name) {
-    final now = DateTime.now();
-    final last = _greetedAt[name];
-    if (last != null && now.difference(last) < _regreetWindow) return; // debounce
-    _greetedAt[name] = now;
+    // Shares the debounce with the spine face_detected path (greetingProvider).
+    // This path already runs only when nothing else owns the speaker, so it
+    // isn't "busy" by construction.
+    if (!ref.read(greetingProvider.notifier).mayGreetStaff(name, busy: false)) {
+      return;
+    }
     _greeted = true; // counts as this visit's one greeting (blocks the plain hello)
     _pendingGreetName = name;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
-    _showGreeting(lang.greetText(name)); // overlay + greeting face state
+    _showGreeting(lang.greetText(name), staffName: name); // overlay + face state
     _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $_pendingGreetName');
     _startVoice(auto: true); // opens the session → agent greets by name, then listens
   }
@@ -1244,6 +1235,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Widget build(BuildContext context) {
     final battery = ref.watch(batteryProvider);
     final sdk = ref.watch(streamProvider.select((s) => s.sdkStatus));
+    final greeting = ref.watch(greetingProvider);
 
     ref.listen(streamProvider.select((s) => s.isStreaming), (prev, curr) {
       if (curr == true) _startControlServers();
@@ -1277,10 +1269,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
               child: CustomPaint(painter: FacePainter(_rig.live, repaint: _repaint)),
             ),
           ),
-          // Waving-hand greeting overlay (anonymous approach + named greet).
+          // Waving-hand greeting overlay (anonymous approach + named greet),
+          // driven by the shared coordinator so it matches the dashboard.
           WavingHandOverlay(
-            visible: _greetVisible,
-            message: _greetText,
+            visible: greeting != null,
+            message: greeting?.text ?? '',
           ),
           // Language selector, top-left (top-right holds the SDK/battery chip).
           Positioned(

@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
+import 'greeting_provider.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart'; // kOrange + head/chassis/arm/battery providers + states
 import 'face_painter.dart'; // FaceState, FaceStateKind, FacePainter
@@ -400,6 +401,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   // ── Action tiles (§5) ───────────────────────────────────────────────────────
+  /// A greeting was published (staff by name, or an unknown visitor) → show it
+  /// on the dashboard face. The ambient screen still does the speaking, so this
+  /// is display only: no TTS here, or Mikee would say it twice.
+  void _onGreeting(ActiveGreeting g) {
+    if (!mounted) return;
+    _resting = false; // someone is here — wake the face
+    _setKind(FaceStateKind.greeting);
+    _toast(g.text, Icons.waving_hand_rounded);
+    _revertAfter(3500); // matches the shared greeting hold in greetingProvider
+  }
+
   void _toast(String text, IconData icon) {
     setState(() {
       _toastText = text;
@@ -423,6 +435,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     });
   }
 
+  // Scaffolding for the dashboard action tiles (§5) — kept intact for wiring
+  // alongside _ActionTile / the _Act enum; not called yet.
+  // ignore: unused_element
   void _runAction(_Act a) {
     _resetIdle();
     _seq?.cancel();
@@ -499,6 +514,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // Face recognition → greeting. The decision + debounce live in
+    // greetingProvider (shared with the ambient face screen), so a recognized
+    // person now lights up THIS screen too — previously the greeting rendered
+    // only on the ambient screen, which is hidden while the dashboard is open.
+    ref.listen<ActiveGreeting?>(greetingProvider, (prev, next) {
+      if (next != null && next != prev) _onGreeting(next);
+    });
     return Listener(
       onPointerDown: (_) => _resetIdle(),
       child: Scaffold(
@@ -951,7 +973,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             width: 176,
             child: Material(
               color: st.navigatingTo?.id == p.id
-                  ? kOrange.withOpacity(0.18)
+                  ? kOrange.withValues(alpha: 0.18)
                   : const Color(0xFF1A1A1A),
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
@@ -1386,6 +1408,7 @@ class _NavItem extends StatelessWidget {
 }
 
 // ── Action tile (§5) ──────────────────────────────────────────────────────────
+// ignore: unused_element
 class _ActionTile extends StatelessWidget {
   final _Act act;
   final bool active;

@@ -97,6 +97,33 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
   StreamSubscription<Map<String, dynamic>>? _escortEventSub;
+  Timer? _navStaleTimer; // safety net for a navigation that never reports back
+
+  /// A navigation this old with no update from the spine or the SDK is treated
+  /// as dead state. Deliberately longer than every spine-side watchdog (navi
+  /// watch 4 min, dock watch 6 min) so a real, slow navigation is never cut
+  /// short — this only fires when nobody ever told us the nav ended.
+  ///
+  /// Why it matters beyond a stuck banner: `navigatingTo` gates the face
+  /// greeting (navigation owns the speaker), so a stale value silenced every
+  /// greeting until the app was restarted.
+  static const Duration _navStaleAfter = Duration(minutes: 7);
+
+  void _armNavStaleWatch() {
+    _navStaleTimer?.cancel();
+    _navStaleTimer = Timer(_navStaleAfter, () {
+      if (!mounted || state.navigatingTo == null) return;
+      debugPrint('navSync: no nav update in ${_navStaleAfter.inMinutes}m — '
+          'clearing stale navigation state');
+      InteractionLog.log('nav_state_stale_cleared', state.navigatingTo!.name);
+      state = state.copyWith(clearNavigating: true, clearEscort: true);
+    });
+  }
+
+  void _cancelNavStaleWatch() {
+    _navStaleTimer?.cancel();
+    _navStaleTimer = null;
+  }
   Timer? _escortTimer; // periodic "please stay with me" while escorting
   // Departure announced for this nav target — guards the double-speak between
   // the INSTANT announcement in goTo() (robot-initiated: speak BEFORE the
@@ -213,6 +240,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     }
     if (m['active'] != true) {
       _stopEscortTimer();
+      _cancelNavStaleWatch();
       _announcedDeparture = null; // nav over → next one announces again
       if (m['arrived'] == true) {
         // Spine's arrival watcher confirmed the robot reached the point.
@@ -256,6 +284,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
       clearArrived: true,
       navSource: (m['source'] as String?) ?? 'admin',
     );
+    _armNavStaleWatch();
   }
 
   /// What the robot says on arrival: the point's custom announcement (stored in
@@ -271,7 +300,10 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// surface a transient "arrived" banner.
   void _onNaviEvent(NaviEvent e) {
     if (!mounted) return;
-    if (e.isArrival || e.kind == 'cancel_result') _stopEscortTimer();
+    if (e.isArrival || e.kind == 'cancel_result') {
+      _stopEscortTimer();
+      _cancelNavStaleWatch();
+    }
     if (e.isArrival) {
       final target = state.navigatingTo;
       final name = target?.name ?? 'the destination';
@@ -293,6 +325,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     _naviStateSub?.cancel();
     _escortEventSub?.cancel();
     _stopEscortTimer();
+    _cancelNavStaleWatch();
     super.dispose();
   }
 
@@ -381,6 +414,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   Future<bool> goTo(NavPoint point) async {
     state = state.copyWith(
         navigatingTo: point, clearArrived: true, navSource: 'robot');
+    _armNavStaleWatch();
     // Speak BEFORE dispatching: the visitor must hear an acknowledgement the
     // moment their command is accepted, not after the spine round-trip. The
     // navi_state broadcast that follows is deduped by _announceDeparture.
@@ -443,6 +477,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
 
   /// Mark navigation finished (e.g. the operator dismisses the banner).
   void clearNavigating() {
+    _cancelNavStaleWatch();
     if (mounted) state = state.copyWith(clearNavigating: true);
   }
 
