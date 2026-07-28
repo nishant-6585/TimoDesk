@@ -41,6 +41,7 @@ class SpineClient {
   final _presenceCtrl = StreamController<bool>.broadcast();
   final _connCtrl = StreamController<bool>.broadcast();
   final _naviCtrl = StreamController<Map<String, dynamic>>.broadcast();
+  final _escortCtrl = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
@@ -59,6 +60,11 @@ class SpineClient {
   /// Spine-owned cross-client navigation state ({active, name, cancelling, …}).
   /// Fired whenever ANY client (web admin or this robot) starts/cancels a Go To.
   Stream<Map<String, dynamic>> get naviState => _naviCtrl.stream;
+
+  /// Follow-Me escort lifecycle from the spine sequencer:
+  /// {event:'started'|'checkpoint'|'arrival_check'|'person_confirmed'|'finished', …}.
+  /// The nav provider speaks these so checkpoint pauses aren't silent.
+  Stream<Map<String, dynamic>> get escortEvents => _escortCtrl.stream;
 
   bool get isConnected => _authed;
 
@@ -161,6 +167,7 @@ class SpineClient {
           return;
         case 'event':
           if (msg['event'] == 'face_detected') _handleFaceDetected(msg);
+          if (msg['event'] == 'escort_event') _handleEscortEvent(msg);
           return;
         case 'robot_status':
           final status = msg['status'];
@@ -199,6 +206,17 @@ class SpineClient {
     }
   }
 
+  void _handleEscortEvent(Map<String, dynamic> msg) {
+    // Shape: { event:'escort_event', eventPayload:{ payload:{event, …} } }
+    final ep = msg['eventPayload'];
+    if (ep is! Map) return;
+    final payload = ep['payload'];
+    if (payload is! Map) return;
+    if (!_escortCtrl.isClosed) {
+      _escortCtrl.add(Map<String, dynamic>.from(payload));
+    }
+  }
+
   void _onClosed() {
     _authed = false;
     if (!_connCtrl.isClosed) _connCtrl.add(false);
@@ -225,5 +243,6 @@ class SpineClient {
     await _presenceCtrl.close();
     await _connCtrl.close();
     await _naviCtrl.close();
+    await _escortCtrl.close();
   }
 }

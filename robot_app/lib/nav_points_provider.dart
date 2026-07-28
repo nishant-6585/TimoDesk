@@ -80,6 +80,10 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // or this robot) syncs the banner + cancel UI here.
     _naviStateSub =
         _ref.read(navSpineClientProvider).naviState.listen(_onSpineNaviState);
+    // Escort lifecycle events → spoken lines, so a checkpoint pause is never
+    // silent (the visitor being escorted must know why the robot stopped).
+    _escortEventSub =
+        _ref.read(navSpineClientProvider).escortEvents.listen(_onEscortEvent);
   }
 
   final Ref _ref;
@@ -92,6 +96,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   );
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
+  StreamSubscription<Map<String, dynamic>>? _escortEventSub;
   Timer? _escortTimer; // periodic "please stay with me" while escorting
   // Departure announced for this nav target — guards the double-speak between
   // the INSTANT announcement in goTo() (robot-initiated: speak BEFORE the
@@ -159,6 +164,40 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     InteractionLog.log('departure', '$name (source: $source)');
     _speakArrival('Okay, follow me to $name.');
     if (source == 'robot') _startEscortTimer();
+  }
+
+  // Spoken escort-check lines. The pause phrase is the critical one: the spine
+  // cancels the goal mid-leg for a person check and the robot would otherwise
+  // just stop dead in silence — the visitor has to know it's deliberate.
+  // (Candidates for RobotConfig settings later; the lost line reuses the
+  // ambient screen's configurable phrasing style but is mid-route specific.)
+  static const _checkPhrase =
+      'One moment — just making sure you are still with me.';
+  static const _resumePhrase = 'Great, there you are. This way.';
+  static const _lostPhrase =
+      'It seems we got separated. I will wait right here — '
+      'please find me if you still need me.';
+
+  /// Speak the escort lifecycle so the visitor understands each pause.
+  void _onEscortEvent(Map<String, dynamic> e) {
+    if (!mounted) return;
+    final event = e['event'] as String?;
+    switch (event) {
+      case 'checkpoint':
+      case 'arrival_check':
+        _speakArrival(_checkPhrase);
+      case 'person_confirmed':
+        // Only checkpoint confirmations get a spoken resume — an arrival
+        // confirmation flows straight into the next leg's departure
+        // announcement ("Okay, follow me to …"), which already covers it.
+        if (e['at'] == 'checkpoint') _speakArrival(_resumePhrase);
+      case 'finished':
+        if (e['reason'] == 'visitor_lost') {
+          InteractionLog.log('escort_lost_midroute',
+              state.navigatingTo?.name ?? 'unknown leg');
+          _speakArrival(_lostPhrase);
+        }
+    }
   }
 
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
@@ -252,6 +291,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   void dispose() {
     _naviSub?.cancel();
     _naviStateSub?.cancel();
+    _escortEventSub?.cancel();
     _stopEscortTimer();
     super.dispose();
   }
