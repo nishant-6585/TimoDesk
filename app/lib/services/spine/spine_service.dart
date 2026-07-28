@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../core/constants.dart';
 import '../../core/spine_base.dart';
 import 'spine_state.dart';
+import 'escort_status_provider.dart';
 import 'face_detection_provider.dart';
 import 'navi_status_provider.dart';
 import 'visitor_arrived_provider.dart';
@@ -201,6 +202,10 @@ class SpineService extends StateNotifier<SpineState> {
     } else if (msgType == 'navi_state') {
       // Spine-owned cross-client navigation state: a Go To / Cancel from ANY
       // client (web admin or robot app) lands here on every client.
+      // Escort progress rides on the same message (absent → no escort running).
+      _ref
+          .read(escortStatusProvider.notifier)
+          .sync(msg['escort'] as Map<String, dynamic>?);
       final active = msg['active'] == true;
       print('[SpineService] [NAVI STATE] active=$active name=${msg['name']} cancelling=${msg['cancelling']}');
       final notifier = _ref.read(naviStatusProvider.notifier);

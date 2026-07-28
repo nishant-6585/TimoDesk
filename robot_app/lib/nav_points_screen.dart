@@ -30,6 +30,10 @@ class NavPointsScreen extends ConsumerStatefulWidget {
 }
 
 class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
+  // Follow-Me escort route builder (ordered; last point = destination).
+  final List<NavPoint> _escortRoute = [];
+  bool _escortOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -118,6 +122,23 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
 
   String _clean(Object e) => e.toString().replaceFirst('Exception: ', '');
 
+  void _onEscortStart() {
+    final ok =
+        ref.read(navPointsProvider.notifier).escortStart(_escortRoute);
+    if (ok) {
+      _snack('Escort started — I\'ll check my visitor is following');
+      setState(() => _escortOpen = false);
+    } else {
+      _snack('Escort needs the spine connection (person checks run there)',
+          error: true);
+    }
+  }
+
+  void _onEscortStop() {
+    ref.read(navPointsProvider.notifier).escortStop();
+    _snack('Escort stopped');
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -127,10 +148,17 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
       body: SafeArea(
         child: Column(children: [
           _topBar(),
-          if (s.navigatingTo != null) _navBanner(s.navigatingTo!),
-          if (s.navigatingTo == null && s.arrivedAt != null)
+          // An active escort owns the banner slot (its Stop ends the escort;
+          // the plain nav banner's Cancel would too, but says the wrong thing).
+          if (s.escort != null)
+            _escortBanner(s.escort!)
+          else if (s.navigatingTo != null)
+            _navBanner(s.navigatingTo!),
+          if (s.escort == null && s.navigatingTo == null && s.arrivedAt != null)
             _arrivedBanner(s.arrivedAt!),
           _captureBar(s.capturing),
+          if (s.escort == null)
+            _escortBuilder(s.points.valueOrNull ?? const []),
           Expanded(
             child: s.points.when(
               loading: () => const Center(
@@ -293,6 +321,206 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
             ]),
           ),
         ),
+      ]),
+    );
+  }
+
+  // ── Escort banner (active Follow-Me: progress + Stop) ───────────────────────
+  Widget _escortBanner(Map<String, dynamic> escort) {
+    final index = (escort['index'] as num?)?.toInt() ?? 0;
+    final total = (escort['total'] as num?)?.toInt() ?? 0;
+    final checking = escort['checking'] == true;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1412),
+        border: Border(bottom: BorderSide(color: _line)),
+      ),
+      child: Row(children: [
+        if (checking)
+          const Icon(Icons.person_search_rounded,
+              size: 24, color: Color(0xFFF59E0B))
+        else
+          const SizedBox(
+              width: 20,
+              height: 20,
+              child:
+                  CircularProgressIndicator(strokeWidth: 2.5, color: _accent)),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Escorting — waypoint ${index + 1} of $total',
+                    style: const TextStyle(
+                        color: _ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(
+                    checking
+                        ? 'Paused — looking for my visitor…'
+                        : 'Leading the visitor (person checks every ~2m)',
+                    style: TextStyle(
+                        color: checking ? const Color(0xFFF59E0B) : _muted,
+                        fontSize: 12)),
+              ]),
+        ),
+        GestureDetector(
+          onTap: _onEscortStop,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5484D),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.stop_rounded, size: 20, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Stop escort',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // ── Escort builder (collapsible: tap points → ordered route → start) ────────
+  Widget _escortBuilder(List<NavPoint> points) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF181818), Color(0xFF141414)]),
+        border: Border.all(color: _line),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          onTap: () => setState(() => _escortOpen = !_escortOpen),
+          child: Row(children: [
+            const Icon(Icons.directions_walk_rounded, size: 20, color: _accent),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text('ESCORT — FOLLOW ME',
+                  style: TextStyle(
+                      color: _muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2)),
+            ),
+            if (_escortRoute.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text('${_escortRoute.length} stop(s)',
+                    style: const TextStyle(color: _muted2, fontSize: 12)),
+              ),
+            Icon(_escortOpen ? Icons.expand_less : Icons.expand_more,
+                size: 22, color: _muted2),
+          ]),
+        ),
+        if (_escortOpen) ...[
+          const SizedBox(height: 6),
+          const Text(
+              'I walk the route and pause every ~2m to check my visitor is '
+              'still following — I stop if nobody is there.',
+              style: TextStyle(color: _muted2, fontSize: 12)),
+          const SizedBox(height: 12),
+          if (points.isEmpty)
+            const Text('Capture a point first.',
+                style: TextStyle(color: _muted2, fontSize: 13))
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final p in points)
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 16, color: _accent),
+                  label: Text(p.name,
+                      style: const TextStyle(color: _ink, fontSize: 14)),
+                  backgroundColor: _panel2,
+                  side: const BorderSide(color: _line2),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 10),
+                  onPressed: () {
+                    if (_escortRoute.isNotEmpty &&
+                        _escortRoute.last.id == p.id) {
+                      _snack('"${p.name}" is already the last stop');
+                      return;
+                    }
+                    setState(() => _escortRoute.add(p));
+                  },
+                ),
+            ]),
+          if (_escortRoute.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('ROUTE (LAST STOP = DESTINATION)',
+                style: TextStyle(
+                    color: _muted2,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (var i = 0; i < _escortRoute.length; i++)
+                InputChip(
+                  avatar: CircleAvatar(
+                    backgroundColor: _accent.withValues(alpha: 0.2),
+                    child: Text('${i + 1}',
+                        style: const TextStyle(
+                            color: _accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  label: Text(_escortRoute[i].name,
+                      style: const TextStyle(color: _ink, fontSize: 14)),
+                  backgroundColor: _panel2,
+                  side: const BorderSide(color: _line2),
+                  deleteIconColor: _muted2,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 10),
+                  onDeleted: () =>
+                      setState(() => _escortRoute.removeAt(i)),
+                ),
+            ]),
+          ],
+          const SizedBox(height: 14),
+          Row(children: [
+            SizedBox(
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _escortRoute.isEmpty ? null : _onEscortStart,
+                icon: const Icon(Icons.directions_walk_rounded, size: 22),
+                label: const Text('Start escort',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: _panel2,
+                  disabledForegroundColor: _muted2,
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (_escortRoute.isNotEmpty)
+              TextButton(
+                onPressed: () => setState(() => _escortRoute.clear()),
+                child: const Text('Clear',
+                    style: TextStyle(color: _muted, fontSize: 15)),
+              ),
+          ]),
+        ],
       ]),
     );
   }

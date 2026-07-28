@@ -5,6 +5,7 @@ import '../../../core/theme.dart';
 import '../../../services/spine/navi_status_provider.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../providers/nav_points_provider.dart';
+import '../widgets/escort_panel.dart';
 
 /// Navigation Points: capture named SLAM poses by driving the robot, then
 /// one-tap "send robot to <point>". Body-only — AppShell supplies header+sidebar
@@ -239,6 +240,8 @@ class _NavigationScreenState extends ConsumerState<NavigationScreen> {
                 onDismiss: () => ref.read(naviStatusProvider.notifier).clear(),
               ),
             ],
+            const SizedBox(height: 16),
+            EscortPanel(online: online),
             const SizedBox(height: 24),
             pointsAsync.when(
               loading: () => const Padding(

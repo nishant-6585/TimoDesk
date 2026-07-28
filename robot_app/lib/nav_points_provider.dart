@@ -31,9 +31,12 @@ class NavPointsState {
   final bool capturing;
   final NavPoint? navigatingTo; // non-null while a go-to is active
   final String? arrivedAt; // name of the point just reached (transient banner)
-  final String? navSource; // 'robot' | 'admin' | 'patrol' — who started the nav.
+  final String? navSource; // 'robot' | 'admin' | 'patrol' | 'escort' — who started the nav.
   //                          Survives arrival (the escort arrival check needs it);
   //                          overwritten by the next departure.
+  final Map<String, dynamic>? escort; // spine Follow-Me progress
+  //                          {active,index,total,checking} — non-null while the
+  //                          spine escort sequencer is running (from navi_state).
 
   const NavPointsState({
     this.points = const AsyncValue.loading(),
@@ -41,6 +44,7 @@ class NavPointsState {
     this.navigatingTo,
     this.arrivedAt,
     this.navSource,
+    this.escort,
   });
 
   NavPointsState copyWith({
@@ -51,6 +55,8 @@ class NavPointsState {
     String? arrivedAt,
     bool clearArrived = false,
     String? navSource,
+    Map<String, dynamic>? escort,
+    bool clearEscort = false,
   }) =>
       NavPointsState(
         points: points ?? this.points,
@@ -58,6 +64,7 @@ class NavPointsState {
         navigatingTo: clearNavigating ? null : (navigatingTo ?? this.navigatingTo),
         arrivedAt: clearArrived ? null : (arrivedAt ?? this.arrivedAt),
         navSource: navSource ?? this.navSource,
+        escort: clearEscort ? null : (escort ?? this.escort),
       );
 }
 
@@ -157,6 +164,14 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// Apply a spine navi_state broadcast (the shared cross-client truth).
   void _onSpineNaviState(Map<String, dynamic> m) {
     if (!mounted) return;
+    // Follow-Me escort progress rides on navi_state; the spine only includes
+    // the field while its escort sequencer runs → absent means not escorting.
+    final escort = m['escort'] as Map<String, dynamic>?;
+    if (escort?['active'] == true) {
+      state = state.copyWith(escort: escort);
+    } else if (state.escort != null) {
+      state = state.copyWith(clearEscort: true);
+    }
     if (m['active'] != true) {
       _stopEscortTimer();
       _announcedDeparture = null; // nav over → next one announces again
@@ -389,6 +404,36 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// Mark navigation finished (e.g. the operator dismisses the banner).
   void clearNavigating() {
     if (mounted) state = state.copyWith(clearNavigating: true);
+  }
+
+  /// Start a Follow-Me escort over [route] (in order; last point is the
+  /// destination). The sequencer + camera person-checks run IN THE SPINE, so
+  /// this requires a live spine connection — no native fallback. Returns false
+  /// when the spine is unreachable so the screen can say why.
+  bool escortStart(List<NavPoint> route) {
+    final spine = _ref.read(navSpineClientProvider);
+    if (!spine.isConnected || route.isEmpty) return false;
+    InteractionLog.log('escort_start', route.map((p) => p.name).join(' → '));
+    spine.sendIntent({
+      'intent': 'escort_start',
+      'points': [
+        for (final p in route)
+          {
+            ...p.pose,
+            'name': p.name,
+            if (p.description?.trim().isNotEmpty == true)
+              'arrivalText': p.description!.trim(),
+          }
+      ],
+    });
+    return true;
+  }
+
+  /// Stop the running escort (also cancels the active leg).
+  void escortStop() {
+    final spine = _ref.read(navSpineClientProvider);
+    if (spine.isConnected) spine.sendIntent({'intent': 'escort_stop'});
+    if (mounted) state = state.copyWith(clearEscort: true);
   }
 }
 

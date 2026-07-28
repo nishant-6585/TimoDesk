@@ -142,6 +142,29 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
     _ref.read(spineProvider.notifier).sendIntent({'intent': 'patrol_stop'});
   }
 
+  /// Start a Follow-Me escort over [route] in order. Unlike patrol, the spine
+  /// verifies a person is present (camera check) at each waypoint and every
+  /// ~2m mid-leg before proceeding; nobody within the timeout stops the escort.
+  void escortStart(List<NavPoint> route) {
+    _ref.read(spineProvider.notifier).sendIntent({
+      'intent': 'escort_start',
+      'points': [
+        for (final p in route)
+          {
+            'x': p.x, 'y': p.y, 'z': p.z, 'rotation': p.rotation,
+            'name': p.name,
+            if (p.description?.trim().isNotEmpty == true)
+              'arrivalText': p.description!.trim(),
+          }
+      ],
+    });
+  }
+
+  /// Stop the running escort (also cancels the active leg).
+  void escortStop() {
+    _ref.read(spineProvider.notifier).sendIntent({'intent': 'escort_stop'});
+  }
+
   /// Cancel the in-flight navigation. The banner clears when the robot's
   /// cancel_result navi_event comes back through the spine.
   void cancelNavi() {
