@@ -31,6 +31,8 @@ import {
   handleElevenLabsAsk,
 } from './handlers/kb';
 import { handleEntraSync } from './handlers/entra';
+import { handleMcpPlugins } from './handlers/mcp-plugins';
+import { getMcpPluginRegistry } from './services/mcp-plugins';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -370,6 +372,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             res.end(JSON.stringify({ ok: false, reason: 'bad body' }));
           }
         });
+        return;
+      }
+
+      // MCP plugin platform: add/remove/toggle external MCP servers (Slack,
+      // Microsoft 365, CRM, …) via config — no Supabase dependency.
+      if (url.startsWith('/mcp/plugins')) {
+        await handleMcpPlugins(req, res, getMcpPluginRegistry());
         return;
       }
 

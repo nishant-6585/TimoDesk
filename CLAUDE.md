@@ -25,9 +25,10 @@ robot_app/          Flutter on Mikee chest screen — MJPEG server + (future) na
 viewer_web/         Single-file HTML control UI — WebSocket to spine
 viewer_mobile/      Flutter mobile camera viewer
 signaling_server/   Node.js WebRTC signaling + serves viewer_web
-spine/              ★ TypeScript broker — central safety layer. RealRobotSDK only. Tests: 46 passing.
+spine/              ★ TypeScript broker — central safety layer. RealRobotSDK only. Tests: 114 passing.
 supabase/           5 migrations · 8 tables · RLS everywhere · pgvector for face/KB embeddings · DPDP-compliant purge
 app/                ★ Flutter admin — 7 features (auth, dashboard, control, live_feed, gallery, events, settings)
+mcp_server/         mikee-mcp-server — MCP server (stdio) exposing spine intents + KB to any MCP client. A CLIENT of the spine; interlocks apply.
 ```
 
 ## Key architectural decisions
@@ -36,6 +37,7 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 2. **Real robot only.** The spine talks exclusively to the physical Mikee via `RealRobotSDK` (WS ports 8081/8082/8083 + HTTP snapshot/battery). The old MockRobotSDK and `ROBOT_MODE` swap were removed (June 2026) — set `ROBOT_IP` and the spine connects on boot.
 3. **Stateless Flutter client.** App sends intents, receives status. Spine + Supabase own state. Closing the app mid-session is safe.
 4. **DPDP compliance baked in.** Staff face data isolated, opt-in only. Visitor table has zero biometric fields. Nightly auto-purge.
+5. **MCP two ways.** `mcp_server/` exposes the robot + KB to any MCP client (through spine intents — interlocks apply to AI agents). The spine's plugin platform (`/mcp/plugins` endpoints, file-backed registry in `spine/mcp-plugins.json`, tokens never returned over HTTP) declares external MCP servers (Slack, M365, CRM); the voice brain consumes them via the Claude MCP connector only when `MCP_TOOLS_ENABLED=true` (default off — the plain grounded voice path is untouched).
 
 ## Conventions to follow
 
@@ -82,6 +84,7 @@ app/                ★ Flutter admin — 7 features (auth, dashboard, control, 
 | Flutter admin (Android) | `cd app && flutter run -d android` |
 | Robot app (real hardware) | `cd robot_app && flutter build apk --debug && adb install build/app/outputs/flutter-apk/app-debug.apk` |
 | Viewer web | open `viewer_web/index.html` in any browser |
+| MCP server | `cd mcp_server && npm install && npm run build` · tests: `npm test` · env: `SPINE_URL`, `SPINE_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
 
 ## Current status (snapshot)
 

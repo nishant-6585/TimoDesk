@@ -13,6 +13,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { searchKb, KbHit } from './kb';
+import { getMcpPluginRegistry, buildMcpRequestExtras } from './mcp-plugins';
 
 /** Confidence needed for a cached FAQ answer to skip the LLM entirely (blueprint §06.2). */
 export const FAQ_FAST_PATH_THRESHOLD = 0.85;
@@ -56,14 +57,31 @@ function buildUserPrompt(question: string, chunks: KbHit[]): string {
   return `CONTEXT:\n${context}\n\nVISITOR QUESTION: ${question}`;
 }
 
+/** Extra grounding line added when MCP plugin tools are available to the model. */
+const TOOLS_PROMPT_ADDENDUM = `
+- Connected tools (calendar, messaging, ticketing) may be available. Use them ONLY to answer the visitor's question or do what they explicitly asked (e.g. check availability, notify a host). Summarise the result in the same 2-3 spoken sentences.`;
+
 /**
  * Generate a grounded spoken answer with Claude. Thinking is left OFF (omitted)
  * and effort is low — a 2-3 sentence grounded answer isn't a reasoning task, and
  * voice latency matters more than depth here. The system prompt's final-answer-only
  * rule prevents reasoning leaking into the visible response (Opus 4.8 note).
+ *
+ * MCP plugins: when MCP_TOOLS_ENABLED=true and plugins are enabled in the
+ * registry, the call goes through the beta MCP connector so the model can use
+ * external tools (Slack, calendar, CRM). Default OFF — the plain grounded call
+ * below is the demo-critical voice path and stays untouched.
  */
 async function generateGroundedAnswer(question: string, chunks: KbHit[]): Promise<string> {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+
+  const extras =
+    process.env.MCP_TOOLS_ENABLED === 'true'
+      ? buildMcpRequestExtras(getMcpPluginRegistry().enabledPlugins())
+      : null;
+
+  if (extras) return generateWithMcpTools(client, question, chunks, extras);
+
   const resp = await client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 512,
@@ -71,12 +89,51 @@ async function generateGroundedAnswer(question: string, chunks: KbHit[]): Promis
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(question, chunks) }],
   });
-  const text = resp.content
+  return extractText(resp.content);
+}
+
+function extractText(content: Array<{ type: string }>): string {
+  return content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map(b => b.text)
     .join('')
     .trim();
-  return text;
+}
+
+/**
+ * Grounded answer via the Claude API MCP connector (beta mcp-client-2025-11-20).
+ * The connector runs the tool loop server-side; a long-running turn can return
+ * stop_reason 'pause_turn' — re-send with the assistant turn appended to resume
+ * (bounded, so a wedged tool can't hang the reception line).
+ */
+async function generateWithMcpTools(
+  client: Anthropic,
+  question: string,
+  chunks: KbHit[],
+  extras: NonNullable<ReturnType<typeof buildMcpRequestExtras>>
+): Promise<string> {
+  const messages: Anthropic.Beta.BetaMessageParam[] = [
+    { role: 'user', content: buildUserPrompt(question, chunks) },
+  ];
+
+  const MAX_CONTINUATIONS = 3;
+  for (let i = 0; ; i++) {
+    const resp = await client.beta.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      output_config: { effort: 'low' },
+      system: SYSTEM_PROMPT + TOOLS_PROMPT_ADDENDUM,
+      betas: extras.betas,
+      mcp_servers: extras.mcp_servers,
+      // mcp_toolset entries — one per declared server, required by the connector.
+      tools: extras.tools as unknown as Anthropic.Beta.BetaToolUnion[],
+      messages,
+    });
+    if (resp.stop_reason !== 'pause_turn' || i >= MAX_CONTINUATIONS) {
+      return extractText(resp.content);
+    }
+    messages.push({ role: 'assistant', content: resp.content });
+  }
 }
 
 export interface AskDeps {
