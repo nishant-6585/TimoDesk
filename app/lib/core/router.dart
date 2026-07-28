@@ -14,6 +14,7 @@ import '../features/navigation/screens/navigation_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/staff/screens/staff_enrollment_screen.dart';
 import '../features/knowledge_base/screens/knowledge_base_screen.dart';
+import '../features/mcp_plugins/screens/mcp_plugins_screen.dart';
 import '../features/shared/layouts/app_shell.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -168,6 +169,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/knowledge-base',
             name: 'knowledge_base',
             builder: (context, state) => const KnowledgeBaseScreen(),
+          ),
+          GoRoute(
+            path: '/mcp-plugins',
+            name: 'mcp_plugins',
+            builder: (context, state) => const McpPluginsScreen(),
           ),
           GoRoute(
             path: '/settings',
