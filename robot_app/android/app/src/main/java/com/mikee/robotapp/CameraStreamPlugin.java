@@ -113,6 +113,20 @@ public class CameraStreamPlugin
     private ScheduledExecutorService statusScheduler;
     private final Handler            mainHandler = new Handler(Looper.getMainLooper());
 
+    // ── Freeze watchdog ───────────────────────────────────────────────────────
+    // The USB camera pipeline occasionally freezes (device contention): the
+    // capture session stays "open" but onImageAvailable stops firing, so every
+    // consumer (/stream, /snapshot, gaze, spine face-rec) serves the LAST frame
+    // forever. Detect staleness (no frame for FREEZE_AFTER_MS) and force a full
+    // close→reopen of camera2, with linear backoff so a genuinely absent camera
+    // isn't hammered.
+    private static final long FREEZE_AFTER_MS   = 8_000;
+    private static final long WATCHDOG_TICK_MS  = 5_000;
+    private volatile long lastFrameAtMs   = 0;
+    private volatile long lastReopenAtMs  = 0;
+    private volatile int  reopenAttempts  = 0;
+    private ScheduledExecutorService freezeWatchdog;
+
     public CameraStreamPlugin(Context context) {
         this.context = context;
     }
@@ -133,14 +147,40 @@ public class CameraStreamPlugin
     private void startStream(MethodChannel.Result result) {
         if (streaming) { result.success(buildStatus()); return; }
         streaming = true;
+        lastFrameAtMs = System.currentTimeMillis(); // baseline until frames flow
+        reopenAttempts = 0;
         startCamera();
         startServer();
         startStatusBroadcast();
+        startFreezeWatchdog();
         result.success(buildStatus());
+    }
+
+    private void startFreezeWatchdog() {
+        if (IS_MOCK) return;
+        if (freezeWatchdog != null) freezeWatchdog.shutdownNow();
+        freezeWatchdog = Executors.newSingleThreadScheduledExecutor();
+        freezeWatchdog.scheduleWithFixedDelay(() -> {
+            if (!streaming) return;
+            final long now = System.currentTimeMillis();
+            if (now - lastFrameAtMs < FREEZE_AFTER_MS) return;
+            // Linear backoff: 2s, 4s, 6s… capped at 30s between reopen attempts.
+            final long backoff = Math.min(2_000L * Math.max(1, reopenAttempts), 30_000L);
+            if (now - lastReopenAtMs < backoff) return;
+            lastReopenAtMs = now;
+            reopenAttempts++;
+            Log.w(TAG, "Camera FROZEN (no frame for " + (now - lastFrameAtMs)
+                    + "ms) — reopening (attempt " + reopenAttempts + ")");
+            mainHandler.post(() -> {
+                forceCloseCamera2();
+                if (streaming) startCamera2();
+            });
+        }, WATCHDOG_TICK_MS, WATCHDOG_TICK_MS, TimeUnit.MILLISECONDS);
     }
 
     private void stopStream(MethodChannel.Result result) {
         streaming = false;
+        if (freezeWatchdog != null) { freezeWatchdog.shutdownNow(); freezeWatchdog = null; }
         stopCamera2();
         sdkStatus = IS_MOCK ? SdkStatus.CONNECTED : SdkStatus.CONNECTING;
         if (statusScheduler != null) { statusScheduler.shutdownNow(); statusScheduler = null; }
@@ -270,9 +310,20 @@ public class CameraStreamPlugin
                 }
                 @Override
                 public void onDisconnected(CameraDevice camera) {
-                    Log.w(TAG, "Camera disconnected");
+                    Log.w(TAG, "Camera disconnected — scheduling reopen");
                     camera.close();
                     cameraDevice = null;
+                    // USB contention drop: reopen after a beat instead of going
+                    // dark until an app restart (the watchdog would also catch
+                    // this, but the explicit path recovers faster).
+                    if (streaming) {
+                        mainHandler.postDelayed(() -> {
+                            if (streaming && cameraDevice == null) {
+                                forceCloseCamera2();
+                                startCamera2();
+                            }
+                        }, 2_000);
+                    }
                 }
                 @Override
                 public void onError(CameraDevice camera, int error) {
@@ -339,17 +390,23 @@ public class CameraStreamPlugin
             // WebRTC still needs the camera — keep it open, MJPEG server is just stopping
             return;
         }
-        if (!IS_MOCK) {
-            try { if (captureSession != null) captureSession.close(); } catch (Exception ignored) {}
-            try { if (cameraDevice  != null)  cameraDevice.close();   } catch (Exception ignored) {}
-            try { if (imageReader   != null)  imageReader.close();    } catch (Exception ignored) {}
-            captureSession = null;
-            cameraDevice   = null;
-            imageReader    = null;
-            if (cameraHandlerThread != null) {
-                cameraHandlerThread.quitSafely();
-                cameraHandlerThread = null;
-            }
+        forceCloseCamera2();
+    }
+
+    /// Unconditional camera teardown — used by the freeze watchdog before a
+    /// reopen (must run even while a WebRTC consumer is registered: a frozen
+    /// camera serves WebRTC nothing either).
+    private void forceCloseCamera2() {
+        if (IS_MOCK) return;
+        try { if (captureSession != null) captureSession.close(); } catch (Exception ignored) {}
+        try { if (cameraDevice  != null)  cameraDevice.close();   } catch (Exception ignored) {}
+        try { if (imageReader   != null)  imageReader.close();    } catch (Exception ignored) {}
+        captureSession = null;
+        cameraDevice   = null;
+        imageReader    = null;
+        if (cameraHandlerThread != null) {
+            cameraHandlerThread.quitSafely();
+            cameraHandlerThread = null;
         }
     }
 
@@ -396,6 +453,8 @@ public class CameraStreamPlugin
 
     private void pushFrame(byte[] jpeg) {
         latestJpeg = jpeg;
+        lastFrameAtMs = System.currentTimeMillis(); // feeds the freeze watchdog
+        reopenAttempts = 0; // frames flowing again → reset the backoff
         recordFrame();
 
         // Forward to WebRTC consumer if registered (no second camera open needed)
