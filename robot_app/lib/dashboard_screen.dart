@@ -54,10 +54,16 @@ class DashboardScreen extends ConsumerStatefulWidget {
     super.key,
     required this.voiceAgent,
     required this.audioBridge,
+    required this.onStartTalk,
   });
 
   final VoiceAgent voiceAgent;
   final AudioBridge audioBridge;
+  // Starts a manual voice session using the ambient screen's full mic pipeline
+  // (mic capture + half-duplex gate + playback), which the ambient screen owns
+  // and keeps running behind the dashboard. Wired to _startVoice there — the
+  // dashboard never opens a second ElevenLabs connection or touches the mic.
+  final VoidCallback onStartTalk;
 
   @override
   ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
@@ -362,36 +368,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) _resetIdle();
   }
 
-  // Slim banner shown only while a voice session is live: status + an explicit
-  // "End Conversation" control (the shared session is otherwise stopped only from
-  // the face screen). Ends the same session both screens share.
+  // Always-visible voice bar: idle → "Talk to me" (starts a session via the
+  // ambient screen's mic pipeline); active → status + "End Conversation".
+  // Gives the dashboard its own way to start/stop the mic, mirroring the face
+  // screen's mic button.
   Widget _conversationBar() {
+    final active = _voiceActive;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C1412),
-        border: Border(bottom: BorderSide(color: _line)),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF1C1412) : _panel,
+        border: const Border(bottom: BorderSide(color: _line)),
       ),
       child: Row(children: [
-        const Icon(Icons.graphic_eq_rounded, size: 18, color: _accent),
+        Icon(active ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
+            size: 18, color: active ? _accent : _muted),
         const SizedBox(width: 10),
-        const Text('Conversation active',
-            style: TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w600)),
+        Text(active ? 'Conversation active' : 'Tap Talk to speak with me',
+            style: TextStyle(
+                color: active ? _ink : _muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
         const Spacer(),
         GestureDetector(
-          onTap: () => widget.voiceAgent.endSession(),
+          onTap: () {
+            _resetIdle();
+            if (active) {
+              widget.voiceAgent.endSession();
+            } else {
+              widget.onStartTalk();
+            }
+          },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFE5484D),
+              color: active ? const Color(0xFFE5484D) : _accent,
               borderRadius: BorderRadius.circular(99),
             ),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.stop_rounded, size: 18, color: Colors.white),
-              SizedBox(width: 6),
-              Text('End Conversation',
-                  style: TextStyle(
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(active ? Icons.stop_rounded : Icons.mic_rounded,
+                  size: 18, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(active ? 'End Conversation' : 'Talk',
+                  style: const TextStyle(
                       color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
             ]),
           ),
@@ -528,7 +548,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         body: SafeArea(
           child: Column(children: [
             _topBar(),
-            if (_voiceActive) _conversationBar(),
+            _conversationBar(),
             Expanded(
               child: LayoutBuilder(builder: (context, c) {
                 final w = c.maxWidth;

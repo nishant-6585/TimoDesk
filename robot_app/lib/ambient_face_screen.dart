@@ -1226,6 +1226,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       builder: (_) => DashboardScreen(
         voiceAgent: _voiceAgent,
         audioBridge: _audioBridge,
+        // The dashboard "Talk" button reuses THIS screen's mic pipeline — it's
+        // still mounted behind the dashboard, so _startVoice fully works.
+        onStartTalk: () => _startVoice(),
       ),
     ));
   }
