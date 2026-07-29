@@ -761,6 +761,16 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               startNaviWatch();
             } else if (it === 'dock') {
               startDockState(msg.intent?.source ?? 'admin');
+            } else if (it === 'stop_voice') {
+              // Admin wants to stop the robot's active voice/listening session.
+              // The session lives on the robot app (ElevenLabs), so broadcast a
+              // voice_control command to ALL clients — the robot app's SpineClient
+              // picks it up and ends its session.
+              const vc = { type: 'voice_control', action: 'stop' } as SpineMessage;
+              console.log('[Spine] Broadcasting voice_control: stop (admin request)');
+              wss.clients.forEach((c) => {
+                if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(vc));
+              });
             } else if (it === 'cancel_navi' && naviState.active) {
               naviState = { ...naviState, cancelling: true };
               broadcastNaviState();

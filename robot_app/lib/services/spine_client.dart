@@ -42,6 +42,7 @@ class SpineClient {
   final _connCtrl = StreamController<bool>.broadcast();
   final _naviCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _escortCtrl = StreamController<Map<String, dynamic>>.broadcast();
+  final _voiceControlCtrl = StreamController<String>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
@@ -65,6 +66,10 @@ class SpineClient {
   /// {event:'started'|'checkpoint'|'arrival_check'|'person_confirmed'|'finished', …}.
   /// The nav provider speaks these so checkpoint pauses aren't silent.
   Stream<Map<String, dynamic>> get escortEvents => _escortCtrl.stream;
+
+  /// Admin-issued voice control from spine — currently the action string
+  /// 'stop' (end the active listening/voice session remotely).
+  Stream<String> get voiceControl => _voiceControlCtrl.stream;
 
   bool get isConnected => _authed;
 
@@ -180,6 +185,13 @@ class SpineClient {
         case 'navi_state':
           if (!_naviCtrl.isClosed) _naviCtrl.add(msg);
           return;
+        case 'voice_control':
+          // Admin remote control of the robot's voice session (e.g. 'stop').
+          final action = msg['action'] as String?;
+          if (action != null && !_voiceControlCtrl.isClosed) {
+            _voiceControlCtrl.add(action);
+          }
+          return;
       }
     } catch (_) {
       // ignore malformed frames
@@ -244,5 +256,6 @@ class SpineClient {
     await _connCtrl.close();
     await _naviCtrl.close();
     await _escortCtrl.close();
+    await _voiceControlCtrl.close();
   }
 }

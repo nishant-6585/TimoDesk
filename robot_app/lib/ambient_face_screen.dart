@@ -68,6 +68,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<FaceDetectedEvent>? _faceSub;
   StreamSubscription<void>? _unknownSub; // spine saw a face, matched no staff
   StreamSubscription<bool>? _presenceSub;
+  StreamSubscription<String>? _voiceControlSub; // admin remote voice stop
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
   StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
   String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
@@ -179,6 +180,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _faceSub = _spine.faceDetected.listen(_onFaceDetected);
     _unknownSub = _spine.unknownFace.listen(_onUnknownFace);
     _presenceSub = _spine.personDetected.listen(_onPersonDetected);
+    // Admin can remotely stop the robot's listening/voice session from the
+    // dashboard (e.g. to cut off a runaway conversation). End it here.
+    _voiceControlSub = _spine.voiceControl.listen((action) {
+      if (action == 'stop' && _voiceActive) {
+        debugPrint('Voice: admin remote stop → ending session');
+        InteractionLog.log('voice_stopped_by_admin', 'remote stop');
+        _endVoice();
+      }
+    });
     // On-device person sensors (laser/RGBD/ultrasonic) → idle→attentive ONLY.
     // Deliberately NOT a greeting trigger: greetings fire exclusively from the
     // camera attention gate (a face looking at the robot), never from LIDAR.
@@ -265,6 +275,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _faceSub?.cancel();
     _unknownSub?.cancel();
     _presenceSub?.cancel();
+    _voiceControlSub?.cancel();
     _sdkPersonSub?.cancel();
     _faceRecgSub?.cancel();
     _gaze.dispose();
