@@ -199,6 +199,29 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     result.error("cancelNavi", e.getMessage(), null);
                 }
                 break;
+            case "goHome":
+                // Return to the charging dock. goHome() is the SDK's return-to-
+                // charge action (dock IR handles final alignment) — same async
+                // mode-settle as navi. Mirrors the WS "go_home" path so the chest
+                // app's Go-to-Charge button works exactly like the admin's.
+                try {
+                    naviInProgress = true;
+                    CsjRobot.getInstance().getAction().setNaviMode(0);
+                    scheduler.schedule(() -> {
+                        try {
+                            CsjRobot.getInstance().getAction().goHome(methodNaviCb);
+                            Log.d(TAG, "goHome dispatched (chest app) after mode-settle");
+                        } catch (Exception e) {
+                            naviInProgress = false;
+                            Log.e(TAG, "goHome dispatch error: " + e.getMessage());
+                        }
+                    }, NAVI_MODE_SETTLE_MS, TimeUnit.MILLISECONDS);
+                    result.success(true);
+                } catch (Exception e) {
+                    naviInProgress = false;
+                    result.error("goHome", e.getMessage(), null);
+                }
+                break;
             default:
                 result.notImplemented();
         }

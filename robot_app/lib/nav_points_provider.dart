@@ -329,6 +329,26 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     super.dispose();
   }
 
+  /// Return to the charging dock (the "Go to Charge" action). Speaks a
+  /// departure line, then drives home via the SDK goHome path (dock IR aligns
+  /// the final approach). No saved point needed — home is the dock the robot
+  /// booted from. Arrival is announced by the same naviEvents path as goTo.
+  Future<bool> goHome() async {
+    InteractionLog.log('go_home', 'returning to charging dock');
+    _speakArrival('Okay, I am returning to my charging station.');
+    try {
+      await _ensureChassis();
+      final ok = await _ref.read(chassisProvider.notifier).goHome();
+      if (!ok) {
+        _speakArrival("Sorry, I couldn't start heading to the dock right now.");
+      }
+      return ok;
+    } catch (e) {
+      debugPrint('goHome: $e');
+      return false;
+    }
+  }
+
   /// Ensure chassis control is started before any getPosition/navi call — the
   /// native SDK no-ops otherwise (mirrors how the dashboard d-pad starts it).
   Future<void> _ensureChassis() async {

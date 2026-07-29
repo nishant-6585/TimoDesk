@@ -427,6 +427,18 @@ class ChassisNotifier extends StateNotifier<ChassisState> {
     }
   }
 
+  /// Return to the charging dock (SDK goHome; the dock self-aligns via IR).
+  /// Same native path the admin's "Go Home" uses through spine.
+  Future<bool> goHome() async {
+    try {
+      final ok = await _chassisMethodCh.invokeMethod<bool>('goHome');
+      return ok ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('goHome: $e');
+      return false;
+    }
+  }
+
   void _applyStatus(Map<dynamic, dynamic> m) {
     state = state.copyWith(
       isRunning: m['isRunning'] as bool?,

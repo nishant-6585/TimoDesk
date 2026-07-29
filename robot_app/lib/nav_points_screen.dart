@@ -205,6 +205,43 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
             ],
           ),
         ),
+        // Go to Charge — send the robot back to its dock (like Alpha Map).
+        GestureDetector(
+          onTap: () async {
+            final ok =
+                await ref.read(navPointsProvider.notifier).goHome();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(ok
+                    ? 'Returning to charging dock…'
+                    : "Couldn't start — check localization / off-dock"),
+                backgroundColor: ok ? const Color(0xFF1C1412) : _accent,
+              ));
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: _accent,
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: [
+                BoxShadow(
+                    color: _accent.withValues(alpha: 0.4), blurRadius: 12),
+              ],
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.battery_charging_full_rounded,
+                  size: 18, color: Colors.white),
+              SizedBox(width: 6),
+              Text('Go to Charge',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+        const SizedBox(width: 12),
         Consumer(builder: (_, ref, __) {
           final running = ref.watch(chassisProvider).isRunning;
           return _pill(running ? const Color(0xFF4ADE80) : Colors.white24,
