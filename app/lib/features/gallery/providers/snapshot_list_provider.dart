@@ -38,3 +38,13 @@ final snapshotListProvider = FutureProvider.autoDispose<List<Snapshot>>((ref) as
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'Failed to load snapshots');
   return (data['captures'] as List).map((e) => Snapshot.fromJson(e as Map<String, dynamic>)).toList();
 });
+
+/// Delete a snapshot (storage object + capture row on spine).
+Future<void> deleteSnapshot(String id) async {
+  final res = await http
+      .delete(Uri.parse('$_spineBase/captures/$id'),
+          headers: {'Authorization': 'Bearer ${_authToken()}'})
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'delete failed');
+}

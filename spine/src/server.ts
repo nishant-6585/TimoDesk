@@ -24,6 +24,7 @@ import { handleVisit } from './handlers/visit';
 import { handleVoiceLog } from './handlers/voice';
 import { handleListStaff, handleUpdateStaff, handleDeleteStaff } from './handlers/staff';
 import { handleListCaptures } from './handlers/captures';
+import { deleteSnapshot } from './captures';
 import { handleAsk } from './handlers/ask';
 import {
   handleKbIngest,
@@ -600,6 +601,46 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       if (url === '/captures' && req.method === 'GET') {
         await handleListCaptures(req, res, supabase);
+        return;
+      }
+      // Delete a snapshot (storage object + capture row).
+      const capDelMatch = (req.url ?? '').match(/^\/captures\/([^/?]+)$/);
+      if (capDelMatch && req.method === 'DELETE') {
+        if (!supabase) { res.writeHead(503); res.end('supabase off'); return; }
+        try {
+          await deleteSnapshot(supabase, decodeURIComponent(capDelMatch[1]));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: String(err) }));
+        }
+        return;
+      }
+      // Delete a recorded clip (path-traversal-safe basename).
+      const recDelMatch = (req.url ?? '').match(/^\/recordings\/([^/?]+)$/);
+      if (recDelMatch && req.method === 'DELETE') {
+        const name = path.basename(decodeURIComponent(recDelMatch[1]));
+        const filePath = path.join(RECORDINGS_DIR, name);
+        if (!name.endsWith('.mp4') || !fs.existsSync(filePath)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: 'not found' }));
+          return;
+        }
+        // Refuse to delete the clip that's still being written.
+        if (recorder && path.basename(recorder.file) === name) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: 'still recording' }));
+          return;
+        }
+        try {
+          fs.unlinkSync(filePath);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: String(err) }));
+        }
         return;
       }
 

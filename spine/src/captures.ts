@@ -138,3 +138,22 @@ export async function listSnapshots(
     };
   });
 }
+
+/** Delete a snapshot: remove the storage object then the capture row. */
+export async function deleteSnapshot(
+  supabase: SupabaseClient,
+  id: string
+): Promise<void> {
+  const { data: row, error: selErr } = await supabase
+    .from('capture')
+    .select('storage_url')
+    .eq('id', id)
+    .single();
+  if (selErr) throw new Error(selErr.message);
+  const storagePath = (row as { storage_url?: string })?.storage_url;
+  if (storagePath) {
+    await supabase.storage.from(SNAPSHOTS_BUCKET).remove([storagePath]);
+  }
+  const { error: delErr } = await supabase.from('capture').delete().eq('id', id);
+  if (delErr) throw new Error(delErr.message);
+}

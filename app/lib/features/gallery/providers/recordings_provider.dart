@@ -39,3 +39,12 @@ final recordingsProvider =
       .map((e) => Recording.fromJson(e as Map<String, dynamic>))
       .toList();
 });
+
+/// Delete a recorded clip file on spine.
+Future<void> deleteRecording(String file) async {
+  final res = await http
+      .delete(Uri.parse('$spineHttpBase/recordings/$file'))
+      .timeout(const Duration(seconds: 12));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'delete failed');
+}

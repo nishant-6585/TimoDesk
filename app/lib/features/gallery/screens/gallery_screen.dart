@@ -142,9 +142,36 @@ class _RecordingsTab extends ConsumerWidget {
   }
 }
 
-class _RecordingRow extends StatelessWidget {
+class _RecordingRow extends ConsumerWidget {
   final Recording rec;
   const _RecordingRow({required this.rec});
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: MikeeColors.cardTop,
+        title: const Text('Delete recording?', style: TextStyle(color: Colors.white)),
+        content: Text(rec.file, style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete', style: TextStyle(color: MikeeColors.error))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await deleteRecording(rec.file);
+      ref.invalidate(recordingsProvider);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
+  }
 
   String _when() {
     if (rec.mtime <= 0) return '';
@@ -154,7 +181,7 @@ class _RecordingRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -200,6 +227,13 @@ class _RecordingRow extends StatelessWidget {
           primary: false,
           onTap: () => launchUrl(Uri.parse(rec.url),
               mode: LaunchMode.externalApplication),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: 'Delete',
+          icon: const Icon(Icons.delete_outline_rounded,
+              color: Colors.white38, size: 20),
+          onPressed: () => _delete(context, ref),
         ),
       ]),
     );
@@ -291,7 +325,7 @@ class _StaffTab extends ConsumerWidget {
 }
 
 /// One admin snapshot — the image, when it was taken, and who took it.
-class _SnapshotTile extends StatelessWidget {
+class _SnapshotTile extends ConsumerWidget {
   final Snapshot snapshot;
   const _SnapshotTile({required this.snapshot});
 
@@ -301,8 +335,35 @@ class _SnapshotTile extends StatelessWidget {
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
   }
 
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: MikeeColors.cardTop,
+        title: const Text('Delete snapshot?', style: TextStyle(color: Colors.white)),
+        content: Text(_when(snapshot.takenAt), style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete', style: TextStyle(color: MikeeColors.error))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await deleteSnapshot(snapshot.id);
+      ref.invalidate(snapshotListProvider);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final url = snapshot.imageUrl;
     final hasImage = url != null && url.isNotEmpty;
 
@@ -321,9 +382,27 @@ class _SnapshotTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Expanded(
-          child: hasImage
-              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder)
-              : placeholder,
+          child: Stack(fit: StackFit.expand, children: [
+            hasImage
+                ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder)
+                : placeholder,
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Material(
+                color: Colors.black54,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => _delete(context, ref),
+                  child: const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ]),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
