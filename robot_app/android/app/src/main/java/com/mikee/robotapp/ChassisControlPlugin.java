@@ -48,6 +48,15 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     private static final float SPEED_MIN = 0.3f;
     private static final float SPEED_MAX = 0.8f;
     private static final int MAX_CLIENTS = 3;
+    // Dead-man: WS-commanded motion (spine teleop/navi) is halted when no frame
+    // arrives from ANY client for this long. The spine pings every 2s, so 8s =
+    // 4 missed pings. Chest-screen (MethodChannel) motion is NOT supervised —
+    // it has a local operator.
+    private static final int DEADMAN_MS = 8000;
+    // A socket silent this long is half-open (spine host died without FIN —
+    // power loss / Wi-Fi drop). Close it: frees a MAX_CLIENTS slot and unblocks
+    // its readWebSocketFrame().
+    private static final int CLIENT_STALE_MS = 30000;
 
     private ServerSocket serverSocket;
     private ExecutorService executor;
@@ -65,6 +74,13 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
     private volatile int currentLinear = 0;
     private volatile int currentAngular = 0;
     private volatile int currentMoveCode = -1; // NAVI_ROBOT_MOVE direction: 0=fwd 1=back 2=left 3=right
+    // True while the CURRENT motion (teleop or navi) was commanded over the WS
+    // (i.e. by the spine). Only such motion is subject to the dead-man — the
+    // chest screen's own d-pad/Go (MethodChannel) runs with zero WS clients.
+    private volatile boolean wsMotion = false;
+    // Last time any WS client delivered a frame (command, ping, anything).
+    private volatile long lastWsInboundAt = 0;
+    private ScheduledFuture<?> deadmanTask;
 
     // No-op navi callback for the startup cancelNavi (clears any leftover nav task).
     private final OnNaviListener startupNaviCb = new OnNaviListener() {
@@ -128,6 +144,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 // Hold-to-drive from the on-robot dashboard d-pad. Same path the
                 // WebSocket clients use (SLAM moveForward/… when ready, else
                 // moveBySerial). Held by a 30ms moveSerial heartbeat until stopMove.
+                wsMotion = false; // local operator takes over — not dead-man supervised
                 executeMove((String) call.argument("dir"));
                 result.success(buildStatus());
                 break;
@@ -168,6 +185,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     pt.put("z", call.argument("z") != null ? ((Number) call.argument("z")).doubleValue() : 0);
                     pt.put("rotation", call.argument("rotation") != null ? ((Number) call.argument("rotation")).doubleValue() : 0);
                     naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
+                    wsMotion = false; // chest-screen Go — local operator, not dead-man supervised
                     // Autonomous nav needs mode 0 — in manual/teleop mode (1, set at
                     // startup for the d-pad) the planner accepts move_to but fails it
                     // instantly (action_status -1) and never drives.
@@ -193,6 +211,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
             case "cancelNavi":
                 try {
                     naviInProgress = false;
+                    wsMotion = false;
                     CsjRobot.getInstance().getAction().cancelNavi(methodNaviCb);
                     result.success(true);
                 } catch (Exception e) {
@@ -206,6 +225,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 // app's Go-to-Charge button works exactly like the admin's.
                 try {
                     naviInProgress = true;
+                    wsMotion = false; // chest-screen dock button — local operator
                     CsjRobot.getInstance().getAction().setNaviMode(0);
                     scheduler.schedule(() -> {
                         try {
@@ -233,6 +253,9 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         executor = Executors.newCachedThreadPool();
         scheduler = Executors.newScheduledThreadPool(1);
         heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
+
+        // Dead-man tick — supervises WS-commanded motion + reaps half-open sockets.
+        deadmanTask = scheduler.scheduleAtFixedRate(this::deadmanTick, 1, 1, TimeUnit.SECONDS);
 
         initChassisMovement();
 
@@ -297,7 +320,68 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
 
     private void emergencyStop() {
         naviInProgress = false; // a stop ends any autonomous navi
+        wsMotion = false;
         cancelMove();
+    }
+
+    /**
+     * Dead-man watchdog (runs every 1s while the server is up).
+     *
+     * A clean spine shutdown closes the socket and ClientHandler.close() already
+     * stops teleop. This covers what close() can't: the spine HOST dying without
+     * a TCP FIN (power loss, Wi-Fi drop, kernel panic). The socket then stays
+     * half-open — readWebSocketFrame() blocks forever, teleop keeps self-renewing
+     * via the local 150ms move() loop, and an autonomous navi goal keeps executing
+     * (worse: the chassis silently RESUMES blocked goals later) with nobody
+     * supervising arrival. The spine pings every 2s, so silence >DEADMAN_MS while
+     * WS-commanded motion is active means the brain is gone → cancel the goal,
+     * stop the wheels.
+     */
+    private void deadmanTick() {
+        try {
+            long now = System.currentTimeMillis();
+
+            // Reap half-open sockets regardless of motion: they hog MAX_CLIENTS
+            // slots forever (3 unclean spine restarts = no one can ever reconnect).
+            ClientHandler[] snapshot;
+            synchronized (clients) {
+                snapshot = clients.toArray(new ClientHandler[0]);
+            }
+            for (ClientHandler c : snapshot) {
+                long silent = now - c.lastInboundAt;
+                if (silent > CLIENT_STALE_MS) {
+                    Log.w(TAG, "deadman: closing half-open client (silent " + silent + "ms)");
+                    c.close();
+                }
+            }
+
+            if (!wsMotion) return;
+            if (!isMoving && !naviInProgress) {
+                wsMotion = false; // motion ended by itself — nothing to supervise
+                return;
+            }
+            long silent = now - lastWsInboundAt;
+            if (silent <= DEADMAN_MS) return;
+
+            Log.w(TAG, "DEADMAN TRIGGERED: WS-commanded motion but no client traffic for "
+                    + silent + "ms — cancelling navi + stopping drive");
+            wsMotion = false;
+            if (naviInProgress) {
+                naviInProgress = false;
+                try {
+                    CsjRobot.getInstance().getAction().cancelNavi(startupNaviCb);
+                } catch (Exception e) {
+                    Log.e(TAG, "deadman cancelNavi failed: " + e.getMessage());
+                }
+            }
+            cancelMove();
+            Map<String, Object> m = new HashMap<>();
+            m.put("type", "deadman");
+            m.put("silentMs", silent);
+            emitEvent(m);
+        } catch (Exception e) {
+            Log.e(TAG, "deadmanTick error: " + e.getMessage());
+        }
     }
 
     private void cancelMove() {
@@ -572,6 +656,9 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
         private BufferedReader textReader;
         private BufferedWriter textWriter;
         private volatile boolean connected = false;
+        // Last inbound frame from THIS socket — the dead-man reaps sockets that
+        // go silent (half-open after an unclean spine death).
+        volatile long lastInboundAt = System.currentTimeMillis();
 
         ClientHandler(Socket socket) {
             this.socket = socket;
@@ -607,6 +694,8 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 while (connected) {
                     String message = readWebSocketFrame();
                     if (message != null) {
+                        lastInboundAt = System.currentTimeMillis();
+                        lastWsInboundAt = lastInboundAt;
                         Log.d(TAG, "Frame received: " + message.substring(0, Math.min(100, message.length())));
                         handleMessage(message);
                     } else {
@@ -712,9 +801,11 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 if ("move".equals(cmd)) {
                     String dir = json.optString("dir");
                     Log.d(TAG, "Executing move: " + dir);
+                    wsMotion = true; // spine-commanded → dead-man supervised
                     executeMove(dir);
                 } else if ("stop".equals(cmd)) {
                     Log.d(TAG, "Executing stop");
+                    wsMotion = false;
                     // Stop must also kill any autonomous nav goal — the chassis
                     // holds blocked goals and resumes them later otherwise.
                     if (naviInProgress) {
@@ -729,6 +820,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 } else if ("rotate".equals(cmd)) {
                     float degrees = (float) json.optDouble("degrees", 0);
                     Log.d(TAG, "Executing rotate: " + degrees);
+                    wsMotion = true; // spine-commanded → dead-man supervised
                     executeRotate(degrees);
                 } else if ("speed".equals(cmd)) {
                     float value = (float) json.optDouble("value", currentSpeed);
@@ -774,6 +866,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                         point.put("rotation", json.optDouble("rotation", 0));
                         Log.d(TAG, "navi to: " + point);
                         naviInProgress = true; // stop the naviReady listener re-asserting teleop mode
+                        wsMotion = true; // spine-commanded → dead-man supervised
                         // Autonomous nav needs mode 0 (see MethodChannel navi case).
                         CsjRobot.getInstance().getAction().setNaviMode(0);
                         // The chassis leaves manual mode asynchronously; a move_to sent
@@ -798,6 +891,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                     // Same async mode-settle as navi (see that case).
                     Log.d(TAG, "go_home requested (charging dock)");
                     naviInProgress = true;
+                    wsMotion = true; // spine-commanded → dead-man supervised
                     try {
                         CsjRobot.getInstance().getAction().setNaviMode(0);
                         scheduler.schedule(() -> {
@@ -816,6 +910,7 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 } else if ("cancel_navi".equals(cmd)) {
                     Log.d(TAG, "cancel_navi requested");
                     naviInProgress = false;
+                    wsMotion = false;
                     try {
                         CsjRobot.getInstance().getAction().cancelNavi(naviCb);
                     } catch (Exception e) {
@@ -876,6 +971,12 @@ public class ChassisControlPlugin implements MethodChannel.MethodCallHandler, Ev
                 clients.remove(this);
                 if (clients.isEmpty() && running) {
                     cancelMove();
+                    // NOTE: a spine-commanded navi is deliberately NOT cancelled
+                    // here — a transient socket reset mid-goal would kill the run
+                    // even though the spine reconnects within ~1s (its naviWatch
+                    // get_position poll re-opens the socket, refreshing the
+                    // dead-man). Real spine deaths — clean or not — are handled
+                    // by deadmanTick within DEADMAN_MS.
                 }
             }
             emitEvent(buildStatus());

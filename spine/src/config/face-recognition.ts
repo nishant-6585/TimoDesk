@@ -39,8 +39,7 @@ export const FACE_CONFIG = {
   // Detection
   detection_cadence_ms: 500, // Detect every 0.5s — greet near-immediately (was 1000ms,
   // which with 3-of-5 voting meant ~3s before a greeting). 2-of-3 @ 500ms ≈ 1s.
-  frame_timeout_ms: 5000, // Timeout for frame capture
-  camera_port: 8080, // MJPEG stream port
+  frame_timeout_ms: 5000, // Timeout for frame capture (passed to sdk.captureFrame)
 
   // Events
   emit_anonymous: true, // Emit events for unidentified visitors

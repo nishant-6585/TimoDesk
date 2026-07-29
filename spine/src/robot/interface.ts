@@ -52,6 +52,20 @@ export interface RobotSDK {
   takeSnapshot(): Promise<Buffer>;
 
   /**
+   * Camera MJPEG stream URL — for consumers that need a URL rather than frames
+   * (e.g. the ffmpeg recorder). The SDK is the only component that knows where
+   * the robot's camera lives; nothing outside it may build robot URLs.
+   */
+  getCameraStreamUrl(): string;
+
+  /**
+   * Non-throwing snapshot with a timeout: one validated JPEG from the robot
+   * camera, or null (unreachable / timed out / not a JPEG). Pollers that must
+   * never crash the spine (the face recognizer) use this over takeSnapshot().
+   */
+  captureFrame(timeoutMs?: number): Promise<Buffer | null>;
+
+  /**
    * Get current robot status (battery, position, movement state)
    */
   getStatus(): Promise<RobotStatus>;

@@ -37,6 +37,12 @@ class MockTestSDK implements RobotSDK {
   async takeSnapshot() {
     return Buffer.from('fake');
   }
+  getCameraStreamUrl() {
+    return 'http://mock-robot:8080/stream';
+  }
+  async captureFrame() {
+    return Buffer.from('fake');
+  }
   async getPosition() {
     this.calls.push({ method: 'getPosition', args: [] });
     return { x: 1.5, y: 2.25, z: 0, rotation: -109.35 };

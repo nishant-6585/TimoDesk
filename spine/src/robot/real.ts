@@ -61,6 +61,28 @@ export class RealRobotSDK implements RobotSDK {
 
     // Start periodic battery fetch from robot_app HTTP endpoint
     this.startBatteryFetch();
+    // Keep the chassis dead-man fed while a connection exists (see below).
+    this.startChassisPing();
+  }
+
+  /**
+   * Dead-man heartbeat: ChassisControlPlugin halts WS-commanded motion when no
+   * client traffic arrives for ~8s (spine host died, Wi-Fi dropped). Commands
+   * alone don't prove liveness during a held joystick or a long navi leg, so
+   * ping every 2s whenever the chassis socket is open. The plugin answers with
+   * a pong, which handleRobotMessage drops silently.
+   */
+  private startChassisPing() {
+    setInterval(() => {
+      const ws = this.ws_chassis;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ cmd: 'ping' }));
+        } catch {
+          /* socket died mid-send — ensureConnected will rebuild it */
+        }
+      }
+    }, 2000);
   }
 
   private async fetchBatteryOnce() {
@@ -176,6 +198,7 @@ export class RealRobotSDK implements RobotSDK {
   private handleRobotMessage(data: string): void {
     try {
       const msg = JSON.parse(data);
+      if (msg.type === 'pong') return; // dead-man ping reply — every 2s, don't log
       console.log('[Real SDK] Received from robot:', msg);
 
       // Parse robot events and emit them
@@ -363,21 +386,46 @@ export class RealRobotSDK implements RobotSDK {
   }
 
   /**
-   * Take snapshot from HTTP endpoint
+   * Camera MJPEG stream URL (robot_app CameraStreamPlugin, port 8080). The only
+   * place outside this class that used to build robot URLs was the recorder —
+   * it now asks the SDK instead.
+   */
+  getCameraStreamUrl(): string {
+    return `http://${this.robotIP}:8080/stream`;
+  }
+
+  /**
+   * One validated JPEG from /snapshot, or null on any failure (unreachable,
+   * timeout, non-200, not a JPEG). Never throws — safe for tight poll loops.
+   */
+  async captureFrame(timeoutMs = 5000): Promise<Buffer | null> {
+    try {
+      const response = await fetch(`http://${this.robotIP}:8080/snapshot`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) return null;
+      const buffer = Buffer.from(await response.arrayBuffer());
+      // Validate JPEG SOI marker before handing to consumers (face-api chokes
+      // on truncated frames).
+      if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
+      return buffer;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Take snapshot from HTTP endpoint (throwing variant — snapshot intent,
+   * person-check). Same fetch path as captureFrame.
    */
   async takeSnapshot(): Promise<Buffer> {
-    try {
-      const response = await fetch(`http://${this.robotIP}:8080/snapshot`);
-      if (!response.ok) {
-        throw new Error(`Snapshot failed: ${response.statusText}`);
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      console.log(`[Real SDK] Snapshot taken (${buffer.length} bytes)`);
-      return buffer;
-    } catch (err) {
-      console.error('[Real SDK] takeSnapshot failed:', err);
-      throw err;
+    const buffer = await this.captureFrame();
+    if (!buffer) {
+      console.error('[Real SDK] takeSnapshot failed: camera unreachable or bad frame');
+      throw new Error('Snapshot failed: camera unreachable or bad frame');
     }
+    console.log(`[Real SDK] Snapshot taken (${buffer.length} bytes)`);
+    return buffer;
   }
 
   /**

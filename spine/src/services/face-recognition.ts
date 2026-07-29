@@ -52,9 +52,11 @@ function parseEmbedding(raw: unknown): number[] | null {
   return null;
 }
 
+/** One camera frame or null — supplied by the RobotSDK (sdk.captureFrame). */
+export type FrameSource = (timeoutMs?: number) => Promise<Buffer | null>;
+
 export class FaceRecognitionService {
-  private readonly robotIP: string;
-  private readonly cameraPort = FACE_CONFIG.camera_port; // 8080
+  private readonly frameSource: FrameSource;
   private readonly threshold = FACE_CONFIG.threshold; // 0.53, calibrated (precision-biased)
   private readonly margin = FACE_CONFIG.match_margin; // 0.06 second-place gap
   private readonly voteWindow = FACE_CONFIG.vote_window; // last N frames (3)
@@ -74,8 +76,8 @@ export class FaceRecognitionService {
   private votes: MatchResult[] = []; // sliding window of recent per-frame results
   private noFaceStreak = 0; // consecutive frames with no single face
 
-  constructor(robotIP: string, supabase: SupabaseClient, emit: (event: RobotEvent) => void) {
-    this.robotIP = robotIP;
+  constructor(frameSource: FrameSource, supabase: SupabaseClient, emit: (event: RobotEvent) => void) {
+    this.frameSource = frameSource;
     this.supabase = supabase;
     this.emit = emit;
   }
@@ -86,7 +88,7 @@ export class FaceRecognitionService {
     this.isRunning = true;
     console.log(
       `[FaceRecognition] ✅ Running — ${this.enrolled.length} enrolled embeddings, ` +
-        `threshold ${this.threshold}, cadence ${this.cadenceMs}ms, source http://${this.robotIP}:${this.cameraPort}/snapshot`
+        `threshold ${this.threshold}, cadence ${this.cadenceMs}ms, source robot camera (via RobotSDK)`
     );
     this.loop(); // fire and forget; guarded internally
   }
@@ -194,7 +196,7 @@ export class FaceRecognitionService {
   }
 
   private async detectOnce(): Promise<void> {
-    const frame = await this.captureFrame();
+    const frame = await this.frameSource(FACE_CONFIG.frame_timeout_ms);
     if (!frame) return;
 
     // SHARED pipeline — same face-api path as enrollment. Requires exactly 1 face;
@@ -214,22 +216,6 @@ export class FaceRecognitionService {
 
     const raw = this.matchEmbedding(result.embedding);
     this.maybeEmit(this.voted(raw)); // temporal smoothing before emit
-  }
-
-  /** Grab one complete JPEG from the robot /snapshot endpoint (no MJPEG boundary parsing). */
-  private async captureFrame(): Promise<Buffer | null> {
-    try {
-      const res = await fetch(`http://${this.robotIP}:${this.cameraPort}/snapshot`, {
-        signal: AbortSignal.timeout(FACE_CONFIG.frame_timeout_ms),
-      });
-      if (!res.ok) return null;
-      const buf = Buffer.from(await res.arrayBuffer());
-      // Validate JPEG markers before handing to face-api.
-      if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
-      return buf;
-    } catch {
-      return null; // camera unreachable / timeout — skip this cycle
-    }
   }
 
   /** Debounced emit: on identity change, or re-confirm same identity every reEmitMs. */

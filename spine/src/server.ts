@@ -385,7 +385,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       try {
         fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
         const file = path.join(RECORDINGS_DIR, `rec-${new Date().toISOString().replace(/[:.]/g, '-')}.mp4`);
-        const streamUrl = `http://${process.env.ROBOT_IP}:8080/stream`;
+        const streamUrl = sdk.getCameraStreamUrl();
         const proc = spawn('ffmpeg', ['-y', '-i', streamUrl, '-c:v', 'libx264',
           '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '15', file],
           { stdio: 'ignore' });
@@ -871,8 +871,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
     // …and so does the autonomous face recognizer (same path, one event shape).
     if (supabase) {
-      const recognizerIP = process.env.ROBOT_IP || '192.168.99.101';
-      const recognizer = new FaceRecognitionService(recognizerIP, supabase, broadcastRobotEvent);
+      // Frames come from the SDK — the recognizer never builds robot URLs.
+      const recognizer = new FaceRecognitionService(
+        (timeoutMs) => sdk.captureFrame(timeoutMs),
+        supabase,
+        broadcastRobotEvent
+      );
       recognizer.start().catch((err) => {
         console.error('[Spine] Face recognizer failed to start:', err);
         // Non-fatal: robot control/camera/WS keep running.
