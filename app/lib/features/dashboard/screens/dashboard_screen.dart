@@ -214,8 +214,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         break;
       case 'home':
         notifier.sendIntent({'intent': 'dock'});
-        _pushToast(Icons.home, MikeeColors.success, 'Returning to charging dock');
+        _pushToast(Icons.battery_charging_full, MikeeColors.success, 'Returning to charging dock');
         _addEvent({'type': 'command_dock', 'details': 'auto-dock + charge', 'session': 'admin'});
+        break;
+      case 'stop_voice':
+        // Remotely end the robot's active listening/voice session (spine relays
+        // it to the robot app, which closes the ElevenLabs session).
+        notifier.sendIntent({'intent': 'stop_voice'});
+        _pushToast(Icons.mic_off, MikeeColors.error, 'Stopped the robot\'s mic / listening');
+        _addEvent({'type': 'command_voice', 'details': 'admin stopped mic', 'session': 'admin'});
         break;
       case 'record':
         final starting = !_recording;
@@ -1007,6 +1014,11 @@ class _QuickActionsPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        // Stop the robot's mic / listening remotely (works even under STOP).
+        Row(children: [
+          Expanded(child: _ActionButton(icon: Icons.mic_off, label: 'Stop Mic / Listening', onTap: () => onAction('stop_voice'))),
+        ]),
+        const SizedBox(height: 12),
         Row(children: [
           Expanded(child: _ActionButton(icon: Icons.sports_esports, label: 'Control Room', onTap: () => onAction('control'))),
           const SizedBox(width: 12),
@@ -1016,7 +1028,7 @@ class _QuickActionsPanel extends StatelessWidget {
         Row(children: [
           Expanded(child: _ActionButton(icon: Icons.photo_camera, label: 'Take Snapshot', onTap: stopped ? null : () => onAction('snapshot'))),
           const SizedBox(width: 12),
-          Expanded(child: _ActionButton(icon: Icons.home, label: 'Go Home', onTap: stopped ? null : () => onAction('home'))),
+          Expanded(child: _ActionButton(icon: Icons.battery_charging_full, label: 'Go to Charge', onTap: stopped ? null : () => onAction('home'))),
           const SizedBox(width: 10),
           Expanded(child: _ActionButton(icon: Icons.videocam, label: recording ? 'Stop Rec' : 'Record', onTap: () => onAction('record'))),
         ]),
