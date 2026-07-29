@@ -166,6 +166,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // AudioTrack buffer drain (~400ms) so the speaker tail doesn't leak into the mic
   // and re-trigger ElevenLabs (echo loop). No hardware AEC covers our audio path.
   static const int _micTailGuardMs = 800;
+  // A transcript arriving within this window of Mikee's own speech is treated as
+  // ECHO (his voice fed back), NOT a real user turn — so it doesn't reset the
+  // idle watchdog or make him reply to himself.
+  static const int _echoGuardMs = 2500;
   // Playback RMS below this is treated as silence (trailing/padding chunks) — it
   // won't drive the "speaking" state, so the mouth doesn't twitch while listening.
   static const double _speechFloor = 0.03;
@@ -851,11 +855,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       // visitor perpetually resets the timer and never returns to idle (obs 1).
       final idleMs = DateTime.now().millisecondsSinceEpoch - _lastActivityMs;
       final window = _conversed ? _conversationIdle : _engageWindow;
-      // Don't cut Mikee off mid-utterance, but hard-cap at 2× the window so a
-      // runaway/looping agent can't hold the session open indefinitely.
+      // Close after `window` (15s) of no REAL user speech. Give a short grace so
+      // Mikee can finish a sentence he's mid-way through — but a hard cap only a
+      // few seconds past the window so a runaway/looping agent (talking to no
+      // one) still closes promptly, near the 15s the user expects.
       final mikeeTalking = _face.state == FaceStateKind.speaking ||
           _face.state == FaceStateKind.thinking;
-      final hardCap = idleMs >= 2 * window.inMilliseconds;
+      final hardCap = idleMs >= window.inMilliseconds + 4000;
       if (idleMs >= window.inMilliseconds && (!mikeeTalking || hardCap)) {
         debugPrint('AmbientFace: user idle ${(idleMs / 1000).toStringAsFixed(0)}s ≥ '
             '${window.inSeconds}s → closing');
@@ -972,9 +978,22 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // (with the transcript), not as userSpeaking — so this is our reliable
         // "a real person engaged" signal. Mark the conversation started + keep alive.
         _dropFirstAgentTurn = false; // real reply coming → play it
-        _conversed = true;
-        _bumpActivity();
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
+        // Only treat this as real user activity (resetting the idle timer) when
+        // Mikee wasn't just speaking. Otherwise it's the agent hearing its OWN
+        // voice (echo) and transcribing it as "user input" — which both makes it
+        // reply to itself AND perpetually resets the idle watchdog, so the
+        // session never auto-closes with no real person there (the reported bug).
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final likelyEcho = _face.state == FaceStateKind.speaking ||
+            (now - _lastSpeakingMs) < _echoGuardMs;
+        if (!likelyEcho) {
+          _conversed = true;
+          _bumpActivity();
+        } else {
+          debugPrint('Voice: agentThinking during/after own speech → treating as '
+              'echo, NOT resetting idle timer');
+        }
         if (e.text != null && e.text!.trim().isNotEmpty && e.text != '...') {
           InteractionLog.log('user_utterance_el', e.text!);
         }
