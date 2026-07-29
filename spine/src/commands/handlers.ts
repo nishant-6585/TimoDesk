@@ -71,6 +71,16 @@ export async function handleIntent(
         return { type: 'ack', intent: 'dock', ok: true };
       }
 
+      case 'stop_voice': {
+        // The voice session lives on the robot app (ElevenLabs), not the SDK —
+        // spine only relays it. Ack here so server.ts broadcasts the
+        // voice_control:stop to all clients (the robot app then ends its
+        // session). Not motion, so it works even under the STOP interlock.
+        console.log('[Handlers] stop_voice — relaying to robot app');
+        await logEvent('command_voice', { session_id: sessionId, action: 'stop' });
+        return { type: 'ack', intent: 'stop_voice', ok: true };
+      }
+
       case 'cancel_navi': {
         if (!sdk.cancelNavi) return { type: 'error', message: 'cancel_navi not supported' };
         console.log('[Handlers] cancel_navi');
