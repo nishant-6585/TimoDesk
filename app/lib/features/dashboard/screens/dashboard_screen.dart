@@ -11,6 +11,7 @@ import '../../../services/spine/spine_provider.dart';
 import '../../navigation/providers/nav_points_provider.dart';
 import '../../../services/spine/face_detection_provider.dart';
 import '../../../services/spine/visitor_arrived_provider.dart';
+import '../../../services/spine/recording_status_provider.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
 import '../../settings/providers/settings_provider.dart';
 
@@ -172,7 +173,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     });
   }
 
-  bool _recording = false;
   bool _patrolling = false;
 
   void _pushToast(IconData icon, Color color, String message) {
@@ -225,18 +225,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _addEvent({'type': 'command_voice', 'details': 'admin stopped mic', 'session': 'admin'});
         break;
       case 'record':
-        final starting = !_recording;
-        setState(() => _recording = starting);
-        http
-            .post(Uri.parse('$spineHttpBase/record/${starting ? 'start' : 'stop'}'))
-            .then((r) {
-          if (r.statusCode != 200 && mounted) setState(() => _recording = !starting);
-        }).catchError((_) {
-          if (mounted) setState(() => _recording = !starting);
-        });
-        _pushToast(Icons.videocam, starting ? MikeeColors.error : MikeeColors.success,
-            starting ? 'Recording started' : 'Recording saved on spine (recordings/)');
-        _addEvent({'type': 'video_record', 'details': starting ? 'start' : 'stop', 'session': 'admin'});
+        // Global recording state (spine-owned) — keeps running across
+        // navigation, auto-stops at the spine cap, and shows in Gallery once
+        // stopped. The recording_state broadcast flips the button label.
+        final recNotifier = ref.read(recordingProvider.notifier);
+        final wasActive = ref.read(recordingProvider).active;
+        wasActive ? recNotifier.stop() : recNotifier.start();
+        _pushToast(Icons.videocam, wasActive ? MikeeColors.success : MikeeColors.error,
+            wasActive ? 'Recording saved — see Gallery ▸ Recordings' : 'Recording started');
+        _addEvent({'type': 'video_record', 'details': wasActive ? 'stop' : 'start', 'session': 'admin'});
         break;
       case 'control':
         context.go('/control');
@@ -454,7 +451,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _quickActionsPanelOnly(bool stopped) {
     return _QuickActionsPanel(
       stopped: stopped,
-      recording: _recording,
+      recording: ref.watch(recordingProvider).active,
       onStop: _onStop,
       onAction: _onAction,
       headLR: _headLR,

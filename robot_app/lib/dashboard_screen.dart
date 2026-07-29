@@ -40,8 +40,9 @@ const _greenBg = Color(0xFF06200F);
 const _red = Color(0xFFFF5247);
 const _accent = kOrange; // #FF6B35
 const _accentDimColor = Color(0xFFE14B1E);
-// Voice-state glow: LISTENING = blue, SPEAKING = amber (DASHBOARD voice cue).
-const _listenGlow = Color(0xFF3B82F6);
+// Voice-state glow: LISTENING = green (clear "I'm hearing you" cue), SPEAKING
+// = amber (DASHBOARD voice cue).
+const _listenGlow = Color(0xFF4ADE80);
 const _speakGlow = Color(0xFFF59E0B);
 
 /// Face-dominant reception dashboard (opened from the ambient face). Three
@@ -256,7 +257,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   void _onPlaybackLevel(double level) {
     if (!mounted || !_voiceActive) return;
     if (level < 0) {
-      setState(() => _face = _face.copyWith(mouthOpen: 0));
+      // Mikee's audio drained → he's done talking. Return to LISTENING (green)
+      // so while the visitor speaks it doesn't stay stuck on "Speaking". Matches
+      // the ambient face screen's playback→listening transition.
+      setState(() =>
+          _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
       RobotGestures.headCenter();
     } else {
       final amp = (level * 3.5).clamp(0.04, 1.0);
@@ -1061,6 +1066,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                           color: kOrange, size: 22),
                       const SizedBox(height: 6),
                       Text(_patrolling ? 'Stop' : 'Patrol',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: _tileLabel,
+                              fontWeight: FontWeight.w700)),
+                    ]),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Go to Charge — send the robot back to its dock (like Alpha Map).
+          SizedBox(
+            width: 96,
+            child: Material(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () =>
+                    ref.read(navPointsProvider.notifier).goHome(),
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.battery_charging_full_rounded,
+                          color: kOrange, size: 22),
+                      const SizedBox(height: 6),
+                      Text('Charge',
                           style: TextStyle(
                               color: Colors.white,
                               fontSize: _tileLabel,

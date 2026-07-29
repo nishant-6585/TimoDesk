@@ -4,11 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../../../core/constants.dart';
+import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/face_detection_provider.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../../../services/spine/spine_state.dart';
+import '../../../services/spine/recording_status_provider.dart';
 import '../../live_feed/widgets/mjpeg_view.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../widgets/joystick.dart';
@@ -420,7 +423,7 @@ class _GesturesCard extends StatelessWidget {
   const _GesturesCard({required this.onGesture, required this.onCenterHead});
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go to Charge', Icons.battery_charging_full, () => onGesture('dock')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod'))]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), side: const BorderSide(color: MikeeColors.border))))]));
+    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [MikeeColors.cardTop, MikeeColors.cardBottom]), border: Border.all(color: MikeeColors.border), borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('GESTURES', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.12, color: MikeeColors.textSecondary)), const SizedBox(height: 12), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.4, children: [_GestureButton('Wave', Icons.waving_hand, () => onGesture('wave')), _GestureButton('Snapshot', Icons.photo_camera, () => onGesture('snapshot')), _GestureButton('Go to Charge', Icons.battery_charging_full, () => onGesture('dock')), _GestureButton('Nod', Icons.smart_toy, () => onGesture('nod')), _GestureButton('Stop Mic', Icons.mic_off, () => onGesture('stop_voice')), const _RecordTile()]), const SizedBox(height: 12), SizedBox(width: double.infinity, height: 40, child: ElevatedButton.icon(onPressed: onCenterHead, icon: const Icon(Icons.center_focus_strong, size: 16), label: Text('Center head', style: GoogleFonts.inter(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: MikeeColors.cardTop, foregroundColor: MikeeColors.textPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), side: const BorderSide(color: MikeeColors.border))))]));
   }
 }
 
@@ -443,6 +446,44 @@ class _GestureButton extends StatelessWidget {
             Icon(icon, size: 20, color: MikeeColors.primary),
             const SizedBox(height: 6),
             Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: MikeeColors.textSecondary)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Record toggle for the Control gestures grid. Reads the GLOBAL recording
+/// state (recordingProvider) — the ffmpeg recorder lives on spine, so it keeps
+/// running across navigation and this reflects the true status on return.
+/// Clips land in Gallery → Recordings once stopped.
+class _RecordTile extends ConsumerWidget {
+  const _RecordTile();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rec = ref.watch(recordingProvider);
+    final active = rec.active;
+    final color = active ? MikeeColors.error : MikeeColors.primary;
+    return Material(
+      color: MikeeColors.inset,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () {
+          final n = ref.read(recordingProvider.notifier);
+          active ? n.stop() : n.start();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+              border: Border.all(
+                  color: active ? MikeeColors.error : MikeeColors.border),
+              borderRadius: BorderRadius.circular(12)),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(active ? Icons.stop_circle : Icons.videocam, size: 20, color: color),
+            const SizedBox(height: 6),
+            Text(active ? 'Stop Rec' : 'Record',
+                style: GoogleFonts.inter(
+                    fontSize: 12, fontWeight: FontWeight.w500, color: MikeeColors.textSecondary)),
           ]),
         ),
       ),

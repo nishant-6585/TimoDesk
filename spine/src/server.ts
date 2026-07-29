@@ -378,8 +378,27 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     }
 
     // ── Video recording (spine-side, ffmpeg over the MJPEG stream) ─────────────
+    // The ffmpeg process lives here, so a recording KEEPS RUNNING no matter what
+    // the admin UI navigates to. Recording state is broadcast to all clients so
+    // every screen shows the live status + a Stop control on return.
     const RECORDINGS_DIR = path.join(process.cwd(), 'recordings');
-    let recorder: { proc: ChildProcess; file: string } | null = null;
+    const RECORD_MAX_MS = 5 * 60_000; // safety cap — auto-stop a forgotten recording
+    let recorder: { proc: ChildProcess; file: string; startedAt: number } | null = null;
+    let recordAutoStop: ReturnType<typeof setTimeout> | null = null;
+
+    const recordStatus = () => ({
+      recording: !!recorder,
+      file: recorder ? path.basename(recorder.file) : null,
+      startedAt: recorder?.startedAt ?? undefined,
+      maxMs: RECORD_MAX_MS,
+    });
+    const broadcastRecordState = () => {
+      const msg = { type: 'recording_state', ...recordStatus() } as SpineMessage;
+      wss.clients.forEach((c) => {
+        if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(msg));
+      });
+    };
+
     const startRecording = (): { ok: boolean; file?: string; error?: string } => {
       if (recorder) return { ok: false, error: 'already recording' };
       try {
@@ -392,9 +411,17 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         proc.on('exit', (code) => {
           console.log(`[Spine] Recording ended (ffmpeg exit ${code})`);
           recorder = null;
+          if (recordAutoStop) { clearTimeout(recordAutoStop); recordAutoStop = null; }
+          broadcastRecordState();
         });
-        recorder = { proc, file };
+        recorder = { proc, file, startedAt: Date.now() };
+        // Safety auto-stop so a forgotten recording can't grow forever.
+        recordAutoStop = setTimeout(() => {
+          console.log('[Spine] Recording hit max duration — auto-stopping');
+          stopRecording();
+        }, RECORD_MAX_MS);
         console.log(`[Spine] Recording started → ${file}`);
+        broadcastRecordState();
         return { ok: true, file: path.basename(file) };
       } catch (err) {
         return { ok: false, error: String(err) };
@@ -403,7 +430,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     const stopRecording = (): { ok: boolean; file?: string } => {
       if (!recorder) return { ok: false };
       const file = path.basename(recorder.file);
-      recorder.proc.kill('SIGINT'); // lets ffmpeg finalize the mp4
+      recorder.proc.kill('SIGINT'); // lets ffmpeg finalize the mp4 (exit handler broadcasts)
       return { ok: true, file };
     };
 
@@ -500,6 +527,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         const r = stopRecording();
         res.writeHead(r.ok ? 200 : 409, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(r));
+        return;
+      }
+      // Current recording status — so a screen shows the live state on load
+      // (the WS recording_state broadcast keeps it in sync after that).
+      if (url === '/record/status' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, ...recordStatus() }));
         return;
       }
 

@@ -9,6 +9,7 @@ import 'spine_state.dart';
 import 'escort_status_provider.dart';
 import 'face_detection_provider.dart';
 import 'navi_status_provider.dart';
+import 'recording_status_provider.dart';
 import 'visitor_arrived_provider.dart';
 
 class SpineService extends StateNotifier<SpineState> {
@@ -220,6 +221,15 @@ class SpineService extends StateNotifier<SpineState> {
       } else {
         notifier.clear();
       }
+    } else if (msgType == 'recording_state') {
+      // Spine-owned recording state — keeps every screen's Record/Stop UI in
+      // sync while the ffmpeg recorder runs across navigation.
+      _ref.read(recordingProvider.notifier).sync(
+            msg['recording'] == true,
+            file: msg['file'] as String?,
+            startedAt: (msg['startedAt'] as num?)?.toInt(),
+            maxMs: (msg['maxMs'] as num?)?.toInt(),
+          );
     } else if (msgType == 'ack') {
       print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
     }

@@ -120,9 +120,12 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state';
   ok?: boolean;
   action?: string; // for voice_control — e.g. 'stop'
+  recording?: boolean; // for recording_state
+  file?: string | null; // for recording_state — current clip basename
+  maxMs?: number; // for recording_state — auto-stop cap
   message?: string;
   intent?: string; // for ack
   captureId?: string; // for snapshot ack — the stored capture row id
