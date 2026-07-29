@@ -42,6 +42,15 @@ export interface SnapshotListItem {
  * @param actor    who triggered it (auth user id / 'kiosk-robot'); null if unknown
  * @param now      injectable clock for a deterministic object path (defaults to Date.now)
  */
+/** True when a Postgres/PostgREST error is about the missing capture.actor
+ *  column (migration 012 not applied). Covers both the raw "column ... does
+ *  not exist" and PostgREST's "Could not find the 'actor' column ... in the
+ *  schema cache" phrasings. */
+function isActorMissing(msg: string): boolean {
+  return /actor/i.test(msg) &&
+    /(does not exist|schema cache|could not find)/i.test(msg);
+}
+
 export async function saveSnapshot(
   supabase: SupabaseClient,
   buffer: Buffer,
@@ -58,16 +67,19 @@ export async function saveSnapshot(
     throw new Error(`snapshot upload failed: ${uploadErr.message}`);
   }
 
-  const { data, error: insertErr } = await supabase
-    .from('capture')
-    .insert({ kind: 'admin_snapshot', storage_url: path, actor })
-    .select('id')
-    .single();
-  if (insertErr) {
-    throw new Error(`capture insert failed: ${insertErr.message}`);
+  const base = { kind: 'admin_snapshot', storage_url: path };
+  let ins = await supabase.from('capture').insert({ ...base, actor }).select('id').single();
+  // Forward-compatible: if migration 012 (capture.actor) hasn't been applied
+  // yet, store the snapshot WITHOUT attribution rather than failing outright.
+  if (ins.error && isActorMissing(ins.error.message)) {
+    console.warn('[captures] capture.actor missing — storing snapshot without attribution (apply migration 012)');
+    ins = await supabase.from('capture').insert(base).select('id').single();
+  }
+  if (ins.error) {
+    throw new Error(`capture insert failed: ${ins.error.message}`);
   }
 
-  return { captureId: data.id as string, path };
+  return { captureId: ins.data!.id as string, path };
 }
 
 /**
@@ -79,12 +91,26 @@ export async function listSnapshots(
   supabase: SupabaseClient,
   limit = 100
 ): Promise<SnapshotListItem[]> {
-  const { data: rows, error } = await supabase
+  const withActor = await supabase
     .from('capture')
     .select('id, storage_url, actor, taken_at')
     .eq('kind', 'admin_snapshot')
     .order('taken_at', { ascending: false })
     .limit(limit);
+  // Same forward-compat as saveSnapshot: fall back to no-actor if the column
+  // isn't there yet, so the Gallery still lists snapshots.
+  let rows: unknown[] | null = withActor.data;
+  let error = withActor.error;
+  if (error && isActorMissing(error.message)) {
+    const noActor = await supabase
+      .from('capture')
+      .select('id, storage_url, taken_at')
+      .eq('kind', 'admin_snapshot')
+      .order('taken_at', { ascending: false })
+      .limit(limit);
+    rows = noActor.data;
+    error = noActor.error;
+  }
   if (error) throw new Error(error.message);
 
   const captures = rows ?? [];
