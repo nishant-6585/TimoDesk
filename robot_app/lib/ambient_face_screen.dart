@@ -517,6 +517,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
       InteractionLog.log('user_utterance_vendor_asr', utterance);
+      if (_handleStopCommand(utterance)) return;
       if (_handleNavVoice(utterance)) return;
       if (_handlePersonaVoice(utterance)) return;
       if (_handleCheckinVoice(utterance)) {
@@ -592,6 +593,44 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             : "I couldn't find a place called ${result.heard}. "
                 'I can take you to: $known.');
       }();
+    }
+    return true;
+  }
+
+  // ── Stop command ("stop", "be quiet", "that's enough", "goodbye"…) ─────────
+  // The visitor wants Mikee to stop: cut off any speech, close the mic/session,
+  // and settle to attentive (a person is still likely there) or idle. Returns
+  // true when the utterance was a stop request (handled here, agent turn dropped).
+  static final RegExp _stopPhrase = RegExp(
+    r'\b(stop|quiet|be quiet|shut up|shush|hush|enough|thats enough|'
+    r"that's enough|stop talking|stop speaking|stop it|no more|"
+    r'never ?mind|forget it|cancel|goodbye|good bye|bye bye|'
+    r'bye|thats all|i am done|im done)\b',
+    caseSensitive: false,
+  );
+
+  bool _handleStopCommand(String transcript) {
+    final t = transcript.toLowerCase().trim();
+    if (t.isEmpty) return false;
+    // Only treat SHORT utterances as stop commands — a long sentence that
+    // merely contains "stop" (e.g. "where is the bus stop") shouldn't end the
+    // session. ≤4 words keeps it to genuine stop requests.
+    final wordCount = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    if (wordCount > 4) return false;
+    if (!_stopPhrase.hasMatch(t)) return false;
+    debugPrint('Voice: STOP command → ending session');
+    InteractionLog.log('voice_stop_command', transcript);
+    _audioBridge.stopPlayback(); // cut off any current speech immediately
+    _dropFirstAgentTurn = true; // don't let the agent reply to this turn
+    if (_voiceActive) {
+      _endVoice(); // mic off + session closed (sessionEnded settles the face)
+    }
+    // Settle to attentive (person likely present) or idle — the sessionEnded
+    // handler also does this, but set it now for an instant visual response.
+    if (mounted) {
+      setState(() => _face = _face.copyWith(
+          state: _present ? FaceStateKind.attentive : FaceStateKind.idle,
+          mouthOpen: 0));
     }
     return true;
   }
@@ -938,6 +977,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
         if (e.text != null && e.text!.trim().isNotEmpty && e.text != '...') {
           InteractionLog.log('user_utterance_el', e.text!);
+        }
+        // "Stop" / "be quiet" / "that's enough" — the visitor wants Mikee to
+        // stop. Ends the session (mic off, stops speaking, back to attentive).
+        // Checked FIRST so it always wins over other intents.
+        if (e.text != null && _handleStopCommand(e.text!)) {
+          _dropFirstAgentTurn = true;
+          break;
         }
         // Voice navigation: "go to <saved point>" spoken to Mikee. When the
         // transcript is a nav command WE handle the reply + action and drop the
