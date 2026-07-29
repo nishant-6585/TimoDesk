@@ -1,136 +1,98 @@
-# Mikee — Project Context for Claude Code
+# CLAUDE.md
 
-> Smart reception app for the **Mikee robot platform** (Alpha Robotics / CSJBot). Built for **xboom Utilities Pvt. Ltd.** to staff their office reception autonomously.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **⚡ Read [`HANDOFF.md`](./HANDOFF.md) FIRST.** It's the live session state — what shipped last, what's pending, what's blocking, what to start with on this machine. This `CLAUDE.md` is the durable architectural reference; `HANDOFF.md` is the per-session pulse.
+> Smart reception app for the **Mikee robot** (Alpha Robotics / CSJBot platform), built for **xboom Utilities Pvt. Ltd.** — greet visitors, recognize staff, answer questions by voice, navigate/escort, and be driven/monitored remotely.
 
----
+> **⚡ Read [`HANDOFF.md`](./HANDOFF.md) FIRST.** It is the live session state — what shipped last, what's pending hardware verification, what's blocking. This file is the durable architectural reference; do not trust status claims here over HANDOFF.md.
 
 ## Architecture
 
-**Three layers:**
+Three layers with a single safety broker in the middle. **Clients never talk to the robot SDK directly** — every command flows through the spine so safety interlocks live in one place.
 
 | Layer | What | Where |
 |---|---|---|
-| **Edge** | Alpha Robotics Mikee SDK (Java/Kotlin) on the robot's Android 7.1.2 chest screen | `robot_app/` |
-| **Cloud** | Node.js TypeScript broker (port 4000) + Supabase (Postgres + RLS + pgvector) | `spine/` · `supabase/` |
-| **Client** | Flutter admin app (web + iOS + Android) + browser viewer + mobile viewer | `app/` · `viewer_web/` · `viewer_mobile/` |
-
-**Other components:** `signaling_server/` (WebRTC signaling, port 3000) · `robot_app/` doubles as MJPEG camera streamer on port 8080.
-
-## Component map
+| **Edge** | Flutter + CSJBot SDK (Java plugins) on the robot's Android 7.1.2 chest screen | `robot_app/` |
+| **Broker** | Node.js + TypeScript spine (:4000) + Supabase (Postgres · RLS · pgvector) | `spine/` · `supabase/` |
+| **Client** | Flutter admin app (web + mobile, adaptive phone remote) + camera viewers + MCP server | `app/` · `viewer_web/` · `viewer_mobile/` · `mcp_server/` |
 
 ```
-robot_app/          Flutter on Mikee chest screen — MJPEG server + (future) native SDK bridge for sensors
-viewer_web/         Single-file HTML control UI — WebSocket to spine
-viewer_mobile/      Flutter mobile camera viewer
-signaling_server/   Node.js WebRTC signaling + serves viewer_web
-spine/              ★ TypeScript broker — central safety layer. RealRobotSDK only. Tests: 114 passing.
-supabase/           5 migrations · 8 tables · RLS everywhere · pgvector for face/KB embeddings · DPDP-compliant purge
-app/                ★ Flutter admin — 7 features (auth, dashboard, control, live_feed, gallery, events, settings)
-mcp_server/         mikee-mcp-server — MCP server (stdio) exposing spine intents + KB to any MCP client. A CLIENT of the spine; interlocks apply.
+robot_app/          Chest-screen Flutter app — ambient personality face, dashboard, nav points,
+                    voice (ElevenLabs Conversational AI), staff enrollment. Java plugins serve
+                    MJPEG camera (:8080), battery (:8090), and motor-control WS receivers
+                    (:8081 head / :8082 chassis / :8083 arm). Also dials OUT to the spine
+                    (SpineClient WS, kiosk-token auth) for events + intents.
+spine/              ★ TypeScript broker (:4000) — safety interlocks (global STOP wins), intent
+                    routing, RealRobotSDK (WS client to :8081-3 + HTTP snapshot/battery),
+                    face recognition (@vladmandic/face-api), navigation/patrol/escort state
+                    machines, voice brain (Voyage embeddings + Claude RAG + ElevenLabs webhook),
+                    KB platform (ingest/crawl/providers), MCP plugin registry, notifications
+                    (Slack/WhatsApp/email/FCM), JWKS auth.
+supabase/           Migrations · RLS on every table · pgvector (face 128-d, KB 1024-d) ·
+                    DPDP-compliant nightly purge.
+app/                ★ Flutter admin — auth, dashboard, live feed, control, navigation + escort,
+                    gallery, events, staff, KB, MCP plugins, settings. Phones get a remote layout.
+mcp_server/         mikee-mcp-server (stdio) — exposes robot + KB tools to any MCP client.
+                    It is a CLIENT of the spine (WS intents + HTTP), so interlocks apply to AI agents.
+signaling_server/   WebRTC signaling (:3000) + serves viewer_web.
+viewer_web/         Single-file browser camera viewer.  viewer_mobile/  Flutter camera viewer.
+scripts/            find_robot.sh (auto-find robot IP + repoint spine/app after DHCP churn),
+                    robot_bringup.sh (post-reboot order that keeps mic + chassis both working).
 ```
 
-## Key architectural decisions
+### Key decisions
 
-1. **Spine as the single broker.** Clients never talk to the robot SDK directly. All commands flow through `spine` on port 4000 so safety interlocks live in ONE place.
-2. **Real robot only.** The spine talks exclusively to the physical Mikee via `RealRobotSDK` (WS ports 8081/8082/8083 + HTTP snapshot/battery). The old MockRobotSDK and `ROBOT_MODE` swap were removed (June 2026) — set `ROBOT_IP` and the spine connects on boot.
-3. **Stateless Flutter client.** App sends intents, receives status. Spine + Supabase own state. Closing the app mid-session is safe.
-4. **DPDP compliance baked in.** Staff face data isolated, opt-in only. Visitor table has zero biometric fields. Nightly auto-purge.
-5. **MCP two ways.** `mcp_server/` exposes the robot + KB to any MCP client (through spine intents — interlocks apply to AI agents). The spine's plugin platform (`/mcp/plugins` endpoints, file-backed registry in `spine/mcp-plugins.json`, tokens never returned over HTTP) declares external MCP servers (Slack, M365, CRM); the voice brain consumes them via the Claude MCP connector only when `MCP_TOOLS_ENABLED=true` (default off — the plain grounded voice path is untouched).
+1. **Spine is the single broker.** All intents flow through :4000; STOP/RESUME interlocks are checked first in `spine/src/commands/interlocks.ts` and always win.
+2. **Real robot only.** No mock SDK. `RealRobotSDK` connects to `ROBOT_IP` on boot. New hardware paths stay behind the spine intent layer so they fail safe.
+3. **Stateless clients.** Apps send intents and render broadcast state; spine + Supabase own state.
+4. **DPDP compliance.** Only staff faces stored, opt-in with consent timestamp; the `visitor` table has zero biometric fields; escort person-checks are detection-only (no identity, nothing stored).
+5. **MCP two ways.** `mcp_server/` exposes Mikee *to* AI agents; the spine's plugin registry (`/mcp/plugins`, file-backed, tokens never returned over HTTP) lets the voice brain consume *external* MCP servers — only when `MCP_TOOLS_ENABLED=true` (default off).
 
-## Conventions to follow
+## Intent format (client → spine WS)
 
-**TypeScript (spine):**
-- Strict mode. No `any` without justification.
-- All async via promises (no callbacks).
-- Errors logged via `Csjlogger`; events via `events.ts` helper to Supabase.
-- Vitest for tests. New tests for every new behavior.
+Movement: `drive` (dir), `stop_drive`, `head` (lr/ud 0-100), `arm` (left/right 0-100), `wave`, `reset_body`.
+Navigation: `get_position`, `navi` (point), `cancel_navi`, `dock`, `patrol_start`/`patrol_stop`, `escort_start`/`escort_stop`.
+Safety/state: `stop`, `resume`, `get_status`, `snapshot`, `voice_state`.
+See `spine/src/commands/handlers.ts` and `spine/src/server.ts` for the authoritative list.
 
-**Flutter (app, robot_app, viewer_mobile):**
-- Riverpod for state — singleton providers via `keepAlive()`.
-- Freezed for immutable state models. Run `build_runner` after changes.
-- `go_router` for navigation, with `GoRouterRefreshStream` for auth redirects.
-- Dark theme — background `#0F0F0F`, accent orange `#FF6B35`.
-- Components under 300 lines; split larger.
-- All commands as intents to spine. Never direct SDK calls from client.
+## Build / run / test
 
-**Supabase:**
-- RLS on every table — non-negotiable.
-- pgvector for ML embeddings (face, KB).
-- DPDP retention via nightly purge function.
-
-## Intent format (client → spine WebSocket)
-
-```js
-{ intent: 'drive', dir: 'forward'|'back'|'left'|'right' }
-{ intent: 'head', lr: 0-100, ud: 0-100 }
-{ intent: 'arm', left: 0-100, right: 0-100 }
-{ intent: 'wave' }
-{ intent: 'reset_body' }
-{ intent: 'stop' }
-{ intent: 'resume' }
-{ intent: 'get_status' }
-```
-
-## Build / run commands
-
-| Component | Command |
+| Task | Command |
 |---|---|
-| Spine | `cd spine && npm install && npm run dev` (connects to `ROBOT_IP`) |
-| Spine tests | `cd spine && npm test` |
-| Flutter admin (web) | `cd app && flutter pub get && flutter run -d chrome` |
-| Flutter admin (iOS) | `cd app && flutter run -d ios` |
-| Flutter admin (Android) | `cd app && flutter run -d android` |
-| Robot app (real hardware) | `cd robot_app && flutter build apk --debug && adb install build/app/outputs/flutter-apk/app-debug.apk` |
-| Viewer web | open `viewer_web/index.html` in any browser |
-| MCP server | `cd mcp_server && npm install && npm run build` · tests: `npm test` · env: `SPINE_URL`, `SPINE_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| Spine dev | `cd spine && npm run dev` (needs `.env` — see `.env.example`; `ROBOT_IP` required) |
+| Spine tests | `cd spine && npm test` · single file: `npx vitest run tests/escort.test.ts` |
+| Spine typecheck | `cd spine && npx tsc --noEmit` |
+| Secrets | `cd spine && npm run secrets:pull` / `secrets:push` (sops, `.env` ↔ committed `.env.enc`) |
+| Admin app (web) | `cd app && flutter run -d chrome` · ship: `flutter build web` |
+| Robot APK | `cd robot_app && flutter build apk --debug --flavor robot` → `adb install build/app/outputs/flutter-apk/app-robot-debug.apk` |
+| Robot APK (emulator/dev) | `--flavor remote` (points the CSJBot SDK at a remote address instead of on-robot 127.0.0.1) |
+| ElevenLabs key in APK | `--dart-define=ELEVENLABS_API_KEY=sk_...` (otherwise must be saved in the app's Settings) |
+| MCP server | `cd mcp_server && npm run build` · tests: `npm test` · env: `SPINE_URL`, `SPINE_TOKEN`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| Supabase migrations | via Supabase CLI from `~/.local/share/supabase`, **Session pooler** (Direct conn is IPv6-only and won't route from this Mac) |
 
-## Current status (snapshot)
+### Machine/hardware gotchas (this Mac + this robot)
 
-✅ **Working end-to-end (against the real robot):** Login → Dashboard → Control → joystick drag → spine routes through safety interlock → `RealRobotSDK` forwards to the robot WS ports → event logged to Supabase → realtime status update → STOP greys controls → RESUME re-enables. Drive, head, arm, wave, live MJPEG camera, and battery all run on hardware.
+- **`flutter analyze` wrapper crashes on this Mac** (analysis server exit 64). Use `~/development/downloads/flutter/bin/dart analyze` instead.
+- Robot connection: classic `adb connect <ip>:5555` persists across reboots; wireless-debug port does not.
+- DHCP churn breaks robot↔spine↔app wiring (IPs are configured in `spine/.env`, admin settings, robot's `spine_base_url` pref) — run `scripts/find_robot.sh`.
+- After any robot reboot follow `scripts/robot_bringup.sh` — start order determines whether mic AND chassis both work; restarting `com.csjbot.robotsdk.ten` while the Mikee app runs kills the app's SDK binder → bounce the app.
+- The spine host must be on the robot's LAN (spine dials the robot). Public exposure is via tunnel (ngrok today; see HANDOFF).
 
-🔴 **Known blocker:** Supabase email rate limit on `@xboom.in` domain. Workaround: use Gmail / disable email confirmation in Supabase Auth settings for dev. Documented in `ISSUE_EMAIL_RATE_LIMIT.md`.
+## Conventions
 
-🟡 **Hardware gaps in `RealRobotSDK`:** `onSensorEvent` is still a no-op (the native sensor bridge in `robot_app/docs/SENSOR_BRIDGE.md` isn't wired yet, so obstacle/health/localization/person fields sit at their `unknown`/`null` defaults), and `getStatus` is static.
+**TypeScript (spine, mcp_server):** strict mode; Vitest test for every new behavior (happy path + one failure mode minimum); keep `tsc --noEmit` clean.
 
-⬜ **Not yet built (Phase 2):** Face recognition, voice Q&A (STT + KB search + Claude RAG + TTS), autonomous patrol, Mission Control dashboard (in-progress per `MISSION_CONTROL_BUILD.md`).
+**Flutter (app, robot_app):** Riverpod with `keepAlive` singleton providers; `go_router`; dark theme (background `#0F0F0F`, accent orange `#FF6B35`); components under ~300 lines; all robot commands as spine intents — never direct SDK calls from a client.
 
-## Status & background docs (read for deeper context)
+**Supabase:** RLS on every table — non-negotiable. Note both the robot app (anon key) and the dev admin (`devSkipAuth`) hit Postgres as `anon`: tables they write need public RLS policies, not `TO authenticated`, or you get 42501.
 
-- `PROJECT_STATUS.md` — definitive 400-line status snapshot.
-- `FLUTTER_APP_SUMMARY.md` — Flutter admin app build details.
-- `MISSION_CONTROL_BUILD.md` — Mission Control dashboard widget build.
-- `ISSUE_EMAIL_RATE_LIMIT.md` — current blocker.
-- `README.md` — quick-start for camera streaming.
+**Engineering style:** honest reporting — say explicitly what is unverified on hardware (HANDOFF marks these ⬜/⚠️); read-before-write; minimal new dependencies; features verified against the physical robot before being called done.
 
-## External memory files (extended project context, on this machine)
+## Auth model
 
-These persist across Claude sessions on this machine. Read for deeper architectural reasoning, decision history, and LIDAR research:
-
-- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\mikee-overview.md` — full architectural snapshot, component status, conventions
-- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\mikee-lidar-integration.md` — CSJBot SDK LIDAR research, exposed events, implementation plan
-- `C:\Users\Nishant\.claude\projects\C--Program-Files-Git\memory\MEMORY.md` — index of all memory files
-
-## Active work (June 2026)
-
-**Current focus:** Wire CSJBot SDK obstacle / sensor / localization events through the native bridge into `RealRobotSDK.onSensorEvent` (currently a no-op) so the existing spine pipeline + Flutter admin UI light up on real hardware.
-
-**Key finding from SDK research:** CSJBot does NOT expose raw LIDAR point cloud. It surfaces high-level obstacle events (`NAVI_ROBOT_BLOCKED_NTF`, `NAVI_ROBOT_WAITSHORT_NTF`, `LQ_LOW_NTF`, etc.) which are sufficient for reception robot use case. Full research in `mikee-lidar-integration.md`.
-
-**Native bridge code:** documented in `robot_app/docs/SENSOR_BRIDGE.md`. The spine-side sensor pipeline (`sensors.ts`, types, Flutter `SensorStatusCard`) is fully built; it's just fed by nothing until the bridge forwards events over the chassis WebSocket and `RealRobotSDK` parses them.
-
-## Engineering style
-
-- **Honest reporting:** When something can't be done or is partially done, say so explicitly. Don't paper over gaps.
-- **Real-robot only:** There is no mock SDK. New features are built and verified against the physical Mikee (`RealRobotSDK`); keep handlers behind the spine intent layer so untested hardware paths fail safe.
-- **Minimal surface area:** Don't add new dependencies unless you make the case. Don't add Phase 2 features (face, voice, patrol) into Phase 1 work.
-- **Test what's new:** Vitest for spine, Flutter test for app. Cover happy path + one failure mode minimum.
-- **Read-before-write:** When in doubt about a file's existing shape, read it first. Don't pattern-match from memory.
+Three credentials, all verified by the spine: Supabase user JWTs (ES256 via project JWKS) for admin clients; `KIOSK_TOKEN` static secret for the chest-screen app (works in production); `DEV_AUTH_BYPASS=1` for local dev only (forced off when `NODE_ENV=production`). `ELEVENLABS_TOOL_SECRET` gates the `/elevenlabs/ask` webhook (fail-closed when unset).
 
 ## Team
 
 **Nishant** — solo engineer, Flutter-strong, newer to backend/robotics. This repo is his.
 **Vishal** — founder, owns hardware relationship + DPDP/legal + KB content.
-
-xboom is building land + air + water robots for enterprise (JSW, Tata, Reliance, Indian Army). Mikee is the first product — reception robot MVP.
