@@ -902,6 +902,15 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               wss.clients.forEach((c) => {
                 if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(vc));
               });
+            } else if (it === 'set_config') {
+              // Relay robot-side config (name / behaviour toggles / speed) to the
+              // robot app, which persists + applies it.
+              const cfg = (msg.intent as { config?: Record<string, unknown> })?.config ?? {};
+              const cu = { type: 'config_update', config: cfg } as SpineMessage;
+              console.log(`[Spine] Broadcasting config_update: ${JSON.stringify(cfg)}`);
+              wss.clients.forEach((c) => {
+                if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(cu));
+              });
             } else if (it === 'cancel_navi' && naviState.active) {
               naviState = { ...naviState, cancelling: true };
               broadcastNaviState();

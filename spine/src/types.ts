@@ -25,7 +25,8 @@ export interface Intent {
     | 'get_status'
     | 'voice_state' // robot_app → spine: broadcast current voice phase (#80)
     | 'voice_log' // robot_app → spine: log a completed conversation turn (#80)
-    | 'stop_voice'; // admin → spine → robot_app: end the active voice/listening session
+    | 'stop_voice' // admin → spine → robot_app: end the active voice/listening session
+    | 'set_config'; // admin → spine → robot_app: apply robot-side config (name, toggles…)
   dir?: 'forward' | 'back' | 'left' | 'right'; // for drive
   lr?: number; // 0–100, for head
   ud?: number; // 0–100, for head
@@ -120,12 +121,13 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state' | 'config_update';
   ok?: boolean;
   action?: string; // for voice_control — e.g. 'stop'
   recording?: boolean; // for recording_state
   file?: string | null; // for recording_state — current clip basename
   maxMs?: number; // for recording_state — auto-stop cap
+  config?: Record<string, unknown>; // for config_update — robot-side settings to apply
   message?: string;
   intent?: string; // for ack
   captureId?: string; // for snapshot ack — the stored capture row id

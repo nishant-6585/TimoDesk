@@ -142,6 +142,38 @@ class RobotConfig {
     (await SharedPreferences.getInstance()).setString(_kRobotName, robotName);
   }
 
+  /// Apply a config map pushed from the web admin (spine config_update). Only
+  /// known keys are honoured; each persists so it survives an app restart.
+  static Future<void> applyRemoteConfig(Map<String, dynamic> cfg) async {
+    if (cfg['robot_name'] is String) {
+      await setRobotName(cfg['robot_name'] as String);
+    }
+    if (cfg['company_name'] is String) {
+      companyName = (cfg['company_name'] as String).trim().isEmpty
+          ? defaultCompanyName
+          : (cfg['company_name'] as String).trim();
+      (await SharedPreferences.getInstance())
+          .setString(_kCompanyName, companyName);
+    }
+    if (cfg['greet_visitor'] is String &&
+        (cfg['greet_visitor'] as String).trim().isNotEmpty) {
+      greetVisitorTemplate = (cfg['greet_visitor'] as String).trim();
+      (await SharedPreferences.getInstance())
+          .setString(_kGreetVisitor, greetVisitorTemplate);
+    }
+    if (cfg['escort_reassure_seconds'] is num) {
+      escortReassureSeconds =
+          (cfg['escort_reassure_seconds'] as num).toInt().clamp(0, 120);
+      (await SharedPreferences.getInstance())
+          .setInt(_kEscortReassureSecs, escortReassureSeconds);
+    }
+    if (cfg['attention_gate'] is bool) {
+      attentionGateEnabled = cfg['attention_gate'] as bool;
+      (await SharedPreferences.getInstance())
+          .setBool(_kGateEnabled, attentionGateEnabled);
+    }
+  }
+
   /// Switch the speaking voice (Settings preset or the "change your voice"
   /// voice command). TTS uses it immediately; the conversational agent picks
   /// it up when the next session opens.

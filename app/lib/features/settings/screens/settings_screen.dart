@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme.dart';
+import '../../../services/spine/spine_provider.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _notifications = true;
   String _speed = '0.5x';
 
+  // Robot identity (relayed to the robot app via spine set_config).
+  final _robotName = TextEditingController(text: 'Minee');
+  final _companyName = TextEditingController(text: 'xboom');
+  final _greetVisitor =
+      TextEditingController(text: 'Hello! Welcome to xboom!');
+
   @override
   void initState() {
     super.initState();
@@ -30,14 +37,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _robotIp = ref.read(settingsProvider).robotIp;
   }
 
+  @override
+  void dispose() {
+    _robotName.dispose();
+    _companyName.dispose();
+    _greetVisitor.dispose();
+    super.dispose();
+  }
+
+  /// Relay robot-side config to the robot app (spine set_config → config_update).
+  void _sendConfig(Map<String, dynamic> config) {
+    ref.read(spineProvider.notifier).sendIntent({
+      'intent': 'set_config',
+      'config': config,
+    });
+  }
+
+  void _saveIdentity() {
+    _sendConfig({
+      'robot_name': _robotName.text.trim(),
+      'company_name': _companyName.text.trim(),
+      'greet_visitor': _greetVisitor.text.trim(),
+    });
+    _toast(Icons.check_circle, MikeeColors.success,
+        'Sent to robot — applies immediately');
+  }
+
+  void _toast(IconData icon, Color color, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 12),
+        Text(msg, style: GoogleFonts.inter(fontSize: 13)),
+      ]),
+      backgroundColor: MikeeColors.cardTop,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  /// Real connection test — checks the robot's actual reachability via spine.
   void _testConnection() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [Icon(Icons.check_circle, color: MikeeColors.success, size: 20), const SizedBox(width: 12), Text('Connection successful', style: GoogleFonts.inter(fontSize: 13))]),
-        backgroundColor: MikeeColors.cardTop,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    final spine = ref.read(spineProvider);
+    final online = spine.connected && (spine.status?.online ?? false);
+    if (online) {
+      _toast(Icons.check_circle, MikeeColors.success,
+          'Robot online — spine connected, battery ${spine.status?.battery ?? '?'}%');
+    } else if (spine.connected) {
+      _toast(Icons.warning_amber_rounded, MikeeColors.warning,
+          'Spine connected but robot unreachable — check the robot/Wi-Fi');
+    } else {
+      _toast(Icons.error_outline, MikeeColors.error,
+          'Not connected to spine — check the spine server + robot IP');
+    }
   }
 
   @override
@@ -54,6 +105,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               Text('Robot, network, and safety configuration', style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
             ]),
             const SizedBox(height: 24),
+            // ── ROBOT IDENTITY — relays to the robot app (name/company/greeting).
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('ROBOT IDENTITY',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.12,
+                        color: MikeeColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('Pushed to the robot instantly — no need to touch its screen.',
+                    style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
+                const SizedBox(height: 14),
+                _IdField('Robot name', _robotName, 'e.g. Minee, Rocky'),
+                const SizedBox(height: 12),
+                _IdField('Company name', _companyName, 'e.g. xboom'),
+                const SizedBox(height: 12),
+                _IdField('Visitor greeting', _greetVisitor,
+                    'Spoken to visitors on approach'),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    onPressed: _saveIdentity,
+                    icon: const Icon(Icons.cloud_upload, size: 16),
+                    label: Text('Push to robot',
+                        style: GoogleFonts.inter(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: MikeeColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10))),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
             _SettingCard('NETWORK', [
               _SettingField('Robot IP', _robotIp, (v) {
                 setState(() => _robotIp = v);
@@ -69,10 +165,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               autoSnapshot: _autoSnapshot,
               notifications: _notifications,
               speed: _speed,
-              onCollisionChange: (v) => setState(() => _collisionSafety = v),
-              onSnapshotChange: (v) => setState(() => _autoSnapshot = v),
-              onNotificationsChange: (v) => setState(() => _notifications = v),
-              onSpeedChange: (v) => setState(() => _speed = v),
+              onCollisionChange: (v) {
+                setState(() => _collisionSafety = v);
+                _sendConfig({'collision_safety': v});
+              },
+              onSnapshotChange: (v) {
+                setState(() => _autoSnapshot = v);
+                _sendConfig({'auto_snapshot': v});
+              },
+              onNotificationsChange: (v) {
+                setState(() => _notifications = v);
+                _sendConfig({'event_notifications': v});
+              },
+              onSpeedChange: (v) {
+                setState(() => _speed = v);
+                // Relay the numeric default speed (0.3/0.5/0.8) to the robot.
+                final n = double.tryParse(v.replaceAll('x', '')) ?? 0.5;
+                _sendConfig({'default_speed': n});
+              },
             ),
             const SizedBox(height: 20),
             _AccountCard(),
@@ -80,6 +190,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Labelled text field for the Robot Identity card.
+class _IdField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  const _IdField(this.label, this.controller, this.hint);
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label,
+          style: GoogleFonts.inter(
+              fontSize: 11, color: MikeeColors.textSecondary)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: controller,
+        style: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textPrimary),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textMuted),
+          filled: true,
+          fillColor: MikeeColors.inset,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: MikeeColors.border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: MikeeColors.border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: MikeeColors.primary)),
+        ),
+      ),
+    ]);
   }
 }
 

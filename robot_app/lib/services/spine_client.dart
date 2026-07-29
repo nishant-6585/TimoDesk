@@ -43,6 +43,7 @@ class SpineClient {
   final _naviCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _escortCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _voiceControlCtrl = StreamController<String>.broadcast();
+  final _configCtrl = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
@@ -70,6 +71,9 @@ class SpineClient {
   /// Admin-issued voice control from spine — currently the action string
   /// 'stop' (end the active listening/voice session remotely).
   Stream<String> get voiceControl => _voiceControlCtrl.stream;
+
+  /// Admin-issued robot config (name / behaviour toggles / speed) from spine.
+  Stream<Map<String, dynamic>> get configUpdate => _configCtrl.stream;
 
   bool get isConnected => _authed;
 
@@ -192,6 +196,13 @@ class SpineClient {
             _voiceControlCtrl.add(action);
           }
           return;
+        case 'config_update':
+          // Admin changed robot-side config (name / toggles / speed).
+          final cfg = msg['config'];
+          if (cfg is Map && !_configCtrl.isClosed) {
+            _configCtrl.add(Map<String, dynamic>.from(cfg));
+          }
+          return;
       }
     } catch (_) {
       // ignore malformed frames
@@ -257,5 +268,6 @@ class SpineClient {
     await _naviCtrl.close();
     await _escortCtrl.close();
     await _voiceControlCtrl.close();
+    await _configCtrl.close();
   }
 }

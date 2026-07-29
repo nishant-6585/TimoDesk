@@ -81,6 +81,15 @@ export async function handleIntent(
         return { type: 'ack', intent: 'stop_voice', ok: true };
       }
 
+      case 'set_config': {
+        // Robot-side config (name, behaviour toggles, drive speed, greeting…)
+        // lives in the robot app; spine only relays it. Ack so server.ts
+        // broadcasts config_update to all clients — the robot app applies it.
+        console.log('[Handlers] set_config — relaying to robot app');
+        await logEvent('command_config', { session_id: sessionId });
+        return { type: 'ack', intent: 'set_config', ok: true };
+      }
+
       case 'cancel_navi': {
         if (!sdk.cancelNavi) return { type: 'error', message: 'cancel_navi not supported' };
         console.log('[Handlers] cancel_navi');

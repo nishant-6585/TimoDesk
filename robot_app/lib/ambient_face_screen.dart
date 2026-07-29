@@ -69,6 +69,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<void>? _unknownSub; // spine saw a face, matched no staff
   StreamSubscription<bool>? _presenceSub;
   StreamSubscription<String>? _voiceControlSub; // admin remote voice stop
+  StreamSubscription<Map<String, dynamic>>? _configSub; // admin remote config
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
   StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
   String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
@@ -189,6 +190,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _endVoice();
       }
     });
+    // Admin changed robot config (name / behaviours) from the web app — apply
+    // + persist it so it takes effect without touching the robot's own Settings.
+    _configSub = _spine.configUpdate.listen((cfg) {
+      debugPrint('Config: admin update → $cfg');
+      RobotConfig.applyRemoteConfig(cfg);
+      if (mounted) setState(() {}); // reflect e.g. a rename in the UI
+    });
     // On-device person sensors (laser/RGBD/ultrasonic) → idle→attentive ONLY.
     // Deliberately NOT a greeting trigger: greetings fire exclusively from the
     // camera attention gate (a face looking at the robot), never from LIDAR.
@@ -276,6 +284,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _unknownSub?.cancel();
     _presenceSub?.cancel();
     _voiceControlSub?.cancel();
+    _configSub?.cancel();
     _sdkPersonSub?.cancel();
     _faceRecgSub?.cancel();
     _gaze.dispose();
