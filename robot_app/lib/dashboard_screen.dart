@@ -368,53 +368,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) _resetIdle();
   }
 
-  // Always-visible voice bar: idle → "Talk to me" (starts a session via the
-  // ambient screen's mic pipeline); active → status + "End Conversation".
-  // Gives the dashboard its own way to start/stop the mic, mirroring the face
-  // screen's mic button.
-  Widget _conversationBar() {
+  // Big circular Talk/End FAB on the face box (bottom-right) — mirrors the main
+  // face screen's mic button so it's an easy tap. Idle → orange mic (starts a
+  // session via the ambient screen's mic pipeline); active → red stop (ends it).
+  Widget _talkFab() {
     final active = _voiceActive;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFF1C1412) : _panel,
-        border: const Border(bottom: BorderSide(color: _line)),
-      ),
-      child: Row(children: [
-        Icon(active ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
-            size: 18, color: active ? _accent : _muted),
-        const SizedBox(width: 10),
-        Text(active ? 'Conversation active' : 'Tap Talk to speak with me',
-            style: TextStyle(
-                color: active ? _ink : _muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600)),
-        const Spacer(),
-        GestureDetector(
-          onTap: () {
-            _resetIdle();
-            if (active) {
-              widget.voiceAgent.endSession();
-            } else {
-              widget.onStartTalk();
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFFE5484D) : _accent,
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(active ? Icons.stop_rounded : Icons.mic_rounded,
-                  size: 18, color: Colors.white),
-              const SizedBox(width: 6),
-              Text(active ? 'End Conversation' : 'Talk',
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-            ]),
+    final color = active ? const Color(0xFFE5484D) : _accent;
+    return GestureDetector(
+      onTap: () {
+        _resetIdle();
+        if (active) {
+          widget.voiceAgent.endSession();
+        } else {
+          widget.onStartTalk();
+        }
+      },
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 84,
+          height: 84,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 20, spreadRadius: 1),
+            ],
           ),
+          child: Icon(active ? Icons.stop_rounded : Icons.mic_rounded,
+              color: Colors.white, size: 38),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(active ? 'End' : 'Talk',
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
         ),
       ]),
     );
@@ -548,7 +540,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         body: SafeArea(
           child: Column(children: [
             _topBar(),
-            _conversationBar(),
             Expanded(
               child: LayoutBuilder(builder: (context, c) {
                 final w = c.maxWidth;
@@ -846,13 +837,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ),
           Positioned(top: 12, left: 14, child: _stateChip()),
           if (showWave)
-            Positioned(right: 16, bottom: 16, child: IgnorePointer(child: _miniWaveform())),
+            Positioned(right: 16, bottom: 74, child: IgnorePointer(child: _miniWaveform())),
           Positioned(
             left: 0,
             right: 0,
             bottom: 14,
             child: IgnorePointer(child: Center(child: _toastPill())),
           ),
+          // Big mic/talk FAB — bottom-right of the face box, matching the main
+          // face screen. Idle → orange mic (start); active → red stop (end).
+          Positioned(right: 20, bottom: 20, child: _talkFab()),
         ]),
       ),
     );
