@@ -19,6 +19,7 @@ dependencies:
 
   # Streamed HTTP GET for the mobile/desktop MJPEG camera parser
   http: ^1.2.0
+  url_launcher: ^6.3.0 # open/play recorded clips in the browser's native player
 
   # Image picker for camera/gallery
   image_picker: ^1.0.0

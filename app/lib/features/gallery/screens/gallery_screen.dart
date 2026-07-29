@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../staff/providers/staff_list_provider.dart';
 import '../providers/snapshot_list_provider.dart';
+import '../providers/recordings_provider.dart';
 
 /// Gallery — two tabs: remote snapshots (F7, admin-captured photos from the
 /// robot camera) and enrolled staff faces. Both read the spine over HTTP and
@@ -16,7 +18,7 @@ class GalleryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1240),
@@ -37,11 +39,13 @@ class GalleryScreen extends ConsumerWidget {
               labelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
               tabs: const [
                 Tab(text: 'Snapshots'),
+                Tab(text: 'Recordings'),
                 Tab(text: 'Staff'),
               ],
             ),
             const Expanded(
-              child: TabBarView(children: [_SnapshotsTab(), _StaffTab()]),
+              child: TabBarView(
+                  children: [_SnapshotsTab(), _RecordingsTab(), _StaffTab()]),
             ),
           ]),
         ),
@@ -92,6 +96,148 @@ class _SnapshotsTab extends ConsumerWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Recorded video clips (Record button on the dashboard → ffmpeg on spine).
+/// Plays in the browser's native player; also downloadable.
+class _RecordingsTab extends ConsumerWidget {
+  const _RecordingsTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recsAsync = ref.watch(recordingsProvider);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(recordingsProvider),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(24),
+        child: recsAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.only(top: 80),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => _GalleryMessage(
+            icon: Icons.cloud_off_rounded,
+            title: 'Failed to load recordings',
+            detail: '$e',
+            onRetry: () => ref.invalidate(recordingsProvider),
+          ),
+          data: (recs) {
+            if (recs.isEmpty) {
+              return const _GalleryMessage(
+                icon: Icons.videocam_off_outlined,
+                title: 'No recordings yet',
+                detail: 'Tap Record on the dashboard to capture a clip from the '
+                    'robot camera, then Stop to finalize it.',
+              );
+            }
+            return Column(children: [for (final r in recs) _RecordingRow(rec: r)]);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordingRow extends StatelessWidget {
+  final Recording rec;
+  const _RecordingRow({required this.rec});
+
+  String _when() {
+    if (rec.mtime <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(rec.mtime.toInt()).toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}  ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: MikeeColors.cardTop,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: MikeeColors.border),
+      ),
+      child: Row(children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: MikeeColors.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.movie_rounded, color: MikeeColors.primary),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(rec.file,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                    fontSize: 14, fontWeight: FontWeight.w600, color: MikeeColors.textPrimary)),
+            const SizedBox(height: 3),
+            Text('${_when()}  ·  ${rec.sizeLabel}',
+                style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary)),
+          ]),
+        ),
+        _RecBtn(
+          icon: Icons.play_arrow_rounded,
+          label: 'Play',
+          primary: true,
+          onTap: () => launchUrl(Uri.parse(rec.url),
+              mode: LaunchMode.externalApplication),
+        ),
+        const SizedBox(width: 8),
+        _RecBtn(
+          icon: Icons.download_rounded,
+          label: 'Download',
+          primary: false,
+          onTap: () => launchUrl(Uri.parse(rec.url),
+              mode: LaunchMode.externalApplication),
+        ),
+      ]),
+    );
+  }
+}
+
+class _RecBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+  const _RecBtn(
+      {required this.icon,
+      required this.label,
+      required this.primary,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: primary ? MikeeColors.primary : MikeeColors.inset,
+          borderRadius: BorderRadius.circular(8),
+          border: primary ? null : Border.all(color: MikeeColors.border),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: primary ? Colors.white : MikeeColors.textSecondary),
+          const SizedBox(width: 5),
+          Text(label,
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primary ? Colors.white : MikeeColors.textSecondary)),
+        ]),
       ),
     );
   }

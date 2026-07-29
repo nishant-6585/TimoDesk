@@ -503,6 +503,62 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         return;
       }
 
+      // List recorded clips (newest first) so the admin Gallery can show them.
+      if (url === '/recordings' && req.method === 'GET') {
+        try {
+          const files = fs.existsSync(RECORDINGS_DIR)
+            ? fs.readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('.mp4'))
+            : [];
+          const list = files
+            .map((f) => {
+              const st = fs.statSync(path.join(RECORDINGS_DIR, f));
+              return { file: f, size: st.size, mtime: st.mtimeMs };
+            })
+            // Exclude the clip that's still being written (ffmpeg finalizes on stop).
+            .filter((r) => !(recorder && path.basename(recorder.file) === r.file))
+            .sort((a, b) => b.mtime - a.mtime);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, recordings: list }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: String(err) }));
+        }
+        return;
+      }
+
+      // Stream a recorded clip with HTTP Range support (so the <video> player
+      // can seek). Path-traversal-safe: only a basename inside RECORDINGS_DIR.
+      const recMatch = (req.url ?? '').match(/^\/recordings\/([^/?]+)$/);
+      if (recMatch && req.method === 'GET') {
+        const name = path.basename(decodeURIComponent(recMatch[1]));
+        const filePath = path.join(RECORDINGS_DIR, name);
+        if (!name.endsWith('.mp4') || !fs.existsSync(filePath)) {
+          res.writeHead(404); res.end('not found'); return;
+        }
+        const stat = fs.statSync(filePath);
+        const range = req.headers.range;
+        if (range) {
+          const m = range.match(/bytes=(\d+)-(\d*)/);
+          const start = m ? parseInt(m[1], 10) : 0;
+          const end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
+          res.writeHead(206, {
+            'Content-Type': 'video/mp4',
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': end - start + 1,
+          });
+          fs.createReadStream(filePath, { start, end }).pipe(res);
+        } else {
+          res.writeHead(200, {
+            'Content-Type': 'video/mp4',
+            'Content-Length': stat.size,
+            'Accept-Ranges': 'bytes',
+          });
+          fs.createReadStream(filePath).pipe(res);
+        }
+        return;
+      }
+
       if (url === '/staff' && req.method === 'GET') {
         await handleListStaff(req, res, supabase);
         return;
