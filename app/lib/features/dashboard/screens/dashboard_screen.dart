@@ -260,6 +260,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     // Real battery from spine, or null (shown as "—") when unknown — no fake value.
     final rawBattery = spineState.status?.battery;
     final int? battery = (rawBattery != null && rawBattery >= 0) ? rawBattery : null;
+    final bool charging = spineState.status?.isCharging ?? false;
     final stopped = spineState.stopped;
 
     return LayoutBuilder(
@@ -275,7 +276,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildStatCards(wide, online, battery),
+                      _buildStatCards(wide, online, battery, charging),
                       SizedBox(height: wide ? 20 : 12),
                       Consumer(
                         builder: (context, ref, _) {
@@ -333,10 +334,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildStatCards(bool wide, bool online, int? battery) {
+  Widget _buildStatCards(bool wide, bool online, int? battery, bool charging) {
     final cards = <Widget>[
       _RobotStatusCard(online: online, latency: 12),
-      _BatteryCard(percent: battery, charging: true),
+      _BatteryCard(percent: battery, charging: charging),
       _VisitorsCard(),
       _SessionsCard(),
     ];

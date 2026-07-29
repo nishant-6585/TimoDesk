@@ -533,9 +533,12 @@ final armProvider =
 
 class BatteryState {
   final int? level; // null = unknown (no real reading yet)
-  final int? charge;
+  final int? charge; // SDK charge_status (>0 = on charger/charging)
   final String source; // 'sdk' | 'android' | 'unknown'
   const BatteryState({this.level, this.charge, this.source = 'unknown'});
+
+  /// True when the robot is on the charging dock (charge_status > 0).
+  bool get isCharging => charge != null && charge! > 0;
 }
 
 class BatteryNotifier extends StateNotifier<BatteryState> {
@@ -550,13 +553,19 @@ class BatteryNotifier extends StateNotifier<BatteryState> {
   void _onEvent(dynamic raw) {
     final m = Map<String, dynamic>.from(raw as Map);
     final level = (m['battery'] as num?)?.toInt();
+    final charge = (m['charge'] as num?)?.toInt();
+    final charging = charge != null && charge > 0;
     state = BatteryState(
       level: (level != null && level >= 0) ? level : null,
-      charge: (m['charge'] as num?)?.toInt(),
+      charge: charge,
       source: (m['source'] as String?) ?? 'unknown',
     );
-    // Feed the :8090 HTTP server that spine polls — now a REAL value.
-    if (level != null && level >= 0) BatteryService.setBattery(level);
+    // Feed the :8090 HTTP server that spine polls — battery + charging state,
+    // so the admin's ⚡ indicator reflects the dock. Push charging even when the
+    // level is stale so a dock/undock still updates it.
+    BatteryService.setBattery(
+        (level != null && level >= 0) ? level : -1,
+        charging: charging);
   }
 
   @override

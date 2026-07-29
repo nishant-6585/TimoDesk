@@ -93,13 +93,19 @@ export class RealRobotSDK implements RobotSDK {
         // runs on boot + every 30s and is the canonical liveness signal that
         // drives `online` (the flag the admin Control screen gates commands on).
         this.setOnline(true);
-        const data = (await response.json()) as { battery?: number };
+        const data = (await response.json()) as { battery?: number; charging?: boolean };
         const battery = data.battery as number;
         // The 8090 endpoint is the head/tablet battery. Only use it when the
         // bridge hasn't supplied the real chassis charge (realBattery < 0).
         if (this.realBattery < 0 && battery >= 0 && battery <= 100) {
           this.status.battery = battery;
           console.log(`[Real SDK] Battery (head/tablet) updated: ${battery}%`);
+        }
+        // Charging state from the robot's SDK charge_status — drives the admin's
+        // ⚡ indicator. Report a transition so it's visible in the logs.
+        if (typeof data.charging === 'boolean' && data.charging !== this.status.isCharging) {
+          this.status.isCharging = data.charging;
+          console.log(`[Real SDK] Charging state: ${data.charging}`);
         }
       } else {
         this.setOnline(false);

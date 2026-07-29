@@ -635,19 +635,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             _perceptionOn ? 'Perception On' : 'Perception Off'),
         const SizedBox(width: 8),
         Consumer(builder: (_, ref, __) {
-          final b = ref.watch(batteryProvider).level;
-          final icon = b == null
-              ? Icons.battery_unknown_rounded
-              : b > 66
-                  ? Icons.battery_full_rounded
-                  : b > 33
-                      ? Icons.battery_5_bar_rounded
-                      : Icons.battery_2_bar_rounded;
+          final batt = ref.watch(batteryProvider);
+          final b = batt.level;
+          final charging = batt.isCharging;
+          final icon = charging
+              ? Icons.battery_charging_full_rounded
+              : b == null
+                  ? Icons.battery_unknown_rounded
+                  : b > 66
+                      ? Icons.battery_full_rounded
+                      : b > 33
+                          ? Icons.battery_5_bar_rounded
+                          : Icons.battery_2_bar_rounded;
+          final color = charging ? _green : _muted;
           return Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 24, color: _muted),
+            Icon(icon, size: 24, color: color),
             const SizedBox(width: 6),
-            Text(b == null ? '—' : '$b%',
-                style: const TextStyle(color: _muted, fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(b == null ? '—' : '$b%${charging ? ' ⚡' : ''}',
+                style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w700)),
           ]);
         }),
         const SizedBox(width: 12),

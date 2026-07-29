@@ -56,7 +56,13 @@ public class BatteryPlugin implements EventChannel.StreamHandler, MethodChannel.
 
         @Override
         public void getCharge(int c) {
+            // c = charge_status from the SDK (robot_info: 1 = on charger/charging,
+            // 0 = not). Emit on CHANGE so the admin's ⚡ indicator flips promptly
+            // on dock/undock without waiting for the next battery poll.
+            final boolean changed = (c != charge);
             charge = c;
+            Log.d(TAG, "charge_status=" + c + (changed ? " (changed)" : ""));
+            if (changed && sdkBattery >= 0) emit(sdkBattery, "sdk");
         }
     };
 
