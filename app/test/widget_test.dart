@@ -12,7 +12,10 @@ void main() {
     });
 
     test('uses the shared camera port constant', () {
-      expect(robotStreamUrl(defaultRobotIp), contains(':$robotCameraPort/stream'));
+      // `defaultRobotIp` is declared `String?` (constants.dart) even though
+      // String.fromEnvironment yields '' when ROBOT_IP is unset — hence the ??.
+      // The assertion is about the port, so an empty host is fine here.
+      expect(robotStreamUrl(defaultRobotIp ?? ''), contains(':$robotCameraPort/stream'));
     });
   });
 }

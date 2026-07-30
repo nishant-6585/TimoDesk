@@ -15,7 +15,7 @@ linter:
     - control_flow_in_finally
     - empty_statements
     - hash_and_equals
-    - invariant_booleans
+    # invariant_booleans: removed in Dart 3.0.0 — listing it is an analyzer warning.
     - iterable_contains_unrelated_type
     - list_remove_unrelated_type
     - literal_only_boolean_expressions
