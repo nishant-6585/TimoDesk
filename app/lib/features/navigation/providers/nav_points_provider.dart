@@ -1,7 +1,32 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/supabase.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/spine_base.dart';
 import '../../../services/spine/navi_status_provider.dart';
 import '../../../services/spine/spine_provider.dart';
+
+String _authToken() =>
+    Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
+
+Map<String, String> get _headers => {
+      'Authorization': 'Bearer ${_authToken()}',
+      'Content-Type': 'application/json',
+    };
+
+/// Unwrap the spine's `{ ok, ... }` envelope, or throw with its reason.
+Map<String, dynamic> _envelope(http.Response res, String verb) {
+  Map<String, dynamic>? data;
+  try {
+    data = jsonDecode(res.body) as Map<String, dynamic>;
+  } catch (_) {
+    // Non-JSON body (proxy error page, empty 401) — fall through to the throw.
+  }
+  if (data == null || data['ok'] != true) {
+    throw Exception('$verb failed (${res.statusCode}): ${data?['reason'] ?? res.body}');
+  }
+  return data;
+}
 
 /// A named SLAM pose the robot can navigate to. Mirrors the `nav_points`
 /// Supabase table (migration 010).
@@ -44,9 +69,13 @@ class NavPoint {
   Map<String, dynamic> get pose => {'x': x, 'y': y, 'z': z, 'rotation': rotation};
 }
 
-/// CRUD over the `nav_points` table plus the spine round-trips needed to capture
-/// a pose (get_position) and replay it (navi). State is the list of saved points
-/// as an [AsyncValue] so the UI can render loading / error / data uniformly.
+/// CRUD over nav points plus the spine round-trips needed to capture a pose
+/// (get_position) and replay it (navi). State is the list of saved points as an
+/// [AsyncValue] so the UI can render loading / error / data uniformly.
+///
+/// CRUD goes through the spine's /nav-points routes rather than PostgREST: after
+/// migration 017 the table is admin-allowlisted and closed to `anon`, and the
+/// robot's chest screen (which has no Supabase session) shares these routes.
 class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
   final Ref _ref;
 
@@ -58,12 +87,11 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
-      final rows = await supabaseClient
-          .from('nav_points')
-          .select()
-          .order('sort_order', ascending: true)
-          .order('created_at', ascending: true);
-      final points = (rows as List)
+      final res = await http
+          .get(Uri.parse('$spineHttpBase/nav-points'), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      final rows = _envelope(res, 'Load')['points'] as List;
+      final points = rows
           .map((e) => NavPoint.fromJson(e as Map<String, dynamic>))
           .toList();
       state = AsyncValue.data(points);
@@ -81,31 +109,51 @@ class NavPointsNotifier extends StateNotifier<AsyncValue<List<NavPoint>>> {
     if (pose == null) {
       throw Exception('Could not read robot position (offline or timed out)');
     }
-    await supabaseClient.from('nav_points').insert({
-      'name': name,
-      if (description != null && description.isNotEmpty) 'description': description,
-      'x': pose['x'],
-      'y': pose['y'],
-      'z': pose['z'],
-      'rotation': pose['rotation'],
-      'kind': kind,
-    });
+    final res = await http
+        .post(
+          Uri.parse('$spineHttpBase/nav-points'),
+          headers: _headers,
+          body: jsonEncode({
+            'name': name,
+            if (description != null && description.isNotEmpty) 'description': description,
+            'x': pose['x'],
+            'y': pose['y'],
+            'z': pose['z'],
+            'rotation': pose['rotation'],
+            'kind': kind,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    _envelope(res, 'Save');
     await load();
   }
 
   /// Update a point's name / arrival announcement and reload the list.
   /// Coordinates are left untouched — re-capture to move a point.
   Future<void> update(String id, {String? name, String? description}) async {
-    await supabaseClient.from('nav_points').update({
-      if (name != null && name.isNotEmpty) 'name': name,
-      'description': (description == null || description.isEmpty) ? null : description,
-    }).eq('id', id);
+    final res = await http
+        .patch(
+          Uri.parse('$spineHttpBase/nav-points/${Uri.encodeComponent(id)}'),
+          headers: _headers,
+          body: jsonEncode({
+            if (name != null && name.isNotEmpty) 'name': name,
+            'description': (description == null || description.isEmpty) ? null : description,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    _envelope(res, 'Update');
     await load();
   }
 
   /// Delete a saved point and reload the list.
   Future<void> delete(String id) async {
-    await supabaseClient.from('nav_points').delete().eq('id', id);
+    final res = await http
+        .delete(
+          Uri.parse('$spineHttpBase/nav-points/${Uri.encodeComponent(id)}'),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 12));
+    _envelope(res, 'Delete');
     await load();
   }
 

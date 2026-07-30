@@ -1,7 +1,13 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/spine_base.dart';
+
+String _authToken() =>
+    Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
+
+Map<String, String> get _headers => {'Authorization': 'Bearer ${_authToken()}'};
 
 /// Global recording state — the ffmpeg recorder lives on spine, so a recording
 /// keeps running across UI navigation. Every screen reads THIS (kept in sync by
@@ -34,7 +40,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   Future<void> _fetchInitial() async {
     try {
       final res = await http
-          .get(Uri.parse('$spineHttpBase/record/status'))
+          .get(Uri.parse('$spineHttpBase/record/status'), headers: _headers)
           .timeout(const Duration(seconds: 6));
       final m = jsonDecode(res.body) as Map<String, dynamic>;
       if (m['ok'] == true) {
@@ -64,7 +70,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   Future<void> start() async {
     try {
       await http
-          .post(Uri.parse('$spineHttpBase/record/start'))
+          .post(Uri.parse('$spineHttpBase/record/start'), headers: _headers)
           .timeout(const Duration(seconds: 8));
     } catch (_) {}
   }
@@ -72,7 +78,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   Future<void> stop() async {
     try {
       await http
-          .post(Uri.parse('$spineHttpBase/record/stop'))
+          .post(Uri.parse('$spineHttpBase/record/stop'), headers: _headers)
           .timeout(const Duration(seconds: 8));
     } catch (_) {}
   }
