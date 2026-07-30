@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { notifyStaff } from '../src/services/notify';
+import { notifyStaff, notifyHandoff } from '../src/services/notify';
 
 const ORIG_ENV = { ...process.env };
 
@@ -23,6 +23,7 @@ beforeEach(() => {
   delete process.env.INTERAKT_API_KEY;
   delete process.env.RESEND_API_KEY;
   delete process.env.NOTIFY_EMAIL_FROM;
+  delete process.env.HANDOFF_NOTIFY_CHANNEL;
 });
 
 afterEach(() => {
@@ -72,5 +73,32 @@ describe('notifyStaff', () => {
     await expect(notifyStaff({ full_name: 'Jo', notify_channel: 'slack:U1' }, 'Ann')).rejects.toThrow(
       /slack notify failed: 404 no_service/
     );
+  });
+});
+
+describe('notifyHandoff — page a human when the robot promised one', () => {
+  it('is log-only (no fetch, no throw) when HANDOFF_NOTIFY_CHANNEL is unset', async () => {
+    const f = mockFetch(200);
+    await expect(notifyHandoff('what does it cost?', 'no KB match')).resolves.toBe(false);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('sends the question and reason over the configured channel', async () => {
+    process.env.HANDOFF_NOTIFY_CHANNEL = 'slack:U-frontdesk';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.test/x';
+    const f = mockFetch(200);
+    await expect(notifyHandoff('what does it cost?', 'no KB match')).resolves.toBe(true);
+    expect(f).toHaveBeenCalledTimes(1);
+    const [, opts] = f.mock.calls[0] as unknown as [string, RequestInit];
+    const sent = JSON.parse(opts.body as string);
+    expect(sent.text).toContain('what does it cost?');
+    expect(sent.text).toContain('no KB match');
+  });
+
+  it('never throws when the provider rejects — the visitor answer already went out', async () => {
+    process.env.HANDOFF_NOTIFY_CHANNEL = 'slack:U-frontdesk';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.test/x';
+    mockFetch(500, 'boom');
+    await expect(notifyHandoff('q', 'reason')).resolves.toBe(false);
   });
 });

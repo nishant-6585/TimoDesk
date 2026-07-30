@@ -15,6 +15,13 @@ class FaceDetectedEvent {
   const FaceDetectedEvent(this.name, this.staffId, this.distance);
 }
 
+/// Intrusion alarm command from the spine (F9). [start] false means stand down.
+class AlarmCommand {
+  final bool start;
+  final String? waypoint;
+  const AlarmCommand({required this.start, this.waypoint});
+}
+
 /// robot_app's client to the spine WebSocket (ws://<spine>:4000).
 ///
 /// robot_app is otherwise a SERVER to spine (MJPEG :8080, battery :8090, control
@@ -44,6 +51,8 @@ class SpineClient {
   final _escortCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _voiceControlCtrl = StreamController<String>.broadcast();
   final _configCtrl = StreamController<Map<String, dynamic>>.broadcast();
+  final _alarmCtrl = StreamController<AlarmCommand>.broadcast();
+  final _tourCtrl = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Recognized staff (matched only — `unknown` is filtered out here).
   Stream<FaceDetectedEvent> get faceDetected => _faceCtrl.stream;
@@ -74,6 +83,15 @@ class SpineClient {
 
   /// Admin-issued robot config (name / behaviour toggles / speed) from spine.
   Stream<Map<String, dynamic>> get configUpdate => _configCtrl.stream;
+
+  /// Intrusion alarm from the spine's after-hours security patrol (F9).
+  Stream<AlarmCommand> get alarm => _alarmCtrl.stream;
+
+  /// Guided-tour lifecycle from the spine sequencer (F8):
+  /// {event:'started'|'questions_open'|'questions_closed'|'finished', …}.
+  /// `questions_open` is the cue to open the mic so the guest can ask about
+  /// the station the robot just narrated.
+  Stream<Map<String, dynamic>> get tourEvents => _tourCtrl.stream;
 
   bool get isConnected => _authed;
 
@@ -177,6 +195,7 @@ class SpineClient {
         case 'event':
           if (msg['event'] == 'face_detected') _handleFaceDetected(msg);
           if (msg['event'] == 'escort_event') _handleEscortEvent(msg);
+          if (msg['event'] == 'tour_event') _handleTourEvent(msg);
           return;
         case 'robot_status':
           final status = msg['status'];
@@ -201,6 +220,15 @@ class SpineClient {
           final cfg = msg['config'];
           if (cfg is Map && !_configCtrl.isClosed) {
             _configCtrl.add(Map<String, dynamic>.from(cfg));
+          }
+          return;
+        case 'alarm':
+          // F9: spine confirmed an intruder during the after-hours patrol.
+          if (!_alarmCtrl.isClosed) {
+            _alarmCtrl.add(AlarmCommand(
+              start: (msg['action'] as String?) != 'stop',
+              waypoint: msg['waypoint'] as String?,
+            ));
           }
           return;
       }
@@ -240,6 +268,17 @@ class SpineClient {
     }
   }
 
+  void _handleTourEvent(Map<String, dynamic> msg) {
+    // Same envelope as escort_event: { eventPayload:{ payload:{event, …} } }
+    final ep = msg['eventPayload'];
+    if (ep is! Map) return;
+    final payload = ep['payload'];
+    if (payload is! Map) return;
+    if (!_tourCtrl.isClosed) {
+      _tourCtrl.add(Map<String, dynamic>.from(payload));
+    }
+  }
+
   void _onClosed() {
     _authed = false;
     if (!_connCtrl.isClosed) _connCtrl.add(false);
@@ -269,5 +308,7 @@ class SpineClient {
     await _escortCtrl.close();
     await _voiceControlCtrl.close();
     await _configCtrl.close();
+    await _alarmCtrl.close();
+    await _tourCtrl.close();
   }
 }

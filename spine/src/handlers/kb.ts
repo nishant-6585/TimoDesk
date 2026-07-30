@@ -23,6 +23,7 @@ import { ingestText, ingestUrl } from '../services/kb-ingest';
 import { ingestFile } from '../services/kb-file';
 import { crawlJobs } from '../services/kb-crawl';
 import { askQuestion } from '../services/rag';
+import { notifyHandoff } from '../services/notify';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise(resolve => {
@@ -316,11 +317,21 @@ export async function handleElevenLabsAsk(
 
   try {
     const result = await askQuestion(supabase, question);
+    // A live visitor is standing at reception being told a human will come —
+    // page one. Not awaited: the agent is waiting on this response to speak.
+    if (result.source === 'handoff') {
+      void notifyHandoff(question, `no knowledge-base match (similarity ${result.similarity ?? 'none'})`);
+      void logEvent('handoff_requested', { question, similarity: result.similarity, via: 'elevenlabs' });
+    }
     // Flat shape — ElevenLabs feeds the tool result straight to the agent.
     return json(res, 200, { answer: result.answer, source: result.source });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error('[elevenlabs/ask] failed:', reason);
+    // The brain is down and a visitor is mid-conversation — this is the case
+    // that most needs a human, so page one before answering.
+    void notifyHandoff(question, `knowledge base unreachable: ${reason}`);
+    void logEvent('handoff_requested', { question, via: 'elevenlabs', error: reason });
     // Give the agent a speakable fallback rather than an opaque 500.
     return json(res, 200, {
       answer: "I couldn't reach the knowledge base just now — let me connect you to a team member.",

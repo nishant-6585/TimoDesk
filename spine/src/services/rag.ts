@@ -199,5 +199,10 @@ export async function askQuestion(
   }
 
   const answer = await generate(question, chunks);
-  return { answer, source: 'claude', similarity: topSimilarity, chunks };
+  // A local miss that no provider could answer means Claude was given weak or
+  // empty context, so its RULES make it promise a human ("I'll connect you to a
+  // team member"). Tag that as 'handoff' rather than 'claude' — otherwise the
+  // promise is invisible to callers and nobody is ever actually paged.
+  const source: AnswerSource = isLocalMiss(topSimilarity) ? 'handoff' : 'claude';
+  return { answer, source, similarity: topSimilarity, chunks };
 }

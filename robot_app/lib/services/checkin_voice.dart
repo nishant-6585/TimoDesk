@@ -111,4 +111,45 @@ class CheckinVoice {
         t == 'forget it' ||
         t == 'leave it';
   }
+
+  /// True when the visitor declines to give an OPTIONAL detail (company /
+  /// purpose). Distinct from [isCancel]: skipping a field continues the
+  /// check-in, cancelling abandons it. "no" is deliberately absent here — it
+  /// reads as a cancel, and [isCancel] is checked first.
+  static bool isSkip(String transcript) {
+    final t = fuzzyNormalize(transcript);
+    return t == 'skip' ||
+        t == 'pass' ||
+        t == 'none' ||
+        t == 'nothing' ||
+        t == 'prefer not to say' ||
+        t == 'rather not say' ||
+        t == 'not say' ||
+        t == 'no thanks' ||
+        t == 'no thank you' ||
+        t == 'personal';
+  }
+
+  /// Sanitise a free-text answer for company / purpose. Strips conversational
+  /// lead-ins ("I'm from", "it's about"), trailing punctuation, and collapses
+  /// whitespace. Returns '' when nothing useful remains, so the caller stores
+  /// null rather than a fragment.
+  ///
+  /// Capped at 120 chars to match the spine's own cap — a garbled STT run must
+  /// not write a paragraph into the visitor record.
+  static String extractDetail(String transcript) {
+    var t = transcript.trim().replaceAll(RegExp(r'[.?!,]+$'), '');
+    t = t.replaceFirst(
+      RegExp(
+        r"^\s*(?:i\s*'?\s*a?m\s+from|i\s+work\s+(?:at|for)|(?:i\s*'?\s*a?m\s+)?"
+        r"(?:here\s+)?(?:for|about)|its\s+about|it\s*'?s\s+about|"
+        r'from|the\s+company\s+is|company\s+is|purpose\s+is)\s+',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (t.isEmpty) return '';
+    return t.length > 120 ? t.substring(0, 120).trim() : t;
+  }
 }
