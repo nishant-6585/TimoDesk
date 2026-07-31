@@ -313,9 +313,39 @@ public class AudioBridgePlugin
     // so it is started ONLY while a voice session is active and stopped right after.
     private volatile boolean engineRunning = false;
 
+    /** Run a shell command as root via this robot's eng-build su (`su 0 <cmd>` —
+     *  verified: the app's uid escalates to uid=0). Blocking; call OFF the main
+     *  thread. Best-effort — logs failures, never throws to the caller. */
+    private void runAsRoot(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "0", "sh", "-c", cmd});
+            p.waitFor();
+            Log.d(TAG, "runAsRoot exit=" + p.exitValue() + " : " + cmd);
+        } catch (Throwable t) {
+            Log.w(TAG, "runAsRoot failed (" + cmd + "): " + t.getMessage());
+        }
+    }
+
+    // Option B target: robotsdk.ten hosts its own mic-grabbing AIUI as a SEPARATE
+    // service in the SAME process as the chassis service, so stopping just this
+    // frees /dev/snd/pcmC1D0c while chassis + SLAM keep running. See docs/VENDOR_MIC_AUDIO.md.
+    private static final String ROBOTSDK_AIUI_SERVICE =
+            "com.csjbot.robotsdk.ten/com.csjbot.asragent.aiui_soft.AiuiMixedService";
+
     private void startSpeechEngine() {
         if (engineRunning) return;
+        engineRunning = true; // dedupe up-front; reset on hard failure below
+        // Runs off the main thread: the su exec + SDK calls block, and this is
+        // fire-and-forget from Dart (startSpeechEngine returns success immediately).
+        new Thread(() -> {
         try {
+            // Option B — FREE THE MIC before we grab it. robotsdk.ten's own AIUI
+            // exclusive-holds pcmC1D0c; stopping ONLY its AiuiMixedService (root)
+            // releases the device so our in-process AIUI can open it, with chassis +
+            // SLAM untouched. This makes voice self-healing ON-DEVICE — no Mac/adb
+            // bringup reclaim needed after a reboot. Verified 2026-07-31.
+            runAsRoot("am stopservice " + ROBOTSDK_AIUI_SERVICE);
+            try { Thread.sleep(400); } catch (InterruptedException ignore) {}
             try {
                 CsjRobot.getInstance().getSpeech().startSpeechService();
             } catch (Throwable t) {
@@ -335,11 +365,12 @@ public class AudioBridgePlugin
             } catch (Throwable t) {
                 Log.w(TAG, "startAudioRecognize: " + t.getMessage());
             }
-            engineRunning = true;
-            Log.d(TAG, "speech engine STARTED (session-gated)");
+            Log.d(TAG, "speech engine STARTED (session-gated, mic freed via Option B)");
         } catch (Throwable t) {
             Log.w(TAG, "startSpeechEngine failed: " + t.getMessage());
+            engineRunning = false;
         }
+        }, "mikee-speech-start").start();
     }
 
     private void stopSpeechEngine() {

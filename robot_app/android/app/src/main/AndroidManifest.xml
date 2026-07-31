@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Auto-bring-up after reboot (BootReceiver): free the mic (Option B) + launch. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
     <application
         android:label="Mikee"
@@ -44,6 +46,15 @@
         <meta-data
             android:name="CSJ_SDK_REMOTE_APP_NAME"
             android:value="${applicationId}" />
+        <!-- Auto-bring-up after reboot: free the mic (Option B) + launch Mikee. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
     </application>
 
     <queries>
