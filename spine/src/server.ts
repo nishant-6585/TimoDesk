@@ -28,6 +28,7 @@ import { deleteSnapshot } from './captures';
 import { handleAsk } from './handlers/ask';
 import {
   handleKbIngest,
+  handleKbSyncStaff,
   handleKbIngestUrl,
   handleKbIngestFile,
   handleKbCrawlStart,
@@ -589,6 +590,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
       if (url === '/kb/ingest' && req.method === 'POST') {
         await handleKbIngest(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/sync-staff' && req.method === 'POST') {
+        await handleKbSyncStaff(req, res, supabase);
         return;
       }
       if (url === '/kb/ingest-url' && req.method === 'POST') {

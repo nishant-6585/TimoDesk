@@ -20,6 +20,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 import { ingestText, ingestUrl } from '../services/kb-ingest';
+import { syncStaffToKb } from '../services/kb-staff';
 import { ingestFile } from '../services/kb-file';
 import { crawlJobs } from '../services/kb-crawl';
 import { askQuestion } from '../services/rag';
@@ -66,6 +67,31 @@ export async function handleKbIngest(
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error('[kb/ingest] failed:', reason);
+    return json(res, 500, { ok: false, reason });
+  }
+}
+
+/**
+ * POST /kb/sync-staff — (re)build the staff directory in the KB from the
+ * current active staff rows (name, role, phone, desk). Replaces the previous
+ * staff-derived chunks. Rate-limited by Voyage, so this can take a while for
+ * many staff; safe to re-run.
+ */
+export async function handleKbSyncStaff(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  try {
+    const result = await syncStaffToKb(supabase);
+    await logEvent('kb_ingested', { actor: auth.userId, kind: 'staff', chunks: result.chunks });
+    return json(res, 200, { ok: true, ...result });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[kb/sync-staff] failed:', reason);
     return json(res, 500, { ok: false, reason });
   }
 }
