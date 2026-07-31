@@ -73,6 +73,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
   StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
   String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
+  int _pendingGreetAtMs = 0; // when _pendingGreetName was set — freshness guard for session priming
 
   bool _useLivePerception = true; // toggle in debug card; drives gaze when on
   bool _present = false; // a face box is currently visible
@@ -402,6 +403,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greeted = true; // counts as this visit's one greeting
     _awaitingRecognition = false; // spine identity won the recognition window
     _recognitionWaitTimer?.cancel();
+    // Prime the voice agent with WHO the spine recognised, so the session opens
+    // knowing the person — fixes "do you recognize me?" → "I can't identify
+    // anyone" (this authoritative path previously never told the agent). Consumed
+    // in _startVoice as the one-shot STAFF_RECOGNIZED first turn.
+    _pendingGreetName = e.name;
+    _pendingGreetAtMs = DateTime.now().millisecondsSinceEpoch;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(e.name), staffName: e.name);
     if (upgradeAfterGeneric) {
@@ -430,6 +437,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _awaitingRecognition = false;
     _recognitionWaitTimer?.cancel();
     _greeted = false; // a fresh visitor deserves a fresh greeting
+    _pendingGreetName = null; // a visitor is NOT staff — don't prime the agent with a stale name
     _greetOnApproach();
   }
 
@@ -936,9 +944,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     _greeted = true; // counts as this visit's one greeting (blocks the plain hello)
     _pendingGreetName = name;
+    _pendingGreetAtMs = DateTime.now().millisecondsSinceEpoch;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(name), staffName: name); // overlay + face state
-    _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $_pendingGreetName');
+    // STAFF_RECOGNIZED priming is centralised in _startVoice (covers this path
+    // AND the spine path AND a manual Talk right after recognition).
     _startVoice(auto: true); // opens the session → agent greets by name, then listens
   }
 
@@ -1137,6 +1147,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // whole time (root cause of "auto greeting can't hear me"). Cleared on the
     // first real user input. Manual (button) sessions keep the first message.
     _dropFirstAgentTurn = false; // TEMP: reverted — dropping it may break EL turn-taking
+    // Prime the agent with the freshly-recognised staff member (spine OR on-device)
+    // so this session opens KNOWING who's in front of it — Mikee can greet by name
+    // and answer "do you recognize me?". One-shot first turn; the agent's dashboard
+    // prompt interprets the STAFF_RECOGNIZED: prefix. Freshness-guarded so a stale
+    // name from an earlier visit doesn't leak into a much later manual session.
+    final recognized = _pendingGreetName?.trim();
+    if (recognized != null &&
+        recognized.isNotEmpty &&
+        DateTime.now().millisecondsSinceEpoch - _pendingGreetAtMs < 120000) {
+      _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $recognized');
+    }
     _voiceAgent.startSession();
     // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI
     // shows we're actually hearing audio (mic fails gracefully on the emulator).
