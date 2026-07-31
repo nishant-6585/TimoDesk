@@ -20,6 +20,8 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 
+import { staffDeskNavPoints, STAFF_DESK_ID_PREFIX } from '../services/staff-desks';
+
 const TABLE = 'nav_points';
 const KINDS = ['navigation', 'welcome'];
 
@@ -100,6 +102,17 @@ export async function handleNavPoints(
   const idMatch = url.match(/^\/nav-points\/([^/]+)$/);
   const id = idMatch ? decodeURIComponent(idMatch[1]) : null;
 
+  // Staff desks are synthetic, read-only points (not real nav_points rows).
+  // Reject edits/deletes with a clear message instead of a Postgres invalid-uuid
+  // error — they're managed via face enrollment (desk capture).
+  if (id && id.startsWith(STAFF_DESK_ID_PREFIX)) {
+    json(res, 400, {
+      ok: false,
+      reason: 'Staff desks are managed via enrollment (desk capture), not the nav points list.',
+    });
+    return true;
+  }
+
   try {
     if (url === '/nav-points' && req.method === 'GET') {
       const { data, error } = await supabase
@@ -107,8 +120,16 @@ export async function handleNavPoints(
         .select('*')
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true });
-      if (error) json(res, 500, { ok: false, reason: error.message });
-      else json(res, 200, { ok: true, points: data ?? [] });
+      if (error) {
+        json(res, 500, { ok: false, reason: error.message });
+      } else {
+        // Append enrolled-staff desks (migration 013) as synthetic points so the
+        // robot app can display + tap-navigate + voice-nav ("take me to David")
+        // to a person's desk through the existing nav plumbing. Additive + best-
+        // effort — see services/staff-desks.ts.
+        const desks = await staffDeskNavPoints(supabase);
+        json(res, 200, { ok: true, points: [...(data ?? []), ...desks] });
+      }
       return true;
     }
 
