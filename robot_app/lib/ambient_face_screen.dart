@@ -1488,7 +1488,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             borderRadius: BorderRadius.circular(99),
           ),
           child: Text(
-            ptt ? 'Listening… release to send' : 'Hold to talk',
+            ptt
+                ? 'Listening… release to send'
+                : active
+                    ? 'Tap to stop'
+                    : 'Tap to Talk',
             style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ),
