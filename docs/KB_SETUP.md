@@ -59,6 +59,25 @@ Without this section the robot still converses — but from ElevenLabs' own LLM,
 ungrounded (it can invent pricing/specs). With it, voice answers come from OUR
 KB — same as the two app screens.
 
+### 3b. Filler line while the tool runs (do this too)
+
+The webhook takes 2–4s on a Claude fallback (Voyage embed → pgvector → Claude),
+and the agent is **silent** for all of it — which visitors read as a broken
+robot. The blueprint's fix is to speak immediately.
+
+The `/ask` screen path already does this in-app
+(`robot_app/lib/services/thinking_filler.dart`), but the live agent's filler
+**can only be configured in the ElevenLabs dashboard** — the agent owns that
+turn, not our code. In the agent's system prompt add:
+
+> Before calling `company_knowledge`, say one short filler line so the visitor
+> isn't left in silence — vary it: “Good question — let me check that for you.”
+> / “One moment while I look that up.” / “Let me find that for you.” Then call
+> the tool and answer from its `answer` field.
+
+Keep the fillers to ~1 second spoken; a long filler is worse than the pause it
+covers, because a fast FAQ answer then queues behind it.
+
 ## 4. Demo flow that lands
 
 1. Admin app → Knowledge Base: show the green readiness chips, add a fact live

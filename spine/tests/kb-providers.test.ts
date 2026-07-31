@@ -157,13 +157,15 @@ describe('local-first ask chain', () => {
     expect(answer.answer).toContain('founded in 2020');
   });
 
-  it('uses grounded Claude when providers have nothing either', async () => {
+  it('falls back to grounded Claude when providers have nothing either, tagged handoff', async () => {
     const answer = await askQuestion(fakeSupabase, 'q', {
       search: async () => [],
       generate: async () => "I'll connect you to a team member.",
       askProviders: async () => null,
     });
-    expect(answer.source).toBe('claude');
+    // Nothing local, nothing external — the spoken answer promises a human, so
+    // the source must say so and let the caller page one.
+    expect(answer.source).toBe('handoff');
   });
 
   it('FAQ fast-path still wins over everything', async () => {

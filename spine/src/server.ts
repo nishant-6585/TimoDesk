@@ -18,6 +18,10 @@ import { createSensorPipeline } from './sensors';
 import { EscortController, EscortPoint } from './escort';
 import { createPersonScanner } from './services/person-check';
 import { getStoppedState } from './commands/interlocks';
+import { IntrusionDetector, SecurityScheduler, parseWindow } from './security';
+import { loadPatrolWaypoints, loadWelcomePoint } from './services/nav-points';
+import { notifyIntrusion } from './services/notify';
+import { saveIntrusionCapture } from './captures';
 import { handleEnroll } from './handlers/enroll';
 import { handleCheckFace } from './handlers/check-face';
 import { handleVisit } from './handlers/visit';
@@ -49,7 +53,7 @@ import { handleNavPoints } from './handlers/nav-points';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
-import { maybeNotifyBatteryLow, maybeNotifyObstacleBlocked } from './services/push';
+import { maybeNotifyBatteryLow, maybeNotifyObstacleBlocked, maybeNotifyIntrusion } from './services/push';
 
 const PORT = parseInt(process.env.SPINE_PORT || '4000', 10);
 
@@ -198,12 +202,114 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }, 1000);
     };
 
+    // ── Security sweep (F9 intrusion detection) ────────────────────────────────
+    // At each waypoint of an AFTER-HOURS patrol, look around for a person. The
+    // scan is the same face-detection-as-person-proxy the escort uses (boxes
+    // only — no identity, nothing stored). One positive frame is not an
+    // intruder; IntrusionDetector requires consecutive hits before alarming.
+    const intrusionDetector = new IntrusionDetector();
+    const securityScan = createPersonScanner(sdk);
+
+    /** Sound the alarm on the robot: broadcast so the chest screen sirens. */
+    const soundAlarm = (waypoint: string | null) => {
+      const msg = JSON.stringify({ type: 'alarm', action: 'start', waypoint } as SpineMessage);
+      wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(msg); });
+    };
+
+    const runSecuritySweep = async (waypoint: string | null): Promise<void> => {
+      try {
+        const seen = await securityScan();
+        const confirmed = intrusionDetector.record(seen);
+        if (seen) {
+          console.log(`[Security] Person seen at "${waypoint}" (streak ${intrusionDetector.streakLength})`);
+        }
+        if (!confirmed) return;
+
+        console.warn(`[Security] INTRUSION CONFIRMED near "${waypoint}"`);
+        // 1. Siren first — the deterrent is the point, and it needs no network.
+        soundAlarm(waypoint);
+        // 2. Evidence + 3. alert, both best-effort and independent of each other.
+        // Supabase may be unconfigured (dev spine) — the siren and the alert
+        // still fire, we just have no stored frame.
+        const frame = await sdk.captureFrame(3000).catch(() => null);
+        const capture = frame && supabase ? await saveIntrusionCapture(supabase, frame) : null;
+        await logEvent('intrusion_detected', {
+          waypoint, capture_id: capture?.captureId ?? null,
+        });
+        broadcastRobotEvent({
+          type: 'intrusion_detected',
+          payload: { waypoint, capture_id: capture?.captureId ?? null },
+          timestamp: Date.now(),
+        });
+        void notifyIntrusion({ waypoint, at: new Date(), captureId: capture?.captureId ?? null });
+        if (supabase) void maybeNotifyIntrusion(supabase, waypoint);
+      } catch (err) {
+        // A failed sweep must never break the patrol loop.
+        console.error('[Security] sweep failed:', err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    // ── Guided tour stop (F8) ──────────────────────────────────────────────────
+    // The waypoint's arrival_text is already spoken by the robot's nav provider
+    // when it arrives (that's the station narration). What a tour adds is a
+    // PAUSE for questions: tell the chest screen to open its mic, wait a fixed
+    // window, then move on. The existing /ask RAG brain answers whatever is
+    // asked — no separate Q&A path, so tour answers stay KB-grounded.
+    const TOUR_QUESTION_WINDOW_MS = parseInt(process.env.TOUR_QUESTION_WINDOW_MS || '20000', 10);
+
+    const emitTourEvent = (event: string, payload: Record<string, unknown> = {}) => {
+      broadcastRobotEvent({ type: 'tour_event', payload: { event, ...payload }, timestamp: Date.now() });
+    };
+
+    /**
+     * Drive back to the 'welcome' nav point after a tour. Falls back to doing
+     * nothing (rather than docking) when no welcome point is saved — parking on
+     * the charger mid-day would strand the reception desk.
+     */
+    const returnToBase = async (): Promise<void> => {
+      try {
+        if (!supabase) return;
+        const home = await loadWelcomePoint(supabase);
+        if (!home) {
+          console.log('[Tour] No welcome point saved — staying put after the tour');
+          return;
+        }
+        if (getStoppedState()) return;
+        console.log('[Tour] Returning to base');
+        await sdk.navi?.(home);
+        naviState = {
+          active: true, point: home, name: home.name ?? 'Reception',
+          arrivalText: home.arrivalText, source: 'tour_return', startedAt: Date.now(),
+        };
+        broadcastNaviState();
+        startNaviWatch();
+      } catch (err) {
+        console.error('[Tour] return to base failed:', err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    const runTourStop = async (waypoint: string | null): Promise<void> => {
+      try {
+        emitTourEvent('questions_open', { waypoint, windowMs: TOUR_QUESTION_WINDOW_MS });
+        await new Promise<void>(resolve => setTimeout(resolve, TOUR_QUESTION_WINDOW_MS));
+        emitTourEvent('questions_closed', { waypoint });
+      } catch (err) {
+        console.error('[Tour] stop failed:', err instanceof Error ? err.message : String(err));
+      }
+    };
+
     // ── Patrol sequencer ────────────────────────────────────────────────────────
     // Walks the given waypoints with the normal navi pipeline (so banners,
     // departure/arrival announcements, and cancel all behave), dwells at each,
     // and loops until stopped. Low battery aborts the patrol and docks.
     const PATROL_DWELL_MS = 8_000;
+    // mode distinguishes the three things this sequencer drives:
+    //   'patrol'   — plain waypoint loop (manual)
+    //   'security' — after-hours: person-scan at each waypoint (F9)
+    //   'tour'     — guided office tour: narrate + pause for questions (F8)
+    type PatrolMode = 'patrol' | 'security' | 'tour';
     const patrol = { active: false, index: 0, lap: 1, loop: true,
+      mode: 'patrol' as PatrolMode,
       points: [] as (RobotPosition & { name?: string; arrivalText?: string })[] };
 
     const stopPatrol = (reason: string) => {
@@ -219,8 +325,21 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
     const patrolNext = async () => {
       if (!patrol.active) return;
+      // STOP wins mid-route too: a stop during a dwell must not dispatch the
+      // next leg (mirrors the escort's navi/resumeNavi guards).
+      if (getStoppedState()) { stopPatrol('system stopped'); return; }
       if (patrol.index >= patrol.points.length) {
-        if (!patrol.loop) { stopPatrol('route complete'); return; }
+        if (!patrol.loop) {
+          // A tour ends by taking the guest back where it started, rather than
+          // abandoning them at the last station (blueprint F8).
+          const wasTour = patrol.mode === 'tour';
+          stopPatrol('route complete');
+          if (wasTour) {
+            emitTourEvent('finished');
+            void returnToBase();
+          }
+          return;
+        }
         patrol.index = 0;
         patrol.lap++;
       }
@@ -239,8 +358,19 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       broadcastNaviState();
       naviDone = () => {
         if (!patrol.active) return;
+        const arrivedAt = name;
         patrol.index++;
-        setTimeout(() => void patrolNext(), PATROL_DWELL_MS);
+        setTimeout(() => {
+          // What happens at a waypoint depends on the mode. Both branches are
+          // fail-safe: they never throw and always continue the route.
+          if (patrol.mode === 'security') {
+            void runSecuritySweep(arrivedAt).finally(() => void patrolNext());
+          } else if (patrol.mode === 'tour') {
+            void runTourStop(arrivedAt).finally(() => void patrolNext());
+          } else {
+            void patrolNext();
+          }
+        }, PATROL_DWELL_MS);
       };
       startNaviWatch();
     };
@@ -248,6 +378,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     const startPatrol = (
       points: (RobotPosition & { name?: string; arrivalText?: string })[],
       loop: boolean,
+      mode: PatrolMode = 'patrol',
     ) => {
       stopPatrol('restart');
       escort.stop(); // patrol supersedes an active escort
@@ -256,6 +387,8 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       patrol.index = 0;
       patrol.lap = 1;
       patrol.loop = loop;
+      patrol.mode = mode;
+      if (mode === 'security') intrusionDetector.reset();
       void patrolNext();
     };
 
@@ -360,6 +493,50 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         } catch { /* skip tick */ }
       }, 3000);
     };
+
+    // ── After-hours security patrol scheduler (F9) ─────────────────────────────
+    // OFF unless AFTER_HOURS_PATROL_WINDOW is set (e.g. "19:00-06:00") — a robot
+    // that starts driving around at night must be an explicit deployment choice.
+    const securityWindow = parseWindow(process.env.AFTER_HOURS_PATROL_WINDOW);
+    if (securityWindow) {
+      const scheduler = new SecurityScheduler(securityWindow, {
+        nowMinutes: () => {
+          const d = new Date();
+          return d.getHours() * 60 + d.getMinutes();
+        },
+        isPatrolActive: () => patrol.active,
+        startPatrol: async () => {
+          // STOP still wins — never start a scheduled patrol on a stopped robot.
+          if (getStoppedState()) {
+            console.warn('[Security] Window open but system is STOPPED — not starting patrol');
+            return false;
+          }
+          if (!supabase) {
+            console.warn('[Security] Window open but Supabase is unconfigured — no waypoints to load');
+            return false;
+          }
+          const points = await loadPatrolWaypoints(supabase);
+          if (points.length === 0) {
+            console.warn('[Security] Window open but no nav points saved — nothing to patrol');
+            return false;
+          }
+          console.log(`[Security] After-hours window open — starting patrol over ${points.length} points`);
+          await logEvent('after_hours_patrol_started', { points: points.length });
+          startPatrol(points, true, 'security');
+          return true;
+        },
+        stopPatrol: () => {
+          console.log('[Security] After-hours window closed — stopping patrol');
+          stopPatrol('after-hours window closed');
+          void logEvent('after_hours_patrol_stopped', { reason: 'window_closed' });
+        },
+      });
+      console.log(
+        `[Security] After-hours patrol scheduled ${process.env.AFTER_HOURS_PATROL_WINDOW}`
+      );
+      setInterval(() => void scheduler.tick(), 60_000);
+      void scheduler.tick(); // evaluate immediately on boot, don't wait a minute
+    }
 
     // Auto-dock on low battery (AUTO_DOCK_BATTERY env, 0 disables; default 15%).
     const AUTO_DOCK_AT = parseInt(process.env.AUTO_DOCK_BATTERY || '15', 10);
@@ -520,7 +697,7 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
 
       if (url === '/visit' && req.method === 'POST') {
-        await handleVisit(req, res, supabase, broadcastRobotEvent);
+        await handleVisit(req, res, supabase, broadcastRobotEvent, () => sdk.captureFrame(3000));
         return;
       }
 
@@ -771,6 +948,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               ws.send(JSON.stringify({ type: 'error', message: 'patrol_start needs points' } as SpineMessage));
               return;
             }
+            // Safety: STOP must always win — check before starting any autonomous motion.
+            if (getStoppedState()) {
+              ws.send(JSON.stringify({ type: 'error', message: 'System stopped. Send resume to continue.' } as SpineMessage));
+              return;
+            }
             startPatrol(pts, msg.intent.loop !== false);
             ws.send(JSON.stringify({ type: 'ack', intent: 'patrol_start', ok: true } as SpineMessage));
             return;
@@ -778,6 +960,32 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           if (msg.type === 'intent' && msg.intent?.intent === 'patrol_stop') {
             stopPatrol('user');
             ws.send(JSON.stringify({ type: 'ack', intent: 'patrol_stop', ok: true } as SpineMessage));
+            return;
+          }
+
+          // Guided tour (F8) — the patrol sequencer in 'tour' mode: narrate at
+          // each station, pause for questions, then return to base. Never loops.
+          if (msg.type === 'intent' && msg.intent?.intent === 'tour_start') {
+            const pts = msg.intent.points ?? [];
+            if (!pts.length) {
+              ws.send(JSON.stringify({ type: 'error', message: 'tour_start needs points' } as SpineMessage));
+              return;
+            }
+            if (getStoppedState()) {
+              ws.send(JSON.stringify({ type: 'error', message: 'System stopped. Send resume to continue.' } as SpineMessage));
+              return;
+            }
+            void logEvent('tour_start', { session_id: ws.sessionId, points: pts.length });
+            emitTourEvent('started', { total: pts.length });
+            startPatrol(pts, false, 'tour');
+            ws.send(JSON.stringify({ type: 'ack', intent: 'tour_start', ok: true } as SpineMessage));
+            return;
+          }
+          if (msg.type === 'intent' && msg.intent?.intent === 'tour_stop') {
+            const wasTour = patrol.mode === 'tour';
+            stopPatrol('user');
+            if (wasTour) emitTourEvent('finished', { reason: 'stopped' });
+            ws.send(JSON.stringify({ type: 'ack', intent: 'tour_stop', ok: true } as SpineMessage));
             return;
           }
 
@@ -812,6 +1020,24 @@ export function startServer(sdk: RobotSDK): Promise<void> {
           console.log(`[Spine WebSocket] Handler returned response type: ${response.type}`);
           console.log(`[Spine WebSocket] Sending response to client: ${JSON.stringify(response)}`);
           ws.send(JSON.stringify(response));
+
+          // STOP must halt AUTONOMOUS motion too, not just teleop drive. The
+          // routed handler calls sdk.stopDrive(), which does nothing to a running
+          // navi goal — and the chassis silently resumes goals it merely blocked.
+          // So abort patrol/escort and cancel the goal here.
+          if (msg.type === 'intent' && msg.intent?.intent === 'stop' && response.type === 'stopped') {
+            const hadAutonomousGoal = patrol.active || escort.state.active || naviState.active;
+            stopPatrol('system stopped');
+            escort.stop();
+            if (hadAutonomousGoal) {
+              stopNaviWatch();
+              naviDone = null;
+              try { await sdk.cancelNavi?.(); } catch { /* best-effort — drive is already stopped */ }
+              naviState = { active: false };
+              broadcastNaviState();
+              void logEvent('autonomous_motion_aborted', { session_id: ws.sessionId, reason: 'stop' });
+            }
+          }
 
           // Navigation state sync: a successfully-acked navi/cancel_navi updates
           // the shared navi_state and pushes it to every connected client.

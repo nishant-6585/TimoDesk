@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'config.dart';
 import 'services/audio_bridge.dart';
 import 'services/elevenlabs_tts.dart';
+import 'services/thinking_filler.dart';
 
 /// Voice Q&A — kiosk front-end for the spine's grounded brain (`POST /ask`).
 ///
@@ -65,6 +67,15 @@ class _VoiceQaScreenState extends State<VoiceQaScreen> {
       _source = null;
       _error = null;
     });
+    // Speak a filler NOW, before the round-trip — the grounded path can take
+    // 2-4s and silence reads as a broken robot (blueprint §08). Not awaited:
+    // the request must start immediately, and the TTS queue keeps the answer
+    // behind the filler anyway.
+    final filler = ThinkingFiller.next();
+    unawaited(_tts.speak(filler).then((ok) async {
+      if (!ok) await _audio.speak(filler);
+    }).catchError((_) {/* filler is cosmetic — never block the answer */}));
+
     try {
       final res = await http
           .post(

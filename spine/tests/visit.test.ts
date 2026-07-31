@@ -106,6 +106,71 @@ describe('POST /visit', () => {
     expect(notifyStaff).not.toHaveBeenCalled();
   });
 
+  it('records company + purpose when the intake collected them', async () => {
+    const supabase = makeSupabase({
+      staff: { maybeSingle: { data: HOST, error: null } },
+      visitor: { single: { data: { id: 'visit-1' }, error: null } },
+    });
+    const res = makeRes();
+    await handleVisit(
+      makeReq(JSON.stringify({
+        visitor_name: 'Bob', host_staff_id: 'host-1',
+        company: 'Wipro', purpose: 'Quarterly review',
+      })),
+      res as any, supabase, vi.fn()
+    );
+    expect(res.statusCode).toBe(200);
+    expect(supabase._captured.visitor.company).toBe('Wipro');
+    expect(supabase._captured.visitor.purpose).toBe('Quarterly review');
+  });
+
+  it('stores null (not empty strings) when the visitor skipped the optional turns', async () => {
+    const supabase = makeSupabase({
+      staff: { maybeSingle: { data: HOST, error: null } },
+      visitor: { single: { data: { id: 'visit-1' }, error: null } },
+    });
+    const res = makeRes();
+    await handleVisit(
+      makeReq(JSON.stringify({ visitor_name: 'Bob', host_staff_id: 'host-1', company: '   ' })),
+      res as any, supabase, vi.fn()
+    );
+    expect(res.statusCode).toBe(200);
+    expect(supabase._captured.visitor.company).toBeNull();
+    expect(supabase._captured.visitor.purpose).toBeNull();
+  });
+
+  it('caps a runaway STT answer instead of writing a paragraph to the record', async () => {
+    const supabase = makeSupabase({
+      staff: { maybeSingle: { data: HOST, error: null } },
+      visitor: { single: { data: { id: 'visit-1' }, error: null } },
+    });
+    const res = makeRes();
+    await handleVisit(
+      makeReq(JSON.stringify({
+        visitor_name: 'Bob', host_staff_id: 'host-1', purpose: 'x'.repeat(500),
+      })),
+      res as any, supabase, vi.fn()
+    );
+    expect(supabase._captured.visitor.purpose).toHaveLength(120);
+  });
+
+  it('does not capture an arrival snapshot unless explicitly enabled', async () => {
+    const supabase = makeSupabase({
+      staff: { maybeSingle: { data: HOST, error: null } },
+      visitor: { single: { data: { id: 'visit-1' }, error: null } },
+    });
+    const captureFrame = vi.fn(async () => Buffer.from('jpeg'));
+    const res = makeRes();
+    delete process.env.ARRIVAL_SNAPSHOT_ENABLED;
+    await handleVisit(
+      makeReq(JSON.stringify({ visitor_name: 'Bob', host_staff_id: 'host-1' })),
+      res as any, supabase, vi.fn(), captureFrame
+    );
+    // DPDP: visitor imaging is opt-in per deployment.
+    expect(captureFrame).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+  });
+
   it('notifyStaff throws → visit still logged, returns 500', async () => {
     notifyStaff.mockRejectedValueOnce(new Error('slack down'));
     const supabase = makeSupabase({

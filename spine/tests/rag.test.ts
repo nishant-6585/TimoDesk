@@ -56,10 +56,34 @@ describe('askQuestion', () => {
     expect(generate).toHaveBeenCalledWith('do you do underwater drones?', [weak]);
   });
 
-  it('still answers via Claude when the KB is empty (similarity null)', async () => {
+  it('still answers via Claude when the KB is empty, tagged handoff (similarity null)', async () => {
     const generate = vi.fn(async () => "I'll connect you to someone who can help.");
     const result = await askQuestion(supabase, 'anything?', { search: async () => [], generate });
-    expect(result).toMatchObject({ source: 'claude', similarity: null });
+    // Claude still speaks the line, but an empty KB means it promised a human —
+    // 'handoff' is what makes that promise visible so a person is actually paged.
+    expect(result).toMatchObject({ source: 'handoff', similarity: null });
     expect(generate).toHaveBeenCalledWith('anything?', []);
+  });
+
+  it('tags a below-threshold local miss as handoff, not claude', async () => {
+    const weak = hit({ is_faq: false, similarity: 0.2 });
+    const generate = vi.fn(async () => 'Let me connect you to a team member.');
+    const result = await askQuestion(supabase, 'what does it cost?', {
+      search: async () => [weak],
+      generate,
+      askProviders: async () => null, // no 3rd-party KB could answer either
+    });
+    expect(result.source).toBe('handoff');
+  });
+
+  it('keeps source=claude when context was good enough to ground an answer', async () => {
+    const solid = hit({ is_faq: false, similarity: 0.71 });
+    const generate = vi.fn(async () => 'We build land, air and water robots.');
+    const result = await askQuestion(supabase, 'what do you build?', {
+      search: async () => [solid],
+      generate,
+    });
+    // Grounded answer — nobody needs paging.
+    expect(result.source).toBe('claude');
   });
 });

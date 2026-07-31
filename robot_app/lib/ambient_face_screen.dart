@@ -28,6 +28,7 @@ import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
 import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
+import 'services/intrusion_siren.dart';
 import 'screens/language_selection_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -52,6 +53,10 @@ class AmbientFaceScreen extends ConsumerStatefulWidget {
   ConsumerState<AmbientFaceScreen> createState() => _AmbientFaceScreenState();
 }
 
+/// Which check-in question is currently outstanding. `none` = no open dialog,
+/// so a stray utterance is passed to the conversational agent as usual.
+enum _CheckinStage { none, name, company, purpose }
+
 class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   FaceState _face = const FaceState();
@@ -70,6 +75,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<bool>? _presenceSub;
   StreamSubscription<String>? _voiceControlSub; // admin remote voice stop
   StreamSubscription<Map<String, dynamic>>? _configSub; // admin remote config
+  StreamSubscription<AlarmCommand>? _alarmSub; // F9 intrusion alarm
+  StreamSubscription<Map<String, dynamic>>? _tourSub; // F8 guided-tour events
   StreamSubscription<bool>? _sdkPersonSub; // on-device CSJBot person sensors
   StreamSubscription<FaceEvent>? _faceRecgSub; // CSJBot staff face recognition
   String? _pendingGreetName; // last recognised staff name (injected to ElevenLabs)
@@ -98,10 +105,17 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   late final ElevenLabsTts _tts;
 
   // ── Voice visitor check-in ("I'm here to see <host>") ──────────────────────
-  // Two-turn dialog: intent+host → ask the visitor's name → POST /visit.
+  // Four-turn dialog (blueprint §07 visitor record): intent+host → name →
+  // company → purpose → POST /visit. Company and purpose are OPTIONAL: the
+  // visitor can skip either, and a timeout after the name still submits with
+  // whatever was collected — notifying the host is the critical path and must
+  // not be lost to an unanswered follow-up question.
   final CheckinApi _checkinApi = CheckinApi();
-  StaffMember? _checkinHost; // resolved host while awaiting the visitor's name
-  Timer? _checkinTimeout; // abandon the dialog if no name arrives
+  StaffMember? _checkinHost; // resolved host while the dialog is open
+  _CheckinStage _checkinStage = _CheckinStage.none;
+  String? _checkinName;
+  String? _checkinCompany;
+  Timer? _checkinTimeout; // abandon/settle the dialog if the visitor goes quiet
   List<StaffMember>? _staffCache; // GET /staff cache for host matching
   DateTime? _staffCacheAt;
   static const Duration _staffCacheTtl = Duration(minutes: 5);
@@ -115,6 +129,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
   late final VoiceAgent _voiceAgent;
   final AudioBridge _audioBridge = AudioBridge();
+  late final IntrusionSiren _siren = IntrusionSiren(_audioBridge);
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
   StreamSubscription<String>? _asrSub;
@@ -138,8 +153,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _autoListenFallback;
   bool _autoSession = false;
   Timer? _idleWatch; // periodic idle watchdog → auto-close on inactivity
-  int _lastActivityMs = 0; // last USER activity (speech heard / push-to-talk)
-  bool _conversed = false; // a real exchange happened → use the longer idle window
+  // Idle is measured as ACCUMULATED SILENCE — seconds elapsed while Mikee is NOT
+  // speaking and no genuine user WORDS have arrived. It is reset ONLY by real
+  // transcribed user words / hold-to-talk (see _bumpActivity) — never by raw mic
+  // loudness or empty "..." VAD turns, both of which trip on ambient room noise
+  // with no AEC and used to keep the session alive forever. It FREEZES while Mikee
+  // talks (his answer time must not eat the visitor's reply window) but does not
+  // reset, so a talk-to-noise loop still closes once the gaps between turns add up.
+  int _silenceAccumMs = 0;
+  // Consecutive agent turns triggered with NO real user words (empty "..." VAD
+  // trips on noise, or echo). 3 in a row = Mikee is answering the room, not a
+  // person → close. Reset to 0 by any genuine user words.
+  int _phantomTurns = 0;
+  static const int _maxPhantomTurns = 3;
   int _lastSpeakingMs = 0; // last time Mikee's speaker was active → mic-gate tail
 
   // Resilience (#obs3): if ElevenLabs drops the connection unexpectedly mid-visit
@@ -161,12 +187,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // visitor isn't left waiting for a hello. Spine's explicit "unknown" short-
   // circuits this window — the timeout only covers spine being slow/offline.
   static const Duration _recognitionWindow = Duration(milliseconds: 2000);
-  static const Duration _engageWindow = Duration(seconds: 15); // no greeting response → close
   static const Duration _conversationIdle = Duration(seconds: 15); // mid-chat silence → close
-  // Mic stays muted this long after Mikee's last speaker output — must exceed the
-  // AudioTrack buffer drain (~400ms) so the speaker tail doesn't leak into the mic
-  // and re-trigger ElevenLabs (echo loop). No hardware AEC covers our audio path.
-  static const int _micTailGuardMs = 800;
+  // Mic stays muted this long after Mikee's last speaker output. Must cover BOTH
+  // the AudioTrack drain AND the room-reverb tail: with no hardware AEC, feeding
+  // that tail to ElevenLabs made its server-side ASR transcribe Mikee's own voice
+  // into coherent "user" sentences (e.g. "Can you help me?") ~3.5s later — past
+  // the transcript echo guard — which reset the idle timer forever. Aligned with
+  // _echoGuardMs so the feed and the guard cover the same window. The cost is that
+  // a real reply within 2.5s of Mikee finishing is clipped; hold-to-talk (mic
+  // button) bypasses this entirely for an eager visitor.
+  static const int _micTailGuardMs = 2500;
   // A transcript arriving within this window of Mikee's own speech is treated as
   // ECHO (his voice fed back), NOT a real user turn — so it doesn't reset the
   // idle watchdog or make him reply to himself.
@@ -201,6 +231,38 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       debugPrint('Config: admin update → $cfg');
       RobotConfig.applyRemoteConfig(cfg);
       if (mounted) setState(() {}); // reflect e.g. a rename in the UI
+    });
+    // Intrusion alarm from the spine's after-hours security patrol (F9). The
+    // siren owns its own repeat/auto-stop; here we only start/stop it and put
+    // the face into its alarm state.
+    _alarmSub = _spine.alarm.listen((cmd) {
+      if (cmd.start) {
+        InteractionLog.log('intrusion_alarm',
+            'siren triggered${cmd.waypoint != null ? ' near ${cmd.waypoint}' : ''}');
+        _audioBridge.stopPlayback(); // nothing else should be talking
+        _siren.start(waypoint: cmd.waypoint);
+      } else {
+        _siren.stop();
+      }
+      if (mounted) setState(() {});
+    });
+    // Guided tour (F8): the station narration is already spoken by the nav
+    // provider on arrival; the spine's `questions_open` is the cue to open the
+    // mic so the guest can ask about what they were just shown. The normal idle
+    // watchdog closes the session, so no timer is needed here.
+    _tourSub = _spine.tourEvents.listen((e) {
+      switch (e['event']) {
+        case 'questions_open':
+          InteractionLog.log('tour_questions_open', '${e['waypoint']}');
+          if (!_voiceActive && mounted) {
+            debugPrint('Tour: questions open at "${e['waypoint']}" → opening mic');
+            _startVoice(auto: true);
+          }
+          break;
+        case 'finished':
+          InteractionLog.log('tour_finished', '${e['reason'] ?? 'route complete'}');
+          break;
+      }
     });
     // On-device person sensors (laser/RGBD/ultrasonic) → idle→attentive ONLY.
     // Deliberately NOT a greeting trigger: greetings fire exclusively from the
@@ -290,6 +352,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _presenceSub?.cancel();
     _voiceControlSub?.cancel();
     _configSub?.cancel();
+    _alarmSub?.cancel();
+    _tourSub?.cancel();
+    _siren.dispose();
     _sdkPersonSub?.cancel();
     _faceRecgSub?.cancel();
     _gaze.dispose();
@@ -520,6 +585,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // becomes a TEXT turn to the ElevenLabs agent (voice reply as usual).
   void _onVendorAsr(String partial) {
     if (partial.trim().isEmpty) return;
+    // ECHO GUARD: the CSJBot vendor ASR also hears Mikee's OWN speaker output
+    // and transcribes it. Without this, his own words (a) get sent back to the
+    // ElevenLabs agent → it replies to itself forever, and (b) bump the idle
+    // timer → the session never auto-closes. Ignore any transcript that arrives
+    // while he's speaking or within the echo tail.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_face.state == FaceStateKind.speaking ||
+        (now - _lastSpeakingMs) < _echoGuardMs) {
+      return;
+    }
     _asrUtterance = partial.trim();
     _bumpActivity(); // real user speech — keep the session alive
     _asrFinalTimer?.cancel();
@@ -696,11 +771,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // OR the follow-up name turn) — handled here with our own spoken replies, so
   // the conversational agent never answers a flow it knows nothing about.
   bool _handleCheckinVoice(String transcript) {
-    // Turn 2: we asked for the visitor's name — this utterance IS the answer.
-    if (_checkinHost != null) {
+    // A dialog is open — this utterance answers whichever question we asked.
+    if (_checkinStage != _CheckinStage.none) {
       _dropFirstAgentTurn = true;
       _audioBridge.stopPlayback();
-      _completeCheckin(transcript);
+      _advanceCheckin(transcript);
       return true;
     }
     final result = CheckinVoice.match(transcript);
@@ -709,6 +784,30 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _audioBridge.stopPlayback();
     _beginCheckin(result.hostHeard);
     return true;
+  }
+
+  /// Arm (or re-arm) the per-turn silence window. After the name is known a
+  /// timeout SUBMITS rather than abandons — the host still gets notified.
+  void _armCheckinTimeout() {
+    _checkinTimeout?.cancel();
+    _checkinTimeout = Timer(_checkinNameWindow, () {
+      if (_checkinStage == _CheckinStage.none) return;
+      if (_checkinName != null) {
+        debugPrint('Checkin: window expired with a name — submitting what we have');
+        _submitCheckin();
+      } else {
+        debugPrint('Checkin: name window expired — dialog abandoned');
+        _resetCheckin();
+      }
+    });
+  }
+
+  void _resetCheckin() {
+    _checkinTimeout?.cancel();
+    _checkinStage = _CheckinStage.none;
+    _checkinHost = null;
+    _checkinName = null;
+    _checkinCompany = null;
   }
 
   Future<void> _beginCheckin(String hostHeard) async {
@@ -730,33 +829,81 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     debugPrint('Checkin: host "$hostHeard" → ${host.fullName} (${host.id})');
     _checkinHost = host;
-    _checkinTimeout?.cancel();
-    _checkinTimeout = Timer(_checkinNameWindow, () {
-      debugPrint('Checkin: name window expired — dialog abandoned');
-      _checkinHost = null;
-    });
+    _checkinName = null;
+    _checkinCompany = null;
+    _checkinStage = _CheckinStage.name;
+    _armCheckinTimeout();
     _speakGreeting('Sure — I will let ${host.fullName} know. '
         'May I have your name, please?');
   }
 
-  Future<void> _completeCheckin(String transcript) async {
-    final host = _checkinHost;
-    _checkinHost = null;
-    _checkinTimeout?.cancel();
-    if (host == null) return;
+  /// One answered turn: record it and either ask the next question or submit.
+  void _advanceCheckin(String transcript) {
+    // Cancel abandons the whole dialog at any stage.
     if (CheckinVoice.isCancel(transcript)) {
+      _resetCheckin();
       _speakGreeting('No problem.');
       return;
     }
-    final name = CheckinVoice.extractVisitorName(transcript);
-    if (name.isEmpty) {
-      _speakGreeting("Sorry, I didn't catch your name — "
-          'please check in at the front desk.');
-      return;
+
+    switch (_checkinStage) {
+      case _CheckinStage.name:
+        final name = CheckinVoice.extractVisitorName(transcript);
+        if (name.isEmpty) {
+          _resetCheckin();
+          _speakGreeting("Sorry, I didn't catch your name — "
+              'please check in at the front desk.');
+          return;
+        }
+        _checkinName = name;
+        _checkinStage = _CheckinStage.company;
+        _armCheckinTimeout();
+        _speakGreeting('Thank you, $name. Which company are you visiting from?');
+        return;
+
+      case _CheckinStage.company:
+        // Skipping is fine — company is optional on the visitor record.
+        _checkinCompany =
+            CheckinVoice.isSkip(transcript) ? null : _detailOrNull(transcript);
+        _checkinStage = _CheckinStage.purpose;
+        _armCheckinTimeout();
+        _speakGreeting('And may I ask what your visit is regarding?');
+        return;
+
+      case _CheckinStage.purpose:
+        final purpose =
+            CheckinVoice.isSkip(transcript) ? null : _detailOrNull(transcript);
+        _submitCheckin(purpose: purpose);
+        return;
+
+      case _CheckinStage.none:
+        return;
     }
+  }
+
+  static String? _detailOrNull(String transcript) {
+    final d = CheckinVoice.extractDetail(transcript);
+    return d.isEmpty ? null : d;
+  }
+
+  /// POST /visit with whatever the dialog collected, then confirm out loud.
+  Future<void> _submitCheckin({String? purpose}) async {
+    final host = _checkinHost;
+    final name = _checkinName;
+    final company = _checkinCompany;
+    _resetCheckin(); // clear state first — the await must not leave a live dialog
+    if (host == null || name == null) return;
+
+    InteractionLog.log('checkin_submit',
+        '$name → ${host.fullName}${company != null ? ' ($company)' : ''}');
     var ok = false;
     try {
-      ok = await _checkinApi.postVisit(visitorName: name, hostStaffId: host.id);
+      ok = await _checkinApi.postVisit(
+        visitorName: name,
+        hostStaffId: host.id,
+        company: company,
+        purpose: purpose,
+      );
     } catch (e) {
       debugPrint('Checkin: POST /visit failed: $e');
     }
@@ -815,15 +962,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     });
   }
 
-  // Speak the greeting, then auto-open the mic so a visitor can talk without
-  // tapping. The hand-off waits for the greeting audio to drain (handled in
-  // _onPlaybackLevel) so the mic never captures Mikee's own voice; the fallback
-  // timer covers the built-in-TTS path (no playback-level signal) or a missed drain.
+  // Greet the person and STOP. We deliberately do NOT auto-open the mic after a
+  // greeting: an open mic with no real speaker made Mikee re-hear its own greeting
+  // echo and monologue forever. The visitor taps the mic button to start talking;
+  // until then Mikee stays quiet and attentive. (_startAutoListen / _pendingAutoListen
+  // are now dormant — kept only for the hold-to-talk / voice-command paths that open
+  // a session directly via _startVoice.)
   void _greetThenListen(String phrase) {
     if (_voiceActive) return; // already in a conversation
-    _pendingAutoListen = true;
-    _autoListenFallback?.cancel();
-    _autoListenFallback = Timer(const Duration(seconds: 4), _startAutoListen);
     _speakGreeting(phrase);
   }
 
@@ -847,38 +993,44 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // closes it (mic button reverts to the idle orange mic). A held push-to-talk
   // never counts as idle. Replaces the old engage + hard-cap timers.
   void _startIdleWatch() {
-    _conversed = false;
-    _bumpActivity();
+    _bumpActivity(); // grace: full silence window before the first close
     _idleWatch?.cancel();
     _idleWatch = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_voiceActive) return;
       if (_pushToTalk) {
         // The visitor is physically holding the button — that IS activity, even
         // in silence; don't let the countdown close the session under their finger.
-        _bumpActivity();
+        _silenceAccumMs = 0;
         return;
       }
-      // Idle is measured from the last USER activity (speech heard / push-to-talk),
-      // NOT from Mikee's own speech — otherwise an agent that keeps talking with no
-      // visitor perpetually resets the timer and never returns to idle (obs 1).
-      final idleMs = DateTime.now().millisecondsSinceEpoch - _lastActivityMs;
-      final window = _conversed ? _conversationIdle : _engageWindow;
-      // Close after `window` (15s) of no REAL user speech. Give a short grace so
-      // Mikee can finish a sentence he's mid-way through — but a hard cap only a
-      // few seconds past the window so a runaway/looping agent (talking to no
-      // one) still closes promptly, near the 15s the user expects.
-      final mikeeTalking = _face.state == FaceStateKind.speaking ||
+      final speaking = _face.state == FaceStateKind.speaking ||
           _face.state == FaceStateKind.thinking;
-      final hardCap = idleMs >= window.inMilliseconds + 4000;
-      if (idleMs >= window.inMilliseconds && (!mikeeTalking || hardCap)) {
-        debugPrint('AmbientFace: user idle ${(idleMs / 1000).toStringAsFixed(0)}s ≥ '
-            '${window.inSeconds}s → closing');
-        _endVoice();
+      // Count ONLY genuine silence: seconds where Mikee isn't talking and no real
+      // user words have landed. While Mikee speaks the counter FREEZES (his own
+      // answer must not burn the visitor's reply window) but does NOT reset — so a
+      // talk-to-noise loop still closes as the gaps accumulate. Reset happens only
+      // in _bumpActivity (real words / hold-to-talk), never from mic loudness.
+      if (!speaking) {
+        _silenceAccumMs += 1000;
+        final window = _conversationIdle.inMilliseconds; // 15s
+        debugPrint('IdleWatch: silence=${(_silenceAccumMs / 1000).toStringAsFixed(0)}s '
+            'phantom=$_phantomTurns state=${_face.state.name}');
+        if (_silenceAccumMs >= window) {
+          debugPrint('AmbientFace: ${window ~/ 1000}s of user silence → auto-closing');
+          _endVoice();
+        }
       }
     });
   }
 
-  void _bumpActivity() => _lastActivityMs = DateTime.now().millisecondsSinceEpoch;
+  // Reset the idle countdown — call ONLY for GENUINE user engagement (real
+  // transcribed words, hold-to-talk). Never from raw mic loudness or empty VAD
+  // turns: with no AEC, ambient room noise crosses any amplitude threshold and
+  // would keep the session alive forever (the reported "never auto-closes" bug).
+  void _bumpActivity() {
+    _silenceAccumMs = 0;
+    _phantomTurns = 0;
+  }
 
   void _stopIdleWatch() {
     _idleWatch?.cancel();
@@ -976,9 +1128,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _startIdleWatch(); // auto sessions: begin the inactivity countdown
         break;
       case VoiceEventKind.userSpeaking:
-        // User cut in (interruption) → stop playback + listen.
-        _dropFirstAgentTurn = false; // visitor is engaging → allow agent audio again
-        _bumpActivity(); // visitor engaged — keep the session open
+        // EL's VAD fired "user started talking". This is NOT a reliable person
+        // signal — it also trips on ambient room noise and Mikee's own echo — so
+        // it does NOT reset the idle timer (only real transcribed words do, in
+        // agentThinking below). We just barge-in: stop playback and show listening.
+        _dropFirstAgentTurn = false; // allow the upcoming agent audio again
         _audioBridge.stopPlayback();
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
@@ -989,23 +1143,31 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // "a real person engaged" signal. Mark the conversation started + keep alive.
         _dropFirstAgentTurn = false; // real reply coming → play it
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
-        // Only treat this as real user activity (resetting the idle timer) when
-        // Mikee wasn't just speaking. Otherwise it's the agent hearing its OWN
-        // voice (echo) and transcribing it as "user input" — which both makes it
-        // reply to itself AND perpetually resets the idle watchdog, so the
-        // session never auto-closes with no real person there (the reported bug).
+        // Reset the idle timer ONLY on GENUINE user words — a non-empty transcript
+        // that isn't Mikee's own echo. Two failure modes this rules out:
+        //   • echo: Mikee's voice re-transcribed while/just after he speaks, and
+        //   • phantom: an empty "..." turn where EL's VAD tripped on room noise.
+        // Both used to reset the watchdog forever. A phantom/echo turn instead
+        // increments _phantomTurns; 3 in a row means Mikee is answering the room,
+        // not a person, so we close.
         final now = DateTime.now().millisecondsSinceEpoch;
         final likelyEcho = _face.state == FaceStateKind.speaking ||
             (now - _lastSpeakingMs) < _echoGuardMs;
-        if (!likelyEcho) {
-          _conversed = true;
-          _bumpActivity();
-        } else {
-          debugPrint('Voice: agentThinking during/after own speech → treating as '
-              'echo, NOT resetting idle timer');
-        }
-        if (e.text != null && e.text!.trim().isNotEmpty && e.text != '...') {
+        final hasWords =
+            e.text != null && e.text!.trim().isNotEmpty && e.text!.trim() != '...';
+        if (hasWords && !likelyEcho) {
+          _bumpActivity(); // genuine user speech → keep the session alive
           InteractionLog.log('user_utterance_el', e.text!);
+        } else {
+          _phantomTurns++;
+          debugPrint('Voice: non-genuine agentThinking (echo/phantom #$_phantomTurns, '
+              'words=$hasWords echo=$likelyEcho) → not resetting idle');
+          if (_phantomTurns >= _maxPhantomTurns) {
+            debugPrint('Voice: $_maxPhantomTurns phantom turns, no real user → auto-closing');
+            _dropFirstAgentTurn = true;
+            _endVoice();
+            break;
+          }
         }
         // "Stop" / "be quiet" / "that's enough" — the visitor wants Mikee to
         // stop. Ends the session (mic off, stops speaking, back to attentive).
@@ -1178,6 +1340,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       // tail-guard covers the speaker buffer after we flip to listening.
       final speakingMuted = _face.state == FaceStateKind.speaking ||
           (now - _lastSpeakingMs) < _micTailGuardMs;
+      // NOTE: mic loudness is NOT used to keep the session alive. Without hardware
+      // AEC, ambient room noise crosses any amplitude threshold ~5s after Mikee
+      // stops and both (a) reset the idle timer and (b) tripped ElevenLabs' VAD
+      // into phantom "..." turns, so the session never auto-closed. The idle timer
+      // now advances on wall-clock silence and resets only on real transcribed
+      // words (see _startIdleWatch / _bumpActivity).
       // The amplitude noise gate (squelch) was REMOVED (obs 3): it dropped soft and
       // sentence-onset speech (RMS < 0.04 → silence sent), so capture was hit-or-miss.
       // We now feed ElevenLabs the REAL mic continuously whenever Mikee isn't
@@ -1284,12 +1452,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       return;
     }
     if (level < 0) {
-      // Turn ended (queue drained) → back to listening. RESTART the idle clock
-      // here: it began at the user's last speech, so Mikee's own thinking +
-      // talking time was eating the reply window — after a long answer the mic
-      // closed almost immediately ("mid-conversation cutoff"). Bumping on drain
-      // guarantees the visitor the FULL idle window of actual silence to reply.
-      _bumpActivity();
+      // Turn ended (queue drained) → back to listening. We do NOT reset the idle
+      // clock here anymore: the watchdog FREEZES the silence counter while Mikee
+      // speaks (so his answer never eats the visitor's reply window) and resumes
+      // it on drain. Bumping on every drain also reset the counter on PHANTOM
+      // turns (Mikee answering room noise), so the session never auto-closed.
       debugPrint('Playback: drained → listening');
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
     } else if (level < _speechFloor) {
