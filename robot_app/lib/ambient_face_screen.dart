@@ -508,7 +508,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // Speak a greeting phrase — ElevenLabs voice first, built-in TTS as fallback.
+  String _lastSpokenText = '';
+  int _lastSpokenMs = 0;
+
   void _speakGreeting(String text) {
+    // Dedupe overlapping identical speech: presence fires from TWO sources
+    // (spine personDetected + on-device PersonDetect → same _onPersonDetected)
+    // and recognition can arrive from two paths, so this can be called twice
+    // within milliseconds → two voices talking over each other. Suppress a
+    // repeat of the SAME text within a short window.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (text == _lastSpokenText && now - _lastSpokenMs < 3000) return;
+    _lastSpokenText = text;
+    _lastSpokenMs = now;
     InteractionLog.log('robot_speech', text);
     _tts.speak(text).then((ok) {
       if (!ok) _audioBridge.speak(text);
