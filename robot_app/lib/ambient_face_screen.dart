@@ -15,6 +15,7 @@ import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
 import 'greeting_provider.dart';
+import 'pin_screen.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
@@ -1323,7 +1324,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: next, expression: expr));
   }
 
-  void _openDashboard() {
+  void _openDashboard() async {
+    // Admin area is PIN-gated: a visitor tapping the face screen must enter the
+    // PIN before reaching the dashboard/settings/enroll. Cancel returns to the face.
+    final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const PinScreen(),
+    ));
+    if (ok != true || !mounted) return;
     // Pass the SHARED voice instances so the dashboard reacts to the same session
     // (no second ElevenLabs connection) and doesn't double-own playback. The idle
     // watchdog keeps running here too — an active conversation (speech in/out) keeps

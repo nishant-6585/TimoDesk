@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'battery_service.dart';
 import 'config.dart';
-import 'ambient_face_screen.dart';
+import 'connecting_splash.dart';
 import 'nav_points_provider.dart';
+import 'services/kiosk.dart';
 
 // #89 P1 — the robot chest screen now opens to an AMBIENT FACE (front-of-house
 // shell), not the old _StreamScreen. The face → Dashboard → feature tiles. The
@@ -18,6 +20,12 @@ void main() async {
 
   // Load persisted config (spine/camera URLs) before the UI reads it.
   await RobotConfig.load();
+
+  // Kiosk: immersive (hide system bars) + enter Lock Task Mode. No-ops safely if
+  // the app isn't device-owner. The Settings switch can re-allow Home/Recents/
+  // status-bar for maintenance (kioskAllowSystemUi).
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  Kiosk.start(allowSystemUi: RobotConfig.kioskAllowSystemUi);
 
   // Start the battery HTTP server (:8090) that spine polls — unchanged.
   BatteryService().start();
@@ -45,7 +53,7 @@ class _App extends ConsumerWidget {
         scaffoldBackgroundColor: const Color(0xFF0F0F0F),
         cardColor: const Color(0xFF1A1A1A),
       ),
-      home: const AmbientFaceScreen(),
+      home: const ConnectingSplash(),
     );
   }
 }

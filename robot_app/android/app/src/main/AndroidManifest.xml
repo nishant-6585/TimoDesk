@@ -38,6 +38,11 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+                <!-- HOME + DEFAULT: Mikee can be the launcher/home so it owns the
+                     Home button and auto-starts on boot (kiosk). Set as default via
+                     `cmd package set-home-activity` or by the device-owner. -->
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
         <meta-data
@@ -46,6 +51,19 @@
         <meta-data
             android:name="CSJ_SDK_REMOTE_APP_NAME"
             android:value="${applicationId}" />
+        <!-- Kiosk device-admin — enables `dpm set-device-owner` for Lock Task Mode. -->
+        <receiver
+            android:name=".KioskAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Auto-bring-up after reboot: free the mic (Option B) + launch Mikee. -->
         <receiver
             android:name=".BootReceiver"
