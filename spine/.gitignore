@@ -4,3 +4,6 @@ dist/
 *.log
 mcp-plugins.json
 kb-providers.json
+
+# runtime voice/video capture artifacts
+recordings/
