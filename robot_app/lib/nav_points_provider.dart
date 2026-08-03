@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show SocketException;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
 import 'services/elevenlabs_tts.dart'; // arrival speech (Mikee's real voice)
 import 'services/interaction_log.dart';
 import 'services/nav_points_api.dart';
+import 'services/nav_points_cache.dart';
 import 'services/spine_client.dart';
 
 /// Shared spine WS client for navigation sync. Separate instance from the
@@ -37,6 +39,10 @@ class NavPointsState {
   final Map<String, dynamic>? escort; // spine Follow-Me progress
   //                          {active,index,total,checking} — non-null while the
   //                          spine escort sequencer is running (from navi_state).
+  final bool offline; // the list on screen came from the on-device cache, not
+  //                     the spine. Driving still works (native chassis path);
+  //                     capture/rename/delete do not.
+  final DateTime? cachedAt; // when that cached list was last refreshed
 
   const NavPointsState({
     this.points = const AsyncValue.loading(),
@@ -45,6 +51,8 @@ class NavPointsState {
     this.arrivedAt,
     this.navSource,
     this.escort,
+    this.offline = false,
+    this.cachedAt,
   });
 
   NavPointsState copyWith({
@@ -57,6 +65,9 @@ class NavPointsState {
     String? navSource,
     Map<String, dynamic>? escort,
     bool clearEscort = false,
+    bool? offline,
+    DateTime? cachedAt,
+    bool clearCachedAt = false,
   }) =>
       NavPointsState(
         points: points ?? this.points,
@@ -65,6 +76,8 @@ class NavPointsState {
         arrivedAt: clearArrived ? null : (arrivedAt ?? this.arrivedAt),
         navSource: navSource ?? this.navSource,
         escort: clearEscort ? null : (escort ?? this.escort),
+        offline: offline ?? this.offline,
+        cachedAt: clearCachedAt ? null : (cachedAt ?? this.cachedAt),
       );
 }
 
@@ -84,6 +97,13 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // silent (the visitor being escorted must know why the robot stopped).
     _escortEventSub =
         _ref.read(navSpineClientProvider).escortEvents.listen(_onEscortEvent);
+    // Spine (re)connected → resync. This is what turns the offline cache back
+    // into live data without anyone touching the screen: boot offline on the
+    // cache, spine comes up minutes later, list refreshes + offline flag drops.
+    _connSub = _ref
+        .read(navSpineClientProvider)
+        .connected
+        .listen((up) => up ? refresh() : null);
   }
 
   final Ref _ref;
@@ -97,6 +117,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
   StreamSubscription<Map<String, dynamic>>? _escortEventSub;
+  StreamSubscription<bool>? _connSub;
   Timer? _navStaleTimer; // safety net for a navigation that never reports back
 
   /// A navigation this old with no update from the spine or the SDK is treated
@@ -324,6 +345,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     _naviSub?.cancel();
     _naviStateSub?.cancel();
     _escortEventSub?.cancel();
+    _connSub?.cancel();
     _stopEscortTimer();
     _cancelNavStaleWatch();
     super.dispose();
@@ -358,16 +380,43 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     }
   }
 
-  /// (Re)load all saved points.
+  /// (Re)load all saved points — offline-first.
+  ///
+  /// The on-device cache is shown IMMEDIATELY (if present) while the spine
+  /// fetch runs, so the screen has tappable tiles and NavVoice has names to
+  /// match even when the spine is slow or gone — driving is native and needs
+  /// no server. A successful fetch then replaces the list and rewrites the
+  /// cache; a failed fetch keeps the cached list and flags [offline]. The
+  /// error state is now reserved for the truly-cold case: no spine AND no
+  /// cache (first boot before any sync).
   Future<void> load() async {
-    state = state.copyWith(points: const AsyncValue.loading());
+    // Only drop to a spinner when there's nothing to show yet — a reload with
+    // a list on screen (or a cache to replay) should never blank the screen.
+    final cached = await NavPointsCache.read();
+    if (!mounted) return;
+    if (cached != null) {
+      state = state.copyWith(
+        points: AsyncValue.data(cached.points),
+        offline: true,
+        cachedAt: cached.savedAt,
+      );
+    } else if (state.points.valueOrNull == null) {
+      state = state.copyWith(points: const AsyncValue.loading());
+    }
     try {
       final list = await _api.list();
       if (!mounted) return;
-      state = state.copyWith(points: AsyncValue.data(list));
+      state = state.copyWith(
+          points: AsyncValue.data(list), offline: false, clearCachedAt: true);
+      await NavPointsCache.save(list);
     } catch (e, st) {
       if (!mounted) return;
-      state = state.copyWith(points: AsyncValue.error(e, st));
+      if (state.points.valueOrNull == null) {
+        // Cold start with no cache — surface the real error.
+        state = state.copyWith(points: AsyncValue.error(e, st));
+      }
+      // else: keep the cached/previous list, offline flag already set above.
+      debugPrint('nav load: spine unreachable, serving cache — $e');
     }
   }
 
@@ -380,7 +429,9 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     try {
       final list = await _api.list();
       if (!mounted) return;
-      state = state.copyWith(points: AsyncValue.data(list));
+      state = state.copyWith(
+          points: AsyncValue.data(list), offline: false, clearCachedAt: true);
+      await NavPointsCache.save(list);
     } catch (_) {
       // keep the previous list
     }
@@ -398,14 +449,14 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         throw Exception(
             'Could not read robot position. Make sure the robot is localized on its map, then try again.');
       }
-      await _api.insert(
-        name: name,
-        description: description,
-        x: pose['x'] ?? 0.0,
-        y: pose['y'] ?? 0.0,
-        z: pose['z'] ?? 0.0,
-        rotation: pose['rotation'] ?? 0.0,
-      );
+      await _withSpineWriteError(() => _api.insert(
+            name: name,
+            description: description,
+            x: pose['x'] ?? 0.0,
+            y: pose['y'] ?? 0.0,
+            z: pose['z'] ?? 0.0,
+            rotation: pose['rotation'] ?? 0.0,
+          ));
       await load();
     } finally {
       if (mounted) state = state.copyWith(capturing: false);
@@ -414,14 +465,34 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
 
   /// Update a point's name / arrival announcement and reload.
   Future<void> update(String id, {String? name, String? description}) async {
-    await _api.update(id, name: name, description: description);
+    await _withSpineWriteError(
+        () => _api.update(id, name: name, description: description));
     await load();
   }
 
   /// Delete a saved point and reload.
   Future<void> delete(String id) async {
-    await _api.delete(id);
+    await _withSpineWriteError(() => _api.delete(id));
     await load();
+  }
+
+  /// Point WRITES (capture/rename/delete) go to Supabase through the spine —
+  /// deliberately, since migration 017 (the write credential must not live in
+  /// this APK). Offline they fail; translate the raw network error into words
+  /// an operator standing at the robot can act on, and make clear that reading
+  /// + driving still work.
+  Future<T> _withSpineWriteError<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } on SocketException {
+      throw Exception(
+          'Spine server unreachable — saving point changes needs it. '
+          'Existing points still work for navigation.');
+    } on TimeoutException {
+      throw Exception(
+          'Spine server not responding — saving point changes needs it. '
+          'Existing points still work for navigation.');
+    }
   }
 
   /// Send the robot to a saved point. Sets [NavPointsState.navigatingTo] while
@@ -440,13 +511,15 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     // navi_state broadcast that follows is deduped by _announceDeparture.
     _announceDeparture(point.name, 'robot');
     final spine = _ref.read(navSpineClientProvider);
-    if (spine.isConnected) {
-      // isConnected can be STALE after a silent Wi-Fi drop (half-open socket) —
-      // require the spine's navi_state confirmation broadcast; on timeout fall
-      // through to the native path so on-robot Go To works offline too.
+    // isLive (recent traffic on the socket), not isConnected: a half-open
+    // socket after a silent Wi-Fi drop keeps isConnected true, and the old 3s
+    // confirmation wait made every offline Go To stall — feeling broken while
+    // the native path underneath was fine. With a dead spine we now go native
+    // immediately; the short timeout below only covers a live-but-slow spine.
+    if (spine.isLive) {
       final confirmed = spine.naviState
           .firstWhere((m) => m['active'] == true)
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(milliseconds: 1500));
       spine.sendIntent({
         'intent': 'navi',
         'point': point.pose,
@@ -459,7 +532,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         await confirmed;
         return true;
       } catch (_) {
-        debugPrint('goTo: spine unconfirmed in 3s — falling back to native');
+        debugPrint('goTo: spine unconfirmed in 1.5s — falling back to native');
       }
     }
     try {
@@ -475,20 +548,20 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   }
 
   /// Cancel an in-flight navigation and clear the navigating flag.
-  /// Via spine when connected (so all clients see the cancel); falls back to
-  /// the native path if the spine doesn't confirm within 3s (stale socket).
+  /// Via spine when live (so all clients see the cancel); native immediately
+  /// when the spine is dead — a Cancel must never wait on a broken socket.
   Future<void> cancel() async {
     final spine = _ref.read(navSpineClientProvider);
-    if (spine.isConnected) {
+    if (spine.isLive) {
       final confirmed = spine.naviState
           .firstWhere((m) => m['active'] != true || m['cancelling'] == true)
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(milliseconds: 1500));
       spine.sendIntent({'intent': 'cancel_navi'});
       try {
         await confirmed;
         return; // banner clears on the robot's cancel_result broadcast
       } catch (_) {
-        debugPrint('cancel: spine unconfirmed in 3s — falling back to native');
+        debugPrint('cancel: spine unconfirmed in 1.5s — falling back to native');
       }
     }
     await _ref.read(chassisProvider.notifier).cancelNavi();
@@ -507,7 +580,10 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// when the spine is unreachable so the screen can say why.
   bool escortStart(List<NavPoint> route) {
     final spine = _ref.read(navSpineClientProvider);
-    if (!spine.isConnected || route.isEmpty) return false;
+    // isLive, not isConnected: the escort sequencer runs IN the spine, so a
+    // half-open socket would accept the intent into the void and the screen
+    // would show a running escort that never moves.
+    if (!spine.isLive || route.isEmpty) return false;
     InteractionLog.log('escort_start', route.map((p) => p.name).join(' → '));
     spine.sendIntent({
       'intent': 'escort_start',

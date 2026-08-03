@@ -1040,6 +1040,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     ? null
                     : () {
                         final spine = ref.read(navSpineClientProvider);
+                        // Patrol's waypoint sequencer runs IN the spine —
+                        // offline, sendIntent would no-op and this button
+                        // would toggle a patrol that doesn't exist.
+                        if (!spine.isLive) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Patrol needs the spine server — not reachable right now.'),
+                            ),
+                          );
+                          return;
+                        }
                         if (_patrolling) {
                           spine.sendIntent({'intent': 'patrol_stop'});
                         } else {

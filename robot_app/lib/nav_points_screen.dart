@@ -156,7 +156,8 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
             _navBanner(s.navigatingTo!),
           if (s.escort == null && s.navigatingTo == null && s.arrivedAt != null)
             _arrivedBanner(s.arrivedAt!),
-          _captureBar(s.capturing),
+          if (s.offline) _offlineStrip(s.cachedAt),
+          _captureBar(s.capturing, offline: s.offline),
           if (s.escort == null)
             _escortBuilder(s.points.valueOrNull ?? const []),
           Expanded(
@@ -562,8 +563,44 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
     );
   }
 
+  // ── Offline strip ────────────────────────────────────────────────────────────
+  /// Shown when the list on screen is the on-device cache (spine unreachable).
+  /// Navigation is fully functional in this state — the strip exists so an
+  /// operator knows edits are paused and how old the list is, NOT to suggest
+  /// the feature is broken.
+  Widget _offlineStrip(DateTime? cachedAt) {
+    final age = cachedAt == null ? null : DateTime.now().difference(cachedAt);
+    final ageText = age == null
+        ? ''
+        : age.inDays > 0
+            ? ' from ${age.inDays}d ago'
+            : age.inHours > 0
+                ? ' from ${age.inHours}h ago'
+                : ' from ${age.inMinutes}m ago';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _panel2,
+        border: Border.all(color: _line),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        const Icon(Icons.cloud_off_rounded, size: 18, color: _muted),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Offline — using saved points$ageText. Navigation works; '
+            'capturing or editing points needs the spine server.',
+            style: const TextStyle(color: _muted, fontSize: 13),
+          ),
+        ),
+      ]),
+    );
+  }
+
   // ── Capture bar ──────────────────────────────────────────────────────────────
-  Widget _captureBar(bool capturing) {
+  Widget _captureBar(bool capturing, {bool offline = false}) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       padding: const EdgeInsets.all(18),
@@ -593,7 +630,10 @@ class _NavPointsScreenState extends ConsumerState<NavPointsScreen> {
         SizedBox(
           height: 60,
           child: ElevatedButton.icon(
-            onPressed: capturing ? null : _onCapture,
+            // Disabled offline: capture is a Supabase write through the spine
+            // (migration 017 — the write credential must not ship in this APK),
+            // so tapping could only fail. The offline strip above says why.
+            onPressed: (capturing || offline) ? null : _onCapture,
             icon: capturing
                 ? const SizedBox(
                     width: 20,
