@@ -54,42 +54,42 @@ class _PinScreenState extends State<PinScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.lock_rounded, color: _accent, size: 46),
-              const SizedBox(height: 16),
+              const Icon(Icons.lock_rounded, color: _accent, size: 56),
+              const SizedBox(height: 18),
               Text(
                 _error ? 'Wrong PIN — try again' : 'Enter PIN to access admin',
                 style: TextStyle(
                   color: _error ? const Color(0xFFE5484D) : Colors.white70,
-                  fontSize: 18,
+                  fontSize: 22,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 26),
               SizedBox(
-                height: 18,
+                height: 22,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: List.generate(
                     _entry.length,
                     (_) => Container(
-                      width: 14,
-                      height: 14,
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      width: 18,
+                      height: 18,
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
                       decoration:
                           const BoxDecoration(color: _accent, shape: BoxShape.circle),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 34),
               SizedBox(
-                width: 300,
+                width: 500,
                 child: GridView.count(
                   shrinkWrap: true,
                   crossAxisCount: 3,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.5,
+                  mainAxisSpacing: 18,
+                  crossAxisSpacing: 18,
+                  childAspectRatio: 1.25,
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
                     for (final n in ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
@@ -116,7 +116,7 @@ class _PinScreenState extends State<PinScreen> {
           child: Center(
             child: Text(n,
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 28, fontWeight: FontWeight.w600)),
+                    color: Colors.white, fontSize: 40, fontWeight: FontWeight.w600)),
           ),
         ),
       );
@@ -127,7 +127,7 @@ class _PinScreenState extends State<PinScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
-          child: Center(child: Icon(ic, color: Colors.white70, size: 26)),
+          child: Center(child: Icon(ic, color: Colors.white70, size: 34)),
         ),
       );
 }

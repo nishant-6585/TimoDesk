@@ -25,7 +25,10 @@ void main() async {
   // the app isn't device-owner. The Settings switch can re-allow Home/Recents/
   // status-bar for maintenance (kioskAllowSystemUi).
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  Kiosk.start(allowSystemUi: RobotConfig.kioskAllowSystemUi);
+  // Enter Lock Task AFTER the first frame — startLockTask() requires a RESUMED
+  // activity, so calling it here (before runApp) silently no-ops.
+  WidgetsBinding.instance.addPostFrameCallback(
+      (_) => Kiosk.start(allowSystemUi: RobotConfig.kioskAllowSystemUi));
 
   // Start the battery HTTP server (:8090) that spine polls — unchanged.
   BatteryService().start();
