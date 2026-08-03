@@ -16,6 +16,8 @@ export interface Intent {
     | 'patrol_stop' // stop the patrol (cancels the active leg)
     | 'escort_start' // walk saved points, person-verified at each step (spine-side sequencer)
     | 'escort_stop' // stop the escort (cancels the active leg)
+    | 'tour_start' // guided office tour: narrate + pause for questions at each station (F8)
+    | 'tour_stop' // end the tour (cancels the active leg)
     | 'head'
     | 'arm'
     | 'wave'
@@ -103,6 +105,8 @@ export interface RobotEvent {
     | 'navi_event'
     | 'escort_event' // escort lifecycle (started / checkpoint / person_confirmed / finished)
     | 'visitor_arrived'
+    | 'intrusion_detected' // F9: confirmed person during an after-hours patrol
+    | 'tour_event' // F8: guided-tour lifecycle (started / questions_open / finished)
     // Voice phase, broadcast to the admin app (#80)
     | 'voice_listening'
     | 'voice_thinking'
@@ -121,9 +125,10 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state' | 'config_update';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state' | 'config_update' | 'alarm';
   ok?: boolean;
-  action?: string; // for voice_control — e.g. 'stop'
+  action?: string; // for voice_control — e.g. 'stop'; for alarm — 'start' | 'stop'
+  waypoint?: string | null; // for alarm — where the intrusion was detected
   recording?: boolean; // for recording_state
   file?: string | null; // for recording_state — current clip basename
   maxMs?: number; // for recording_state — auto-stop cap

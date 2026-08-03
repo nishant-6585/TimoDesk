@@ -176,6 +176,23 @@ export async function maybeNotifyBatteryLow(
   }
 }
 
+/** Confirmed after-hours intrusion → push every admin immediately (F9).
+ *  Deliberately NOT deduped like battery/obstacle: the IntrusionDetector's own
+ *  cooldown already governs how often this fires, and a security alert must not
+ *  be suppressed by a latched flag. */
+export async function maybeNotifyIntrusion(
+  supabase: SupabaseClient,
+  waypoint: string | null
+): Promise<void> {
+  await sendPush(supabase, 'all', {
+    title: '🚨 Intrusion detected',
+    body: waypoint
+      ? `A person was detected near "${waypoint}" during the after-hours patrol.`
+      : 'A person was detected during the after-hours patrol.',
+    data: { type: 'intrusion_detected', ...(waypoint ? { waypoint } : {}) },
+  });
+}
+
 let _obstacleWasBlocked = false;
 /** Obstacle state → push admins once when Mikee becomes blocked. */
 export async function maybeNotifyObstacleBlocked(

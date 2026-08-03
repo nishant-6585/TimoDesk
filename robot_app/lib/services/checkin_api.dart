@@ -38,6 +38,8 @@ class CheckinApi {
   Future<bool> postVisit({
     required String visitorName,
     required String hostStaffId,
+    String? company,
+    String? purpose,
   }) async {
     final res = await http
         .post(
@@ -49,6 +51,10 @@ class CheckinApi {
           body: jsonEncode({
             'visitor_name': visitorName,
             'host_staff_id': hostStaffId,
+            // Omitted entirely when the visitor skipped them — the spine treats
+            // absent and empty alike, but sending nothing keeps the log clean.
+            if (company != null && company.isNotEmpty) 'company': company,
+            if (purpose != null && purpose.isNotEmpty) 'purpose': purpose,
           }),
         )
         .timeout(const Duration(seconds: 10));

@@ -83,6 +83,89 @@ export async function saveSnapshot(
 }
 
 /**
+ * Persist a visitor ARRIVAL snapshot (F1). Distinct from saveSnapshot(): this
+ * one is attached to a `visitor` row, not the admin gallery.
+ *
+ * DPDP: this is the one visitor image the blueprint permits — a plain arrival
+ * photo on the visitor record. It is NEVER run through face embedding and never
+ * reaches `staff_face_embedding`; visitors are detected, never enrolled. The
+ * row's own `purge_after` (30d) governs it, and deleting the storage object is
+ * part of the purge story below.
+ *
+ * Best-effort by contract: returns null instead of throwing, because a visitor
+ * standing at reception must be checked in and their host notified even if
+ * Storage is unavailable. The caller logs the miss.
+ */
+export async function saveVisitorArrivalSnapshot(
+  supabase: SupabaseClient,
+  buffer: Buffer,
+  visitorId: string,
+  now: () => number = Date.now
+): Promise<string | null> {
+  // Path carries the visitor id (already an opaque uuid) — no name, no PII.
+  const path = `visitor/${visitorId}/${now()}.jpg`;
+  try {
+    const { error: uploadErr } = await supabase.storage
+      .from(SNAPSHOTS_BUCKET)
+      .upload(path, buffer, { contentType: 'image/jpeg', upsert: false });
+    if (uploadErr) {
+      console.warn(`[captures] arrival snapshot upload failed: ${uploadErr.message}`);
+      return null;
+    }
+    const { error: updErr } = await supabase
+      .from('visitor')
+      .update({ snapshot_url: path })
+      .eq('id', visitorId);
+    if (updErr) {
+      console.warn(`[captures] arrival snapshot link failed: ${updErr.message}`);
+      return null;
+    }
+    return path;
+  } catch (err) {
+    console.warn('[captures] arrival snapshot failed:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+/**
+ * Persist an intrusion frame (F9). Same bucket, different `capture.kind` —
+ * migration 005's retention trigger gives 'intrusion' a 365-day window (vs 30
+ * days for everything else), which is why the kind string matters here.
+ *
+ * Best-effort like the arrival snapshot: an alarm must still sound and alert
+ * even if Storage is down. Returns the capture id when stored, else null.
+ */
+export async function saveIntrusionCapture(
+  supabase: SupabaseClient,
+  buffer: Buffer,
+  now: () => number = Date.now
+): Promise<{ captureId: string; path: string } | null> {
+  const path = `intrusion/${now()}.jpg`;
+  try {
+    const { error: uploadErr } = await supabase.storage
+      .from(SNAPSHOTS_BUCKET)
+      .upload(path, buffer, { contentType: 'image/jpeg', upsert: false });
+    if (uploadErr) {
+      console.warn(`[captures] intrusion upload failed: ${uploadErr.message}`);
+      return null;
+    }
+    const base = { kind: 'intrusion', storage_url: path };
+    let ins = await supabase.from('capture').insert({ ...base, actor: 'security' }).select('id').single();
+    if (ins.error && isActorMissing(ins.error.message)) {
+      ins = await supabase.from('capture').insert(base).select('id').single();
+    }
+    if (ins.error) {
+      console.warn(`[captures] intrusion insert failed: ${ins.error.message}`);
+      return null;
+    }
+    return { captureId: ins.data!.id as string, path };
+  } catch (err) {
+    console.warn('[captures] intrusion capture failed:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+/**
  * List recent admin snapshots (newest first) with short-lived signed image URLs.
  * A row whose signed URL fails to mint (deleted object, etc.) gets image_url=null
  * so the Gallery can render a graceful placeholder instead of breaking.

@@ -86,6 +86,56 @@ void main() {
     });
   });
 
+  group('CheckinVoice.isSkip', () {
+    test('recognises declining an optional detail', () {
+      expect(CheckinVoice.isSkip('skip'), isTrue);
+      expect(CheckinVoice.isSkip('Prefer not to say.'), isTrue);
+      expect(CheckinVoice.isSkip('no thanks'), isTrue);
+    });
+
+    test('a real answer is not a skip', () {
+      expect(CheckinVoice.isSkip('Wipro'), isFalse);
+      expect(CheckinVoice.isSkip('quarterly business review'), isFalse);
+    });
+
+    test('"no" stays a CANCEL, not a skip', () {
+      // isCancel is checked first in the dialog; keeping "no" out of isSkip
+      // means a visitor saying "no" backs out rather than silently continuing.
+      expect(CheckinVoice.isSkip('no'), isFalse);
+      expect(CheckinVoice.isCancel('no'), isTrue);
+    });
+  });
+
+  group('CheckinVoice.extractDetail', () {
+    test('strips conversational lead-ins for company', () {
+      expect(CheckinVoice.extractDetail("I'm from Wipro"), 'Wipro');
+      expect(CheckinVoice.extractDetail('I work at Tata Steel'), 'Tata Steel');
+      expect(CheckinVoice.extractDetail('from Reliance.'), 'Reliance');
+      expect(CheckinVoice.extractDetail('The company is JSW'), 'JSW');
+    });
+
+    test('strips lead-ins for purpose', () {
+      expect(CheckinVoice.extractDetail("It's about the SAP migration"),
+          'the SAP migration');
+      expect(CheckinVoice.extractDetail('here for the quarterly review'),
+          'the quarterly review');
+    });
+
+    test('passes a bare answer through unchanged', () {
+      expect(CheckinVoice.extractDetail('Mindsprint'), 'Mindsprint');
+    });
+
+    test('returns empty for nothing usable, so the caller stores null', () {
+      expect(CheckinVoice.extractDetail('   '), '');
+      expect(CheckinVoice.extractDetail('.'), '');
+    });
+
+    test('caps a runaway STT answer at the spine\'s 120-char limit', () {
+      final long = CheckinVoice.extractDetail('a' * 400);
+      expect(long.length, 120);
+    });
+  });
+
   group('voice_fuzzy (shared with NavVoice)', () {
     test('normalize strips possessives and punctuation', () {
       expect(fuzzyNormalize("Nishant's Desk!"), 'nishant desk');

@@ -14,6 +14,7 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
+import { scrubTranscript } from '../services/scrub';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise(resolve => {
@@ -58,10 +59,15 @@ export async function handleVoiceLog(
   const resolvedBy = typeof body.resolved_by === 'string' ? body.resolved_by : 'elevenlabs';
   const visitorId = typeof body.visitor_id === 'string' ? body.visitor_id : null;
 
+  // Scrub contact PII (emails/phones/long digit runs) HERE — this is the last
+  // point before storage, and the previous "scrubbed upstream" claim was never
+  // true of any caller.
+  const scrubbed = scrubTranscript(merged);
+
   const { data: row, error } = await supabase
     .from('conversation')
     .insert({
-      transcript: merged, // jsonb — PII scrubbed upstream
+      transcript: scrubbed, // jsonb — scrubbed immediately above
       resolved_by: resolvedBy,
       visitor_id: visitorId,
       purge_after: new Date(Date.now() + RETENTION_MS).toISOString(),

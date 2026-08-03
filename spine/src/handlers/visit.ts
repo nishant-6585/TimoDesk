@@ -14,6 +14,7 @@ import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 import { notifyStaff } from '../services/notify';
 import { notifyVisitorArrived } from '../services/push';
+import { saveVisitorArrivalSnapshot } from '../captures';
 import { RobotEvent } from '../types';
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -35,7 +36,10 @@ export async function handleVisit(
   req: IncomingMessage,
   res: ServerResponse,
   supabase: SupabaseClient,
-  broadcast: (event: RobotEvent) => void
+  broadcast: (event: RobotEvent) => void,
+  /** Injected camera frame source (SDK.captureFrame) for the arrival snapshot.
+   *  Optional so tests and a camera-less spine still check visitors in. */
+  captureFrame?: () => Promise<Buffer | null>
 ): Promise<void> {
   const auth = await authorizeRequest(req);
   if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
@@ -52,6 +56,16 @@ export async function handleVisit(
   if (!visitorName) return json(res, 400, { ok: false, reason: 'visitor_name required' });
   if (!hostId) return json(res, 400, { ok: false, reason: 'host_staff_id required' });
 
+  // Optional intake fields (blueprint §07 visitor: name, company, host, purpose).
+  // Trimmed + length-capped: these come off a voice transcript, so a garbled STT
+  // run must not write a paragraph into the record.
+  const optionalText = (v: unknown): string | null => {
+    const s = (typeof v === 'string' ? v : '').trim();
+    return s ? s.slice(0, 120) : null;
+  };
+  const company = optionalText(body.company);
+  const purpose = optionalText(body.purpose);
+
   // 1. Load the host staff record.
   const { data: host, error: hostErr } = await supabase
     .from('staff')
@@ -67,6 +81,8 @@ export async function handleVisit(
     .from('visitor')
     .insert({
       name: visitorName,
+      company,
+      purpose,
       host_staff_id: host.id,
       arrived_at: new Date().toISOString(),
       purge_after: new Date(Date.now() + RETENTION_MS).toISOString(),
@@ -75,6 +91,22 @@ export async function handleVisit(
     .single();
   if (insErr || !visit) {
     return json(res, 500, { ok: false, reason: insErr?.message ?? 'Failed to log visit' });
+  }
+
+  // 2b. Arrival snapshot (F1) — best-effort and non-blocking. A plain arrival
+  //     photo on the visitor row, never a biometric: it is not embedded, not
+  //     matched, and dies with the row at purge_after. Off by default so a
+  //     deployment opts in (DPDP notice must be posted at reception first).
+  if (process.env.ARRIVAL_SNAPSHOT_ENABLED === 'true' && captureFrame) {
+    void (async () => {
+      try {
+        const frame = await captureFrame();
+        if (!frame) return void console.warn('[visit] arrival snapshot: no frame from camera');
+        await saveVisitorArrivalSnapshot(supabase, frame, visit.id);
+      } catch (err) {
+        console.warn('[visit] arrival snapshot failed:', err instanceof Error ? err.message : String(err));
+      }
+    })();
   }
 
   const channelType = (host.notify_channel ?? '').split(':')[0] || 'none';
@@ -97,6 +129,8 @@ export async function handleVisit(
     actor: auth.userId,
     visitor_id: visit.id,
     visitor_name: visitorName,
+    company,
+    purpose,
     host_staff_id: host.id,
     channel: channelType,
   });
@@ -104,6 +138,8 @@ export async function handleVisit(
     type: 'visitor_arrived',
     payload: {
       visitor_name: visitorName,
+      company,
+      purpose,
       host: { id: host.id, full_name: host.full_name },
       channel: channelType,
     },

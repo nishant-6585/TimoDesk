@@ -13,6 +13,8 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { askQuestion } from '../services/rag';
+import { notifyHandoff } from '../services/notify';
+import { logEvent } from '../supabase/events';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise(resolve => {
@@ -47,6 +49,12 @@ export async function handleAsk(
 
   try {
     const result = await askQuestion(supabase, question);
+    // The robot just promised a human — page one. Not awaited: the answer must
+    // go back at voice speed, and notifyHandoff never throws.
+    if (result.source === 'handoff') {
+      void notifyHandoff(question, `no knowledge-base match (similarity ${result.similarity ?? 'none'})`);
+      void logEvent('handoff_requested', { question, similarity: result.similarity, via: 'ask' });
+    }
     return json(res, 200, {
       ok: true,
       answer: result.answer,
