@@ -1,7 +1,13 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/spine_base.dart';
+
+String _authToken() =>
+    Supabase.instance.client.auth.currentSession?.accessToken ?? 'test-token';
+
+Map<String, String> get _headers => {'Authorization': 'Bearer ${_authToken()}'};
 
 /// A recorded video clip listed by spine (ffmpeg over the MJPEG stream, saved
 /// to spine/recordings/). Playback streams from spine with HTTP Range support.
@@ -13,7 +19,12 @@ class Recording {
   Recording({required this.file, required this.size, required this.mtime});
 
   /// Direct stream/play URL on the spine (the browser plays it natively).
-  String get url => '$spineHttpBase/recordings/$file';
+  ///
+  /// The token rides in the query string because this URL is handed to the
+  /// browser (url_launcher / <video>), which cannot set an Authorization header.
+  /// The spine accepts `?token=` on THIS route only — see handlers/recordings.ts.
+  String get url =>
+      '$spineHttpBase/recordings/$file?token=${Uri.encodeQueryComponent(_authToken())}';
 
   String get sizeLabel {
     if (size >= 1 << 20) return '${(size / (1 << 20)).toStringAsFixed(1)} MB';
@@ -31,7 +42,7 @@ class Recording {
 final recordingsProvider =
     FutureProvider.autoDispose<List<Recording>>((ref) async {
   final res = await http
-      .get(Uri.parse('$spineHttpBase/recordings'))
+      .get(Uri.parse('$spineHttpBase/recordings'), headers: _headers)
       .timeout(const Duration(seconds: 12));
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'failed to list');
@@ -43,7 +54,7 @@ final recordingsProvider =
 /// Delete a recorded clip file on spine.
 Future<void> deleteRecording(String file) async {
   final res = await http
-      .delete(Uri.parse('$spineHttpBase/recordings/$file'))
+      .delete(Uri.parse('$spineHttpBase/recordings/$file'), headers: _headers)
       .timeout(const Duration(seconds: 12));
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'delete failed');

@@ -86,12 +86,23 @@ export async function verifyToken(
  * Shared authorization for HTTP routes (/enroll, /check-face, /staff, /visit).
  * Async. Dev bypass (test-token / missing token → dev-user) is checked BEFORE the
  * JWKS verify; otherwise a real verified Supabase JWT is required.
+ *
+ * `allowQueryToken` additionally accepts `?token=…` from the URL. Use it ONLY for
+ * routes a browser fetches without JS — the <video> src for recording playback,
+ * which cannot carry an Authorization header. Query tokens land in server logs and
+ * Referer headers, so every other route must keep the header-only default.
  */
 export async function authorizeRequest(
-  req: IncomingMessage
+  req: IncomingMessage,
+  opts: { allowQueryToken?: boolean } = {}
 ): Promise<{ ok: true; userId: string } | { ok: false; status: number; reason: string }> {
   const authz = (req.headers['authorization'] as string | undefined) ?? '';
-  const token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
+  let token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
+
+  if (!token && opts.allowQueryToken) {
+    // `req.url` is path-relative, so give the URL parser a dummy origin.
+    token = new URL(req.url ?? '/', 'http://localhost').searchParams.get('token')?.trim() ?? '';
+  }
 
   if (DEV_AUTH_BYPASS && (token === '' || token === 'dev' || token === 'test-token')) {
     return { ok: true, userId: 'dev-user' };

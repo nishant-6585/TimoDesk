@@ -51,3 +51,42 @@ jobs:
           path: robot_app/build/app/outputs/flutter-apk/app-robot-debug.apk
           retention-days: 3
           overwrite: true
+
+  # The admin app was never in CI — only robot_app was, which is how an analyzer
+  # ERROR sat in app/test/widget_test.dart without anyone noticing.
+  admin-app:
+    name: Admin App — Analyze, Test & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # ERRORS are the gate. The app also carries ~170 pre-existing warnings and
+      # infos (unused imports, withOpacity deprecations, avoid_print) that would
+      # fail --fatal-warnings on day one. Clear those, then drop this flag —
+      # don't add new ones in the meantime.
+      - name: Analyze
+        run: flutter analyze --no-fatal-warnings
+
+      # Fatal, deliberately. All three suites are deterministic unit tests, so a
+      # red result here means something is actually broken. (robot_app's step is
+      # still `|| true` — same treatment once its suite is trusted.)
+      - name: Run tests
+        run: flutter test
+
+      # Builds the shipping configuration: FLAVOR=prod is the login-gated one.
+      # Passing it explicitly means CI fails if that default ever regresses.
+      - name: Build web
+        run: flutter build web --dart-define=FLAVOR=prod

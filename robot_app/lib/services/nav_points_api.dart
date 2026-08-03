@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config.dart';
 
 /// A named SLAM pose the robot can navigate to. Mirrors the `nav_points`
 /// Supabase table (migration 010) — SHARED with the web admin app, so a point
@@ -43,44 +44,48 @@ class NavPoint {
   Map<String, double> get pose => {'x': x, 'y': y, 'z': z, 'rotation': rotation};
 }
 
-/// Thin Supabase PostgREST client for the `nav_points` table.
+/// Nav-point client — talks to the SPINE, not to Supabase.
 ///
-/// WHY REST (not supabase_flutter): the robot_app deliberately keeps its
-/// dependency surface tiny and has no `supabase_flutter` package — face
-/// enrollment talks to the spine over plain `http`. We reuse the same project
-/// URL + anon key the web admin uses (`app/lib/core/supabase.dart`) and hit the
-/// REST endpoint directly. The `nav_points` RLS policy is `USING (true)` for the
-/// select/write roles, so the anon key suffices (same effective access the web
-/// admin gets after login).
+/// It used to hit PostgREST directly with the project's anon key hardcoded right
+/// here. That key ships inside the APK, and it forced the `nav_points` RLS policy
+/// to `USING (true)` with no role restriction — so anyone who pulled the key out
+/// of the APK could rewrite where the robot drives. Migration 017 removed anon's
+/// access; the spine (service role + kiosk-token auth) is the only writer now,
+/// which also matches the rest of this app: everything else already goes through
+/// the spine over plain `http`.
+///
+/// Auth is the kiosk token from Settings (`RobotConfig.kioskToken`), the same
+/// credential the SpineClient WS and face enrollment use.
 class NavPointsApi {
-  // Same Supabase project the web admin (app/lib/core/supabase.dart) uses.
-  static const String _supabaseUrl = 'https://agjygqllxdclyzfxidgy.supabase.co';
-  static const String _anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanlncWxseGRjbHl6ZnhpZGd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NTY0MzIsImV4cCI6MjA5NjIzMjQzMn0.TbdiNQqayGDRuTnJn4HiO9mNCsg7zaVU7cl2Js8odgg';
+  String get _base => RobotConfig.spineBaseUrl;
 
-  static const String _table = 'nav_points';
-
-  Uri _u(String query) =>
-      Uri.parse('$_supabaseUrl/rest/v1/$_table?$query');
+  Uri _u(String path) => Uri.parse('$_base/nav-points$path');
 
   Map<String, String> get _headers => {
-        'apikey': _anonKey,
-        'Authorization': 'Bearer $_anonKey',
+        'Authorization': 'Bearer ${RobotConfig.kioskToken}',
         'Content-Type': 'application/json',
       };
+
+  /// Unwrap the spine's `{ ok, ... }` envelope, or throw with its reason.
+  Map<String, dynamic> _envelope(http.Response res, String verb) {
+    Map<String, dynamic>? data;
+    try {
+      data = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      // Non-JSON body (proxy error page, empty 401) — fall through to the throw.
+    }
+    if (data == null || data['ok'] != true) {
+      throw Exception('$verb failed (${res.statusCode}): ${data?['reason'] ?? res.body}');
+    }
+    return data;
+  }
 
   /// Read all saved points, ordered by sort_order then created_at.
   Future<List<NavPoint>> list() async {
     final res = await http
-        .get(
-          _u('select=*&order=sort_order.asc,created_at.asc'),
-          headers: _headers,
-        )
+        .get(_u(''), headers: _headers)
         .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 200) {
-      throw Exception('Load failed (${res.statusCode}): ${res.body}');
-    }
-    final rows = jsonDecode(res.body) as List;
+    final rows = _envelope(res, 'Load')['points'] as List;
     return rows
         .map((e) => NavPoint.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -106,17 +111,10 @@ class NavPointsApi {
       'kind': kind,
     };
     final res = await http
-        .post(
-          _u('select=*'),
-          headers: {..._headers, 'Prefer': 'return=representation'},
-          body: jsonEncode(body),
-        )
+        .post(_u(''), headers: _headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 201 && res.statusCode != 200) {
-      throw Exception('Save failed (${res.statusCode}): ${res.body}');
-    }
-    final rows = jsonDecode(res.body) as List;
-    return NavPoint.fromJson(rows.first as Map<String, dynamic>);
+    final point = _envelope(res, 'Save')['point'] as Map<String, dynamic>;
+    return NavPoint.fromJson(point);
   }
 
   /// Update a point's name and/or arrival announcement (description).
@@ -128,26 +126,19 @@ class NavPointsApi {
     };
     final res = await http
         .patch(
-          _u('id=eq.${Uri.encodeComponent(id)}'),
+          _u('/${Uri.encodeComponent(id)}'),
           headers: _headers,
           body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 200 && res.statusCode != 204) {
-      throw Exception('Update failed (${res.statusCode}): ${res.body}');
-    }
+    _envelope(res, 'Update');
   }
 
   /// Delete a point by id.
   Future<void> delete(String id) async {
     final res = await http
-        .delete(
-          _u('id=eq.${Uri.encodeComponent(id)}'),
-          headers: _headers,
-        )
+        .delete(_u('/${Uri.encodeComponent(id)}'), headers: _headers)
         .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 200 && res.statusCode != 204) {
-      throw Exception('Delete failed (${res.statusCode}): ${res.body}');
-    }
+    _envelope(res, 'Delete');
   }
 }

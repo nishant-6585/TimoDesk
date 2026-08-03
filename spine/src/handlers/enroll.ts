@@ -17,6 +17,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
 import { extractEmbedding } from '../services/face-embedding';
+import { upsertStaffKb } from '../services/kb-staff';
 
 export interface EnrollRequest {
   jwt?: string; // Deprecated: use Authorization header instead
@@ -267,6 +268,15 @@ export async function handleEnroll(
 
         console.log(
           `[Enroll] ✅ ${enrollReq.full_name} enrolled by ${enrolledBy} (embedding: ${embeddingId})`
+        );
+
+        // 8b. KB SYNC (best-effort, non-blocking) — keep this person answerable
+        // by the voice brain ("who is X", "X's number", "where does X sit"). Never
+        // fail or delay enrollment on this; Voyage may rate-limit.
+        upsertStaffKb(supabase, staffId).catch(e =>
+          console.warn(
+            `[Enroll] KB staff sync failed (continuing): ${e instanceof Error ? e.message : String(e)}`
+          )
         );
 
         // 9. RETURN SUCCESS

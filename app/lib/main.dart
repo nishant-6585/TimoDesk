@@ -12,10 +12,14 @@ final GlobalKey<ScaffoldMessengerState> rootMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
 /// Build flavor. Set at launch via `--dart-define=FLAVOR=dev|staging|prod`.
-/// Defaults to `dev` (which skips the login gate for local development).
 /// `flavorProvider` (router.dart) throws unless this is set before the router
 /// is built, so it is injected via ProviderScope overrides in [main].
-const String _flavor = String.fromEnvironment('FLAVOR', defaultValue: 'dev');
+///
+/// Defaults to `prod` — i.e. the login gate is ON unless you deliberately ask
+/// for `dev`. It used to default to `dev`, which meant the documented ship
+/// command (`flutter build web`, no --dart-define) produced a build with NO
+/// login screen. Local development: `flutter run -d chrome --dart-define=FLAVOR=dev`.
+const String _flavor = String.fromEnvironment('FLAVOR', defaultValue: 'prod');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

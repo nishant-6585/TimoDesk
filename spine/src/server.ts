@@ -12,7 +12,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { RobotSDK } from './robot/interface';
 import { SpineMessage, AdminMessage, RobotStatus, RobotEvent, RobotPosition } from './types';
 import { routeMessage } from './commands/router';
-import { verifyToken } from './auth/middleware';
+import { verifyToken, authorizeRequest } from './auth/middleware';
 import { logAdminSession, logEvent } from './supabase/events';
 import { createSensorPipeline } from './sensors';
 import { EscortController, EscortPoint } from './escort';
@@ -32,6 +32,7 @@ import { deleteSnapshot } from './captures';
 import { handleAsk } from './handlers/ask';
 import {
   handleKbIngest,
+  handleKbSyncStaff,
   handleKbIngestUrl,
   handleKbIngestFile,
   handleKbCrawlStart,
@@ -47,6 +48,8 @@ import { handleMcpPlugins } from './handlers/mcp-plugins';
 import { getMcpPluginRegistry } from './services/mcp-plugins';
 import { handleKbProviders } from './handlers/kb-providers';
 import { getKbProviderRegistry } from './services/kb-providers';
+import { handleRecordings } from './handlers/recordings';
+import { handleNavPoints } from './handlers/nav-points';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -642,7 +645,15 @@ export function startServer(sdk: RobotSDK): Promise<void> {
 
       // Battery bridge: real chassis charge fed from adb logcat (robot-core
       // robot_info). Doesn't need Supabase. Body: { battery: 0-100, charging: bool }.
+      // Authed like every other route — an unauthenticated writer could fake a full
+      // battery and keep the robot driving until it dies mid-escort.
       if (url === '/robot/battery' && req.method === 'POST') {
+        const auth = await authorizeRequest(req);
+        if (!auth.ok) {
+          res.writeHead(auth.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: auth.reason }));
+          return;
+        }
         let body = '';
         req.on('data', (c) => (body += c));
         req.on('end', () => {
@@ -695,79 +706,23 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         return;
       }
 
-      if (url === '/record/start' && req.method === 'POST') {
-        const r = startRecording();
-        res.writeHead(r.ok ? 200 : 409, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(r));
-        return;
-      }
-      if (url === '/record/stop' && req.method === 'POST') {
-        const r = stopRecording();
-        res.writeHead(r.ok ? 200 : 409, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(r));
-        return;
-      }
-      // Current recording status — so a screen shows the live state on load
-      // (the WS recording_state broadcast keeps it in sync after that).
-      if (url === '/record/status' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, ...recordStatus() }));
+      // Recording + clip routes (start/stop/status/list/stream/delete). All of
+      // them authenticate inside the handler — see handlers/recordings.ts.
+      if (
+        await handleRecordings(req, res, {
+          dir: RECORDINGS_DIR,
+          status: recordStatus,
+          start: startRecording,
+          stop: stopRecording,
+          activeFile: () => (recorder ? path.basename(recorder.file) : null),
+        })
+      ) {
         return;
       }
 
-      // List recorded clips (newest first) so the admin Gallery can show them.
-      if (url === '/recordings' && req.method === 'GET') {
-        try {
-          const files = fs.existsSync(RECORDINGS_DIR)
-            ? fs.readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('.mp4'))
-            : [];
-          const list = files
-            .map((f) => {
-              const st = fs.statSync(path.join(RECORDINGS_DIR, f));
-              return { file: f, size: st.size, mtime: st.mtimeMs };
-            })
-            // Exclude the clip that's still being written (ffmpeg finalizes on stop).
-            .filter((r) => !(recorder && path.basename(recorder.file) === r.file))
-            .sort((a, b) => b.mtime - a.mtime);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, recordings: list }));
-        } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, reason: String(err) }));
-        }
-        return;
-      }
-
-      // Stream a recorded clip with HTTP Range support (so the <video> player
-      // can seek). Path-traversal-safe: only a basename inside RECORDINGS_DIR.
-      const recMatch = (req.url ?? '').match(/^\/recordings\/([^/?]+)$/);
-      if (recMatch && req.method === 'GET') {
-        const name = path.basename(decodeURIComponent(recMatch[1]));
-        const filePath = path.join(RECORDINGS_DIR, name);
-        if (!name.endsWith('.mp4') || !fs.existsSync(filePath)) {
-          res.writeHead(404); res.end('not found'); return;
-        }
-        const stat = fs.statSync(filePath);
-        const range = req.headers.range;
-        if (range) {
-          const m = range.match(/bytes=(\d+)-(\d*)/);
-          const start = m ? parseInt(m[1], 10) : 0;
-          const end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
-          res.writeHead(206, {
-            'Content-Type': 'video/mp4',
-            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': end - start + 1,
-          });
-          fs.createReadStream(filePath, { start, end }).pipe(res);
-        } else {
-          res.writeHead(200, {
-            'Content-Type': 'video/mp4',
-            'Content-Length': stat.size,
-            'Accept-Ranges': 'bytes',
-          });
-          fs.createReadStream(filePath).pipe(res);
-        }
+      // Nav points — brokered here so the robot_app doesn't need the Supabase
+      // anon key (migration 017 takes anon off the nav_points table).
+      if (await handleNavPoints(req, res, supabase)) {
         return;
       }
 
@@ -783,35 +738,14 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Delete a snapshot (storage object + capture row).
       const capDelMatch = (req.url ?? '').match(/^\/captures\/([^/?]+)$/);
       if (capDelMatch && req.method === 'DELETE') {
-        if (!supabase) { res.writeHead(503); res.end('supabase off'); return; }
+        const auth = await authorizeRequest(req);
+        if (!auth.ok) {
+          res.writeHead(auth.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, reason: auth.reason }));
+          return;
+        }
         try {
           await deleteSnapshot(supabase, decodeURIComponent(capDelMatch[1]));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true }));
-        } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, reason: String(err) }));
-        }
-        return;
-      }
-      // Delete a recorded clip (path-traversal-safe basename).
-      const recDelMatch = (req.url ?? '').match(/^\/recordings\/([^/?]+)$/);
-      if (recDelMatch && req.method === 'DELETE') {
-        const name = path.basename(decodeURIComponent(recDelMatch[1]));
-        const filePath = path.join(RECORDINGS_DIR, name);
-        if (!name.endsWith('.mp4') || !fs.existsSync(filePath)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, reason: 'not found' }));
-          return;
-        }
-        // Refuse to delete the clip that's still being written.
-        if (recorder && path.basename(recorder.file) === name) {
-          res.writeHead(409, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, reason: 'still recording' }));
-          return;
-        }
-        try {
-          fs.unlinkSync(filePath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true }));
         } catch (err) {
@@ -833,6 +767,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }
       if (url === '/kb/ingest' && req.method === 'POST') {
         await handleKbIngest(req, res, supabase);
+        return;
+      }
+      if (url === '/kb/sync-staff' && req.method === 'POST') {
+        await handleKbSyncStaff(req, res, supabase);
         return;
       }
       if (url === '/kb/ingest-url' && req.method === 'POST') {
