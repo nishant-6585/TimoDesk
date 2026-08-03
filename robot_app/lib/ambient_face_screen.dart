@@ -799,10 +799,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // there mute: re-open the mic so "take me somewhere else" / a question
         // works immediately. The arrival announcement has already played; the
         // idle watchdog closes this session after 15s of silence as usual.
-        debugPrint('Escort: visitor in view after arriving at "$pointName" '
-            '→ auto-opening mic');
-        InteractionLog.log('escort_arrival_listen', pointName);
-        _startVoice(auto: true);
+        if (RobotConfig.autoOpenMic) {
+          debugPrint('Escort: visitor in view after arriving at "$pointName" '
+              '→ auto-opening mic');
+          InteractionLog.log('escort_arrival_listen', pointName);
+          _startVoice(auto: true);
+        }
         return;
       }
       final template = RobotConfig.escortLostText;
@@ -822,9 +824,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // timer covers the built-in-TTS path (no playback-level signal) or a missed drain.
   void _greetThenListen(String phrase) {
     if (_voiceActive) return; // already in a conversation
-    _pendingAutoListen = true;
-    _autoListenFallback?.cancel();
-    _autoListenFallback = Timer(const Duration(seconds: 4), _startAutoListen);
+    // Auto-open the mic after the greeting ONLY if enabled (Settings). Default
+    // OFF: Mikee greets, but the mic opens only when a person taps Talk.
+    if (RobotConfig.autoOpenMic) {
+      _pendingAutoListen = true;
+      _autoListenFallback?.cancel();
+      _autoListenFallback = Timer(const Duration(seconds: 4), _startAutoListen);
+    }
     _speakGreeting(phrase);
   }
 
@@ -948,9 +954,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _pendingGreetAtMs = DateTime.now().millisecondsSinceEpoch;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(name), staffName: name); // overlay + face state
-    // STAFF_RECOGNIZED priming is centralised in _startVoice (covers this path
-    // AND the spine path AND a manual Talk right after recognition).
-    _startVoice(auto: true); // opens the session → agent greets by name, then listens
+    if (RobotConfig.autoOpenMic) {
+      // STAFF_RECOGNIZED priming is centralised in _startVoice (covers this path
+      // AND the spine path AND a manual Talk right after recognition).
+      _startVoice(auto: true); // opens the session → agent greets by name, then listens
+    } else {
+      // Default: greet by name via TTS; the mic opens only on a Talk-button tap.
+      _speakGreeting(_staffSpeech(lang, name));
+    }
   }
 
   void _setStateKind(FaceStateKind k) {

@@ -38,11 +38,11 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-                <!-- HOME + DEFAULT: Mikee can be the launcher/home so it owns the
-                     Home button and auto-starts on boot (kiosk). Set as default via
-                     `cmd package set-home-activity` or by the device-owner. -->
-                <category android:name="android.intent.category.HOME"/>
-                <category android:name="android.intent.category.DEFAULT"/>
+                <!-- NOTE: deliberately NOT category.HOME. A HOME activity is forced
+                     to the device's NATURAL (portrait) orientation, overriding
+                     sensorLandscape → the app launched portrait. The kiosk doesn't
+                     need HOME: Lock Task Mode (device-owner) pins the app + blocks
+                     Home, and BootReceiver auto-launches Mikee after a reboot. -->
             </intent-filter>
         </activity>
         <meta-data

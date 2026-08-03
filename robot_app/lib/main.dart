@@ -18,6 +18,13 @@ import 'services/kiosk.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Robot chest screen is LANDSCAPE-ONLY. Orientation is FIXED in the manifest
+  // (android:screenOrientation="reverseLandscape") — a non-"USER" fixed value
+  // that ignores the panel's rotation lock. Do NOT call
+  // SystemChrome.setPreferredOrientations here: passing both landscape
+  // directions yields SCREEN_ORIENTATION_USER_LANDSCAPE, which respects the
+  // rotation lock and fell back to portrait on this panel.
+
   // Load persisted config (spine/camera URLs) before the UI reads it.
   await RobotConfig.load();
 
