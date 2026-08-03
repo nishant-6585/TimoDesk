@@ -25,6 +25,7 @@ import 'status_screen.dart';
 import 'control_screen.dart';
 import 'settings_screen.dart';
 import 'qa_screen.dart';
+import 'widgets/joystick.dart';
 
 // ── Color & type tokens (DASHBOARD_REDESIGN.md §2) ───────────────────────────
 const _bg = Color(0xFF0F0F0F);
@@ -127,6 +128,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   // Per-frame metrics (clamp(min, …vh, max)) computed in build().
   double _dockH = 100, _padSq = 120, _armH = 36, _estopH = 50;
+  // Current joystick-derived drive direction. drive(dir) is a heartbeat that
+  // keeps moving until stopMove(), so we only re-issue it when the direction
+  // actually changes (not every pointer-move frame). null = inside deadzone.
+  String? _joyDir;
   double _tileLabel = 13, _tileSub = 10;
 
   @override
@@ -1040,6 +1045,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     ? null
                     : () {
                         final spine = ref.read(navSpineClientProvider);
+                        // Patrol's waypoint sequencer runs IN the spine —
+                        // offline, sendIntent would no-op and this button
+                        // would toggle a patrol that doesn't exist.
+                        if (!spine.isLive) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Patrol needs the spine server — not reachable right now.'),
+                            ),
+                          );
+                          return;
+                        }
                         if (_patrolling) {
                           spine.sendIntent({'intent': 'patrol_stop'});
                         } else {
@@ -1186,9 +1203,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       // Badge reflects real motor state (provider updates from the plugin's events).
       final movingDir = c.isMoving ? c.direction : null;
 
-      void onDrive(String dir) {
-        n.drive(dir); // real hold-to-drive (heartbeat moveSerial until stopMove)
-        _setKind(FaceStateKind.attentive);
+      // Joystick → drive direction. Same mapping as the web-admin Control Room:
+      // dominant axis wins, deadzone 0.18. drive() is a heartbeat, so only fire
+      // on a direction CHANGE; recentre/release → stopMove().
+      void onJoy(double x, double y, double mag) {
+        String? dir;
+        if (mag >= 0.18) {
+          dir = x.abs() > y.abs()
+              ? (x > 0 ? 'right' : 'left')
+              : (y > 0 ? 'forward' : 'back');
+        }
+        if (dir == _joyDir) return;
+        _joyDir = dir;
+        if (dir == null) {
+          n.stopMove();
+        } else {
+          n.drive(dir); // hold-to-drive heartbeat until stopMove
+          _setKind(FaceStateKind.attentive);
+        }
       }
 
       return _ctrlBlock(
@@ -1197,21 +1229,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             ? _Badge.active('MOVING · ${movingDir.toUpperCase()}')
             : _Badge.idle('STOPPED'),
         Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          _dpad([
-            null,
-            _DpadBtn(Icons.keyboard_arrow_up_rounded,
-                onPressStart: () => onDrive('forward'), onPressEnd: n.stopMove),
-            null,
-            _DpadBtn(Icons.keyboard_arrow_left_rounded,
-                onPressStart: () => onDrive('left'), onPressEnd: n.stopMove),
-            _DpadBtn.stop(onTap: n.emergencyStop),
-            _DpadBtn(Icons.keyboard_arrow_right_rounded,
-                onPressStart: () => onDrive('right'), onPressEnd: n.stopMove),
-            null,
-            _DpadBtn(Icons.keyboard_arrow_down_rounded,
-                onPressStart: () => onDrive('back'), onPressEnd: n.stopMove),
-            null,
-          ]),
+          Joystick(
+            size: _padSq,
+            knobColor: const Color(0xFFFF6B35),
+            onChange: onJoy,
+            onEnd: () {
+              _joyDir = null;
+              n.stopMove();
+            },
+          ),
           const SizedBox(height: 8),
           _speedRow(n),
         ]),
@@ -1555,28 +1581,17 @@ class _Badge extends StatelessWidget {
 class _DpadBtn extends StatelessWidget {
   final IconData? icon;
   final String? text;
-  final VoidCallback? onTap; // discrete tap (head nudge, CTR, STOP)
-  final VoidCallback? onPressStart; // hold-to-drive (chassis): press
-  final VoidCallback? onPressEnd; // hold-to-drive: release/cancel
+  final VoidCallback? onTap; // discrete tap (head nudge, CTR)
   final bool stop;
   final bool center;
-  const _DpadBtn(this.icon, {this.onTap, this.onPressStart, this.onPressEnd})
+  const _DpadBtn(this.icon, {this.onTap})
       : text = null,
         stop = false,
         center = false;
   const _DpadBtn.center(this.text, {required this.onTap})
       : icon = null,
-        onPressStart = null,
-        onPressEnd = null,
         stop = false,
         center = true;
-  const _DpadBtn.stop({required this.onTap})
-      : icon = null,
-        text = 'STOP',
-        onPressStart = null,
-        onPressEnd = null,
-        stop = true,
-        center = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1595,15 +1610,6 @@ class _DpadBtn extends StatelessWidget {
           : Text(text!,
               style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
     );
-    // Hold-to-drive (chassis): drive on press, stop on release/cancel.
-    if (onPressStart != null) {
-      return GestureDetector(
-        onTapDown: (_) => onPressStart!(),
-        onTapUp: (_) => onPressEnd?.call(),
-        onTapCancel: () => onPressEnd?.call(),
-        child: visual,
-      );
-    }
     return Material(
       color: Colors.transparent,
       child: InkWell(borderRadius: BorderRadius.circular(10), onTap: onTap, child: visual),

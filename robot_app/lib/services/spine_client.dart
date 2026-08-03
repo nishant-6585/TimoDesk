@@ -95,6 +95,26 @@ class SpineClient {
 
   bool get isConnected => _authed;
 
+  /// Wall-clock of the last frame the spine sent us. Null until authenticated.
+  DateTime? _lastMessageAt;
+
+  /// Stricter than [isConnected]: the socket is authenticated AND has produced
+  /// traffic recently.
+  ///
+  /// [isConnected] can be a lie. A silent Wi-Fi drop or a spine host that loses
+  /// power leaves a half-open TCP socket: no FIN arrives, `onDone` never fires,
+  /// and `_authed` stays true until a write finally fails. Callers that would
+  /// otherwise sit waiting for a reply that can never come (goTo / cancel) must
+  /// gate on this instead and take their native path immediately.
+  ///
+  /// 12s threshold: the spine broadcasts `robot_status` to every client every
+  /// 5s (`spine/src/server.ts` status heartbeat), so a live socket is never
+  /// quiet for two consecutive beats.
+  bool get isLive =>
+      _authed &&
+      _lastMessageAt != null &&
+      DateTime.now().difference(_lastMessageAt!) < const Duration(seconds: 12);
+
   /// Send an arbitrary intent to the spine (e.g. navi / cancel_navi).
   /// No-op when not connected — callers should check [isConnected] first.
   void sendIntent(Map<String, dynamic> intent) =>
@@ -182,6 +202,10 @@ class SpineClient {
   }
 
   void _onMessage(dynamic raw) {
+    // Any frame — including the 5s robot_status heartbeat — proves the socket
+    // is still carrying traffic. Stamped before parsing so even a malformed
+    // frame counts as liveness.
+    _lastMessageAt = DateTime.now();
     try {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
       switch (msg['type']) {
@@ -281,6 +305,7 @@ class SpineClient {
 
   void _onClosed() {
     _authed = false;
+    _lastMessageAt = null;
     if (!_connCtrl.isClosed) _connCtrl.add(false);
     _sub?.cancel();
     _sub = null;

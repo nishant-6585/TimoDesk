@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'config.dart';
+import 'services/kiosk.dart';
 import 'models/voice_language.dart';
 import 'services/persona_voice.dart';
 import 'services/voice_agent.dart';
@@ -36,8 +37,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _escortText;
   late final TextEditingController _escortLost;
   late final TextEditingController _robotName;
+  late final TextEditingController _pin;
   String _voicePreset = RobotConfig.voicePresetName;
   bool _gateEnabled = RobotConfig.attentionGateEnabled;
+  bool _allowSystemUi = RobotConfig.kioskAllowSystemUi;
+  bool _autoOpenMic = RobotConfig.autoOpenMic;
   bool _saved = false;
 
   bool _testing = false;
@@ -49,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _spine = TextEditingController(text: RobotConfig.spineBaseUrl);
     _camera = TextEditingController(text: RobotConfig.cameraBaseUrl);
     _kiosk = TextEditingController(text: RobotConfig.kioskToken);
+    _pin = TextEditingController(text: RobotConfig.dashboardPin);
     _elevenKey = TextEditingController(text: RobotConfig.elevenLabsApiKey);
     _elevenAgent = TextEditingController(text: RobotConfig.elevenLabsAgentId);
     _company = TextEditingController(text: RobotConfig.companyName);
@@ -72,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _spine.dispose();
     _camera.dispose();
     _kiosk.dispose();
+    _pin.dispose();
     _elevenKey.dispose();
     _elevenAgent.dispose();
     _company.dispose();
@@ -91,6 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await RobotConfig.setSpineBaseUrl(_spine.text);
     await RobotConfig.setCameraBaseUrl(_camera.text);
     await RobotConfig.setKioskToken(_kiosk.text);
+    await RobotConfig.setDashboardPin(_pin.text);
+    await RobotConfig.setAutoOpenMic(_autoOpenMic);
     await RobotConfig.setElevenLabsApiKey(_elevenKey.text);
     await RobotConfig.setElevenLabsAgentId(_elevenAgent.text);
     await RobotConfig.updateGreetingConfig(
@@ -327,6 +335,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: const TextStyle(fontSize: 16),
             decoration: _dec('Re-greet after (minutes)',
                 'How long before the same person is greeted again'),
+          ),
+          const SizedBox(height: 28),
+          const Text('SECURITY & KIOSK',
+              style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _pin,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(fontSize: 16),
+            decoration: _dec('Admin PIN',
+                'Required to open the dashboard from the face screen'),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            value: _allowSystemUi,
+            onChanged: (v) {
+              setState(() => _allowSystemUi = v);
+              RobotConfig.setKioskAllowSystemUi(v);
+              Kiosk.setSystemUi(v);
+            },
+            activeThumbColor: _orange,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Allow Home / Recents / status bar',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+            subtitle: const Text(
+                'On = unlock the kiosk for maintenance (system UI + other apps '
+                'reachable). Off = full lockdown, only Mikee.',
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            value: _autoOpenMic,
+            onChanged: (v) => setState(() => _autoOpenMic = v),
+            activeThumbColor: _orange,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Auto-open mic after greeting',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+            subtitle: const Text(
+                'Off (default) = Mikee greets, but the mic opens only when a '
+                'person taps Talk. On = mic auto-opens after a greeting.',
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
           ),
           const SizedBox(height: 28),
           const Text('ATTENTION GATE',

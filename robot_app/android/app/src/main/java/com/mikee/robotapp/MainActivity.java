@@ -29,6 +29,13 @@ public class MainActivity extends FlutterActivity {
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
 
+        // Kiosk / Lock Task Mode control (device-owner). Registered first so the
+        // Dart side can lock down as early as possible.
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                "com.mikee/kiosk"
+        ).setMethodCallHandler(new KioskPlugin(this));
+
         CameraStreamPlugin cameraPlugin = new CameraStreamPlugin(this);
 
         new MethodChannel(
