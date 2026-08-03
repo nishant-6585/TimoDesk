@@ -472,7 +472,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (!_awaitingRecognition) return;
       _awaitingRecognition = false;
       if (_greeted || _voiceActive) return;
-      _greetOnApproach(); // no face recognised in the window → plain hello
+      // When the spine is CONNECTED it is the authoritative identity source and
+      // will deliver its own verdict: faceDetected → greet BY NAME, or
+      // unknownFace → the visitor hello. Firing a generic hello here on timeout
+      // is exactly what made a recognised staff member hear BOTH ("Hello,
+      // welcome to xboom" then their name) when the spine landed a beat late.
+      // So only fall back to the plain hello when the spine is OFFLINE — the
+      // on-device recogniser (_onFaceRecognized) still covers names in that case.
+      if (_spine.isConnected) return;
+      _greetOnApproach(); // spine offline → plain-hello fallback
     });
   }
 
