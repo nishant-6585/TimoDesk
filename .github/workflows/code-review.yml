@@ -22,15 +22,32 @@ jobs:
           fetch-depth: 0
 
       - name: Collect files to review
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RANGE_INPUT: ${{ github.event.inputs.commit_range }}
         run: |
-          # Get Dart + Java files changed in the last 7 days, fall back to top 30 files
-          git log --since="7 days ago" --name-only --pretty="" \
-            | grep -E '\.(dart|java)$' \
-            | sort -u \
-            | head -30 > /tmp/changed_files.txt
+          # Decide which Dart/Java files to review:
+          #  - explicit range input wins
+          #  - scheduled run -> files changed in the last 7 days (weekly digest)
+          #  - manual run    -> files changed in the latest commit, so re-runs reflect
+          #                     CURRENT code instead of repeating the same week-old set
+          if [ -n "$RANGE_INPUT" ]; then
+            echo "Using provided range: $RANGE_INPUT"
+            git diff --name-only $RANGE_INPUT 2>/dev/null \
+              | grep -E '\.(dart|java)$' | sort -u | head -30 > /tmp/changed_files.txt || true
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            echo "Scheduled run: reviewing files changed in the last 7 days"
+            git log --since="7 days ago" --name-only --pretty="" \
+              | grep -E '\.(dart|java)$' | sort -u | head -30 > /tmp/changed_files.txt || true
+          else
+            echo "Manual run: reviewing files changed in the latest commit (HEAD~1..HEAD)"
+            git diff --name-only HEAD~1 HEAD 2>/dev/null \
+              | grep -E '\.(dart|java)$' | sort -u | head -30 > /tmp/changed_files.txt || true
+          fi
 
-          # If nothing changed recently, review the most important source files
+          # Fallback: review the most important source files if nothing was selected
           if [ ! -s /tmp/changed_files.txt ]; then
+            echo "No changed files matched — falling back to top source files"
             find robot_app/lib -name "*.dart" | head -20 >> /tmp/changed_files.txt
             find robot_app/android/app/src/main/java -name "*.java" | head -10 >> /tmp/changed_files.txt
           fi
@@ -84,31 +101,72 @@ jobs:
               messages: [{"role": "user", "content": $prompt}]
             }' > /tmp/api_request.json
 
-          echo "=== Sending to Claude API ==="
-          curl -s -X POST https://api.anthropic.com/v1/messages \
-            -H "Content-Type: application/json" \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
-            -d @/tmp/api_request.json > /tmp/api_response.json
+          # Call Claude with retries on transient errors (429 / 5xx / network).
+          attempt=1
+          max=3
+          http=000
+          while [ "$attempt" -le "$max" ]; do
+            http=$(curl -s -o /tmp/api_response.json -w "%{http_code}" -X POST https://api.anthropic.com/v1/messages \
+              -H "Content-Type: application/json" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -d @/tmp/api_request.json) || http=000
+            echo "Claude API attempt $attempt → HTTP $http"
+            case "$http" in
+              429|5[0-9][0-9]|000)
+                wait=$((attempt * attempt * 3))
+                echo "Transient error — retrying in ${wait}s…"
+                sleep "$wait"
+                attempt=$((attempt + 1))
+                ;;
+              *) break ;;
+            esac
+          done
 
-          echo "=== API Response type: $(jq -r '.type // .error.type // "unknown"' /tmp/api_response.json) ==="
+          echo "=== API Response type: $(jq -r '.type // .error.type // "unknown"' /tmp/api_response.json) (HTTP $http) ==="
 
           # Extract the text content
           RAW=$(jq -r '.content[0].text // ""' /tmp/api_response.json)
           echo "=== Raw response (first 300 chars) ==="
           echo "${RAW:0:300}"
+          printf '%s' "$RAW" > /tmp/raw.txt
 
-          # Strip markdown fences if present
-          CLEAN=$(echo "$RAW" | sed 's/^```json[[:space:]]*//' | sed 's/^```[[:space:]]*//' | sed 's/[[:space:]]*```[[:space:]]*$//')
+          # Robust parse: try raw JSON → fence-stripped → first '{' .. last '}' substring.
+          PARSED=""
+          if jq -e . /tmp/raw.txt > /dev/null 2>&1; then
+            PARSED=$(cat /tmp/raw.txt)
+          else
+            sed 's/^```json[[:space:]]*//; s/^```[[:space:]]*//; s/[[:space:]]*```[[:space:]]*$//' /tmp/raw.txt > /tmp/clean.txt
+            if jq -e . /tmp/clean.txt > /dev/null 2>&1; then
+              PARSED=$(cat /tmp/clean.txt)
+            else
+              # Extract from the first '{' to the last '}' (handles preamble / trailing prose)
+              awk '
+                { buf = buf $0 "\n" }
+                END {
+                  s = index(buf, "{")
+                  if (s == 0) exit
+                  e = 0
+                  for (i = length(buf); i >= 1; i--) if (substr(buf, i, 1) == "}") { e = i; break }
+                  if (e >= s) printf "%s", substr(buf, s, e - s + 1)
+                }
+              ' /tmp/raw.txt > /tmp/extract.txt
+              if jq -e . /tmp/extract.txt > /dev/null 2>&1; then
+                PARSED=$(cat /tmp/extract.txt)
+              fi
+            fi
+          fi
 
-          # Validate JSON
-          if echo "$CLEAN" | jq . > /dev/null 2>&1; then
-            echo "$CLEAN" > /tmp/review_result.json
-            echo "=== Valid JSON, issue count: $(echo "$CLEAN" | jq '.issues | length') ==="
+          # Require a valid object with an .issues array; otherwise record the real error.
+          if [ -n "$PARSED" ] && printf '%s' "$PARSED" | jq -e '.issues' > /dev/null 2>&1; then
+            printf '%s' "$PARSED" > /tmp/review_result.json
+            echo "=== Valid JSON, issue count: $(printf '%s' "$PARSED" | jq '.issues | length') ==="
           else
             echo "=== JSON parse failed, full response: ==="
             cat /tmp/api_response.json
-            echo '{"summary":"Review parsing failed — see workflow logs","issues":[]}' > /tmp/review_result.json
+            ERR=$(jq -r '.error.message // empty' /tmp/api_response.json)
+            [ -z "$ERR" ] && ERR="response was not valid JSON (HTTP $http)"
+            jq -n --arg m "Review parsing failed — $ERR" '{summary: $m, issues: []}' > /tmp/review_result.json
           fi
 
       - name: Post to DevConsole
