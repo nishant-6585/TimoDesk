@@ -46,8 +46,15 @@ function makeRes() {
 
 const json = (res: any) => JSON.parse(res.body);
 
-/** Chainable PostgREST stub that records what it was asked to do. */
-function makeSupabase(result: { data?: unknown; error?: { message: string } } = {}) {
+/**
+ * Chainable PostgREST stub that records what it was asked to do.
+ * GET /nav-points also queries `staff` (synthetic desk points), so that table
+ * gets its own chain with its own result.
+ */
+function makeSupabase(
+  result: { data?: unknown; error?: { message: string } } = {},
+  staffResult: { data?: unknown; error?: { message: string } } = {}
+) {
   const calls: Record<string, unknown> = {};
   const chain: any = {
     select: vi.fn(() => chain),
@@ -72,7 +79,19 @@ function makeSupabase(result: { data?: unknown; error?: { message: string } } = 
     then: (resolve: (v: unknown) => unknown) =>
       resolve({ data: result.data ?? [], error: result.error ?? null }),
   };
-  return { supabase: { from: vi.fn(() => chain) } as any, calls, chain };
+  const staffChain: any = {
+    select: vi.fn(() => staffChain),
+    eq: vi.fn(() => staffChain),
+    not: vi.fn(() => staffChain),
+    then: (resolve: (v: unknown) => unknown) =>
+      resolve({ data: staffResult.data ?? [], error: staffResult.error ?? null }),
+  };
+  return {
+    supabase: { from: vi.fn((table: string) => (table === 'staff' ? staffChain : chain)) } as any,
+    calls,
+    chain,
+    staffChain,
+  };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -118,6 +137,30 @@ describe('GET /nav-points', () => {
     expect(json(res)).toEqual({ ok: true, points: rows });
     expect(chain.order).toHaveBeenCalledWith('sort_order', { ascending: true });
     expect(chain.order).toHaveBeenCalledWith('created_at', { ascending: true });
+  });
+
+  it('appends enrolled staff desks as synthetic points after the real ones', async () => {
+    const rows = [{ id: 'p1', name: 'Reception' }];
+    const staff = [
+      { id: 's1', full_name: 'David', desk_x: 1.5, desk_y: -2, desk_z: 0, desk_rotation: 90 },
+    ];
+    const { supabase } = makeSupabase({ data: rows }, { data: staff });
+    const res = makeRes();
+    await handleNavPoints(makeReq('GET', '/nav-points', 'kiosk-secret'), res, supabase);
+    expect(res.statusCode).toBe(200);
+    expect(json(res).points).toEqual([
+      rows[0],
+      expect.objectContaining({ id: 'staff-desk:s1', name: 'David', kind: 'staff_desk' }),
+    ]);
+  });
+
+  it('still serves the real points when the staff-desk query fails', async () => {
+    const rows = [{ id: 'p1', name: 'Reception' }];
+    const { supabase } = makeSupabase({ data: rows }, { error: { message: 'staff down' } });
+    const res = makeRes();
+    await handleNavPoints(makeReq('GET', '/nav-points', 'kiosk-secret'), res, supabase);
+    expect(res.statusCode).toBe(200);
+    expect(json(res)).toEqual({ ok: true, points: rows });
   });
 
   it('surfaces a database error as a 500', async () => {
