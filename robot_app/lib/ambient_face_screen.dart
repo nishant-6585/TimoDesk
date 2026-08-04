@@ -101,6 +101,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // paths (which caused the intermittent "Hello" vs "Hello <name>").
   bool _awaitingRecognition = false;
   Timer? _recognitionWaitTimer;
+  // The spine recognises faces per-frame and can emit an 'unknown' verdict a
+  // beat BEFORE it recognises an enrolled staff face (a borderline first frame).
+  // Greeting the visitor hello immediately then hearing that faceDetected made
+  // a recognised person hear BOTH "Hello, welcome…" and their name. We defer the
+  // visitor hello briefly so a staff faceDetected can cancel it (name wins).
+  Timer? _pendingVisitorTimer;
 
   // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
   late final ElevenLabsTts _tts;
@@ -332,6 +338,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _presenceHold?.cancel();
+    _pendingVisitorTimer?.cancel();
     _greetTimer?.cancel();
     _recognitionWaitTimer?.cancel();
     _checkinTimeout?.cancel();
@@ -428,6 +435,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           _greeted = false; // person has left — allow greeting on next approach
           _awaitingRecognition = false; // cancel any pending greet-after-recognise
           _recognitionWaitTimer?.cancel();
+          _pendingVisitorTimer?.cancel(); // drop any deferred visitor hello
           _reconnectAttempts = 0; // fresh retry budget for the next visitor
           _presenceHold = null;
           if (_face.state == FaceStateKind.attentive ||
@@ -469,6 +477,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _greeted = true; // counts as this visit's one greeting
     _awaitingRecognition = false; // spine identity won the recognition window
     _recognitionWaitTimer?.cancel();
+    _pendingVisitorTimer?.cancel(); // staff wins — cancel any deferred visitor hello
     // Prime the voice agent with WHO the spine recognised, so the session opens
     // knowing the person — fixes "do you recognize me?" → "I can't identify
     // anyone" (this authoritative path previously never told the agent). Consumed
@@ -478,10 +487,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(e.name), staffName: e.name);
     if (upgradeAfterGeneric) {
-      _speakGreeting(_staffSpeech(lang, e.name));
-    } else {
-      _greetThenListen(_staffSpeech(lang, e.name));
+      // A generic visitor hello already went out this visit (the deferral
+      // window elapsed before the spine recognised them). The overlay above
+      // has switched to their name and the agent is primed — do NOT speak a
+      // second time, or they hear two greetings. One voice per visit.
+      return;
     }
+    _greetThenListen(_staffSpeech(lang, e.name));
   }
 
   // Spine saw a face that matched NO enrolled staff → this is a VISITOR.
@@ -491,6 +503,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // left visitors standing in front of a silent robot. The cooldown that stands
   // in for the per-name debounce lives in greetingProvider.
   void _onUnknownFace(void _) {
+    // Already greeted this visit (e.g. the spine recognised the person a frame
+    // earlier and we greeted BY NAME) → a later 'unknown' frame must NOT add a
+    // generic hello on top. One greeting per visit.
+    if (_greeted) return;
     // Same priority rules as named greetings: never interrupt an interaction.
     final talking = _face.state == FaceStateKind.speaking ||
         _face.state == FaceStateKind.thinking;
@@ -502,9 +518,20 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     _awaitingRecognition = false;
     _recognitionWaitTimer?.cancel();
-    _greeted = false; // a fresh visitor deserves a fresh greeting
     _pendingGreetName = null; // a visitor is NOT staff — don't prime the agent with a stale name
-    _greetOnApproach();
+    // Defer the visitor hello so a staff faceDetected (which the spine may emit
+    // a beat AFTER this 'unknown' frame) can cancel it in _onFaceDetected and
+    // greet BY NAME instead — otherwise the person hears BOTH. Offline there is
+    // no spine identity to wait for, so greet immediately.
+    if (_spine.isConnected) {
+      _pendingVisitorTimer?.cancel();
+      _pendingVisitorTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (!mounted || _greeted || _voiceActive) return;
+        _greetOnApproach();
+      });
+    } else {
+      _greetOnApproach();
+    }
   }
 
   // Rendered spoken phrases — Settings-editable templates (RobotConfig), with
@@ -1124,6 +1151,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (!ref.read(greetingProvider.notifier).mayGreetStaff(name, busy: false)) {
       return;
     }
+    _recognitionWaitTimer?.cancel();
+    _pendingVisitorTimer?.cancel(); // staff wins — cancel any deferred visitor hello
     _greeted = true; // counts as this visit's one greeting (blocks the plain hello)
     _pendingGreetName = name;
     _pendingGreetAtMs = DateTime.now().millisecondsSinceEpoch;
