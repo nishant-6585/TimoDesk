@@ -31,6 +31,8 @@ import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
 import 'services/intrusion_siren.dart';
 import 'screens/language_selection_screen.dart';
+import 'screens/lead_form_screen.dart';
+import 'services/xboom_lead_api.dart';
 import 'dashboard_screen.dart';
 
 /// The robot's front-of-house home: an ambient animated face (Beam/OLED
@@ -1659,6 +1661,9 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
                 ),
               ),
             ),
+          // Showroom sales capture: Order + Enquiry FABs, stacked above the mic
+          // (visitor-facing — pushes LeadFormScreen → spine → XBoom Workflow OS).
+          _leadButtons(),
           // Big tap-to-talk button (easy target; toggles the voice session).
           _voiceButton(),
           // Voice session indicator — current phase + live mic-level meter.
@@ -1676,6 +1681,77 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         ]),
       ),
     );
+  }
+
+  // Order + Enquiry FABs for showroom visitors, stacked directly above the mic
+  // button (mic sits at bottom: 28 with a 92px circle + label ≈ 130px tall).
+  // Slightly smaller than the mic so Talk stays the primary action.
+  Widget _leadButtons() {
+    return Positioned(
+      right: 28,
+      bottom: 178,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _leadFab(
+          icon: Icons.contact_support_rounded,
+          label: 'Enquiry',
+          color: const Color(0xFF3B82F6),
+          onTap: () => _openLeadForm(LeadKind.enquiry),
+        ),
+        const SizedBox(height: 18),
+        _leadFab(
+          icon: Icons.shopping_cart_rounded,
+          label: 'Order',
+          color: const Color(0xFF4ADE80),
+          onTap: () => _openLeadForm(LeadKind.order),
+        ),
+      ]),
+    );
+  }
+
+  Widget _leadFab({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 18, spreadRadius: 1),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 34),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // Open the visitor order/enquiry form. Any live voice session is closed first
+  // so Mikee doesn't keep talking (or listening) over the on-screen keyboard.
+  Future<void> _openLeadForm(LeadKind kind) async {
+    if (_voiceActive) _endVoice();
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LeadFormScreen(kind: kind),
+    ));
   }
 
   // Large voice button. TAP = toggle hands-free (auto-listen) session; HOLD =

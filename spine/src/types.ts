@@ -105,6 +105,7 @@ export interface RobotEvent {
     | 'navi_event'
     | 'escort_event' // escort lifecycle (started / checkpoint / person_confirmed / finished)
     | 'visitor_arrived'
+    | 'xboom_lead_created' // showroom Order/Enquiry FAB → XBoom Workflow OS
     | 'intrusion_detected' // F9: confirmed person during an after-hours patrol
     | 'tour_event' // F8: guided-tour lifecycle (started / questions_open / finished)
     // Voice phase, broadcast to the admin app (#80)
