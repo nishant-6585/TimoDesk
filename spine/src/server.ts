@@ -50,6 +50,7 @@ import { handleKbProviders } from './handlers/kb-providers';
 import { getKbProviderRegistry } from './services/kb-providers';
 import { handleRecordings } from './handlers/recordings';
 import { handleNavPoints } from './handlers/nav-points';
+import { handleXboomLead } from './handlers/xboom';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -669,6 +670,13 @@ export function startServer(sdk: RobotSDK): Promise<void> {
             res.end(JSON.stringify({ ok: false, reason: 'bad body' }));
           }
         });
+        return;
+      }
+
+      // Showroom Order/Enquiry capture (face-screen FABs) → XBoom Workflow OS
+      // sales pipeline. Talks to the XBOOM_* project, not spine's own Supabase.
+      if (url === '/xboom/lead' && req.method === 'POST') {
+        await handleXboomLead(req, res, broadcastRobotEvent);
         return;
       }
 
