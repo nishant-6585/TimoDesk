@@ -40,6 +40,20 @@ class NavPoint {
         sortOrder: (j['sort_order'] ?? 0) as int,
       );
 
+  /// Round-trips through [fromJson] — same key names as the spine's rows, so
+  /// [NavPointsCache] can persist a fetched list verbatim and replay it offline.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'description': description,
+        'x': x,
+        'y': y,
+        'z': z,
+        'rotation': rotation,
+        'kind': kind,
+        'sort_order': sortOrder,
+      };
+
   /// The pose payload sent to the native chassis `navi` method.
   Map<String, double> get pose => {'x': x, 'y': y, 'z': z, 'rotation': rotation};
 }

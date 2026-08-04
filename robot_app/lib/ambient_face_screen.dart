@@ -15,6 +15,7 @@ import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
 import 'greeting_provider.dart';
+import 'pin_screen.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
@@ -536,7 +537,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (!_awaitingRecognition) return;
       _awaitingRecognition = false;
       if (_greeted || _voiceActive) return;
-      _greetOnApproach(); // no face recognised in the window → plain hello
+      // When the spine is CONNECTED it is the authoritative identity source and
+      // will deliver its own verdict: faceDetected → greet BY NAME, or
+      // unknownFace → the visitor hello. Firing a generic hello here on timeout
+      // is exactly what made a recognised staff member hear BOTH ("Hello,
+      // welcome to xboom" then their name) when the spine landed a beat late.
+      // So only fall back to the plain hello when the spine is OFFLINE — the
+      // on-device recogniser (_onFaceRecognized) still covers names in that case.
+      if (_spine.isConnected) return;
+      _greetOnApproach(); // spine offline → plain-hello fallback
     });
   }
 
@@ -572,7 +581,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // Speak a greeting phrase — ElevenLabs voice first, built-in TTS as fallback.
+  String _lastSpokenText = '';
+  int _lastSpokenMs = 0;
+
   void _speakGreeting(String text) {
+    // Dedupe overlapping identical speech: presence fires from TWO sources
+    // (spine personDetected + on-device PersonDetect → same _onPersonDetected)
+    // and recognition can arrive from two paths, so this can be called twice
+    // within milliseconds → two voices talking over each other. Suppress a
+    // repeat of the SAME text within a short window.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (text == _lastSpokenText && now - _lastSpokenMs < 3000) return;
+    _lastSpokenText = text;
+    _lastSpokenMs = now;
     InteractionLog.log('robot_speech', text);
     _tts.speak(text).then((ok) {
       if (!ok) _audioBridge.speak(text);
@@ -945,10 +966,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // there mute: re-open the mic so "take me somewhere else" / a question
         // works immediately. The arrival announcement has already played; the
         // idle watchdog closes this session after 15s of silence as usual.
-        debugPrint('Escort: visitor in view after arriving at "$pointName" '
-            '→ auto-opening mic');
-        InteractionLog.log('escort_arrival_listen', pointName);
-        _startVoice(auto: true);
+        if (RobotConfig.autoOpenMic) {
+          debugPrint('Escort: visitor in view after arriving at "$pointName" '
+              '→ auto-opening mic');
+          InteractionLog.log('escort_arrival_listen', pointName);
+          _startVoice(auto: true);
+        }
         return;
       }
       final template = RobotConfig.escortLostText;
@@ -970,6 +993,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // a session directly via _startVoice.)
   void _greetThenListen(String phrase) {
     if (_voiceActive) return; // already in a conversation
+    // Auto-open the mic after the greeting ONLY if enabled (Settings). Default
+    // OFF: Mikee greets, but the mic opens only when a person taps Talk.
+    if (RobotConfig.autoOpenMic) {
+      _pendingAutoListen = true;
+      _autoListenFallback?.cancel();
+      _autoListenFallback = Timer(const Duration(seconds: 4), _startAutoListen);
+    }
     _speakGreeting(phrase);
   }
 
@@ -1099,9 +1129,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _pendingGreetAtMs = DateTime.now().millisecondsSinceEpoch;
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     _showGreeting(lang.greetText(name), staffName: name); // overlay + face state
-    // STAFF_RECOGNIZED priming is centralised in _startVoice (covers this path
-    // AND the spine path AND a manual Talk right after recognition).
-    _startVoice(auto: true); // opens the session → agent greets by name, then listens
+    if (RobotConfig.autoOpenMic) {
+      // STAFF_RECOGNIZED priming is centralised in _startVoice (covers this path
+      // AND the spine path AND a manual Talk right after recognition).
+      _startVoice(auto: true); // opens the session → agent greets by name, then listens
+    } else {
+      // Default: greet by name via TTS; the mic opens only on a Talk-button tap.
+      _speakGreeting(_staffSpeech(lang, name));
+    }
   }
 
   void _setStateKind(FaceStateKind k) {
@@ -1490,7 +1525,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: next, expression: expr));
   }
 
-  void _openDashboard() {
+  void _openDashboard() async {
+    // Admin area is PIN-gated: a visitor tapping the face screen must enter the
+    // PIN before reaching the dashboard/settings/enroll. Cancel returns to the face.
+    final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const PinScreen(),
+    ));
+    if (ok != true || !mounted) return;
     // Pass the SHARED voice instances so the dashboard reacts to the same session
     // (no second ElevenLabs connection) and doesn't double-own playback. The idle
     // watchdog keeps running here too — an active conversation (speech in/out) keeps

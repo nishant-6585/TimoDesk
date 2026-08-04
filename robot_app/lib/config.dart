@@ -39,6 +39,21 @@ class RobotConfig {
   // 'kiosk-robot'. See HANDOFF go-live item #5.
   static String kioskToken = '';
 
+  // ── Kiosk + admin PIN ────────────────────────────────────────────────────
+  // dashboardPin gates the admin area (Dashboard/Settings/Enroll) — a visitor
+  // tapping the face screen must enter it. Change it in Settings. Default is a
+  // simple factory PIN; set a real one on deployment.
+  static const String _kDashboardPin = 'dashboard_pin';
+  static String dashboardPin = '1234';
+  // When true the kiosk lock-task allows Home / Recents / status-bar pulldown
+  // (for admin/maintenance). Off = full lockdown. Toggle in Settings.
+  static const String _kKioskAllowSystemUi = 'kiosk_allow_system_ui';
+  static bool kioskAllowSystemUi = false;
+  // When true the mic auto-opens after a greeting (person detected → listen).
+  // Default OFF: the mic opens ONLY when a person taps the Talk button.
+  static const String _kAutoOpenMic = 'auto_open_mic';
+  static bool autoOpenMic = false;
+
   // ElevenLabs Conversational AI (#80 voice pipeline). Baked-in fleet defaults so a
   // fresh device works without per-device setup; a value saved in Settings still
   // overrides. The agent itself (LLM, voice, KB, prompt) is configured in the
@@ -113,6 +128,9 @@ class RobotConfig {
     spineBaseUrl = p.getString(_kSpine) ?? defaultSpine;
     cameraBaseUrl = p.getString(_kCamera) ?? defaultCamera;
     kioskToken = p.getString(_kKiosk) ?? '';
+    dashboardPin = p.getString(_kDashboardPin) ?? '1234';
+    kioskAllowSystemUi = p.getBool(_kKioskAllowSystemUi) ?? false;
+    autoOpenMic = p.getBool(_kAutoOpenMic) ?? false;
     elevenLabsApiKey = p.getString(_kElevenKey) ?? defaultElevenLabsApiKey;
     elevenLabsAgentId = p.getString(_kElevenAgent) ?? defaultElevenLabsAgentId;
     voiceLanguageCode = p.getString(_kVoiceLangCode) ?? 'en';
@@ -253,6 +271,21 @@ class RobotConfig {
   static Future<void> setKioskToken(String v) async {
     kioskToken = v.trim();
     (await SharedPreferences.getInstance()).setString(_kKiosk, kioskToken);
+  }
+
+  static Future<void> setDashboardPin(String v) async {
+    dashboardPin = v.trim().isEmpty ? '1234' : v.trim();
+    (await SharedPreferences.getInstance()).setString(_kDashboardPin, dashboardPin);
+  }
+
+  static Future<void> setKioskAllowSystemUi(bool v) async {
+    kioskAllowSystemUi = v;
+    (await SharedPreferences.getInstance()).setBool(_kKioskAllowSystemUi, v);
+  }
+
+  static Future<void> setAutoOpenMic(bool v) async {
+    autoOpenMic = v;
+    (await SharedPreferences.getInstance()).setBool(_kAutoOpenMic, v);
   }
 
   static Future<void> setElevenLabsApiKey(String v) async {
