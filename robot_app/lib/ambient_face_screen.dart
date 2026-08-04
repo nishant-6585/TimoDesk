@@ -31,7 +31,7 @@ import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
 import 'services/intrusion_siren.dart';
 import 'screens/language_selection_screen.dart';
-import 'screens/lead_form_screen.dart';
+import 'screens/product_picker_screen.dart';
 import 'services/xboom_lead_api.dart';
 import 'dashboard_screen.dart';
 
@@ -1745,12 +1745,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     );
   }
 
-  // Open the visitor order/enquiry form. Any live voice session is closed first
-  // so Mikee doesn't keep talking (or listening) over the on-screen keyboard.
+  // Open the visitor order/enquiry flow (catalog picker → details form). Any
+  // live voice session is closed first so Mikee doesn't keep talking (or
+  // listening) over the on-screen keyboard.
   Future<void> _openLeadForm(LeadKind kind) async {
     if (_voiceActive) _endVoice();
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => LeadFormScreen(kind: kind),
+      builder: (_) => ProductPickerScreen(kind: kind),
     ));
   }
 

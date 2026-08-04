@@ -14,13 +14,15 @@ vi.mock('../src/auth/middleware', () => ({
 vi.mock('../src/supabase/events', () => ({ logEvent: vi.fn(async () => {}) }));
 
 const submitLeadToXboom = vi.fn();
+const fetchXboomCatalog = vi.fn();
 const xboomConfigured = vi.fn(() => true);
 vi.mock('../src/services/xboom', () => ({
   submitLeadToXboom: (...args: unknown[]) => submitLeadToXboom(...args),
+  fetchXboomCatalog: (...args: unknown[]) => fetchXboomCatalog(...args),
   xboomConfigured: () => xboomConfigured(),
 }));
 
-import { handleXboomLead } from '../src/handlers/xboom';
+import { handleXboomLead, handleXboomCatalog } from '../src/handlers/xboom';
 import { logEvent } from '../src/supabase/events';
 
 function makeReq(body: unknown) {
@@ -51,6 +53,7 @@ const validLead = {
 
 beforeEach(() => {
   submitLeadToXboom.mockReset();
+  fetchXboomCatalog.mockReset();
   xboomConfigured.mockReturnValue(true);
   vi.mocked(logEvent).mockClear();
 });
@@ -130,6 +133,16 @@ describe('POST /xboom/lead', () => {
     expect(submitLeadToXboom).not.toHaveBeenCalled();
   });
 
+  it('passes a catalog product_code through to the service', async () => {
+    submitLeadToXboom.mockResolvedValue({ ok: true });
+    const res = makeRes();
+
+    await handleXboomLead(makeReq({ ...validLead, product_code: 'AGR-X10' }), res as any, vi.fn());
+
+    expect(res.statusCode).toBe(200);
+    expect(submitLeadToXboom).toHaveBeenCalledWith(expect.objectContaining({ productCode: 'AGR-X10' }));
+  });
+
   it('returns 502 (and no broadcast) when the upstream submission fails', async () => {
     submitLeadToXboom.mockResolvedValue({ ok: false, reason: 'RLS denied' });
     const res = makeRes();
@@ -141,5 +154,58 @@ describe('POST /xboom/lead', () => {
     expect(JSON.parse(res.body).reason).toBe('RLS denied');
     expect(broadcast).not.toHaveBeenCalled();
     expect(logEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /xboom/catalog', () => {
+  function makeGetReq(query: string) {
+    return { url: `/xboom/catalog${query}`, headers: { authorization: 'Bearer test-token' } } as any;
+  }
+
+  it('parses + clamps query params and returns the products', async () => {
+    fetchXboomCatalog.mockResolvedValue({
+      ok: true,
+      products: [{ product_name: 'Nano drone', woo_sku: 'ND-1' }],
+      total: 1,
+    });
+    const res = makeRes();
+
+    await handleXboomCatalog(makeGetReq('?search=drone&limit=500&offset=-3'), res as any);
+
+    expect(res.statusCode).toBe(200);
+    const out = JSON.parse(res.body);
+    expect(out.ok).toBe(true);
+    expect(out.products).toHaveLength(1);
+    expect(out.total).toBe(1);
+    expect(fetchXboomCatalog).toHaveBeenCalledWith({ search: 'drone', limit: 50, offset: 0 });
+  });
+
+  it('defaults limit/offset when absent', async () => {
+    fetchXboomCatalog.mockResolvedValue({ ok: true, products: [], total: 0 });
+    const res = makeRes();
+
+    await handleXboomCatalog(makeGetReq(''), res as any);
+
+    expect(fetchXboomCatalog).toHaveBeenCalledWith({ search: '', limit: 30, offset: 0 });
+  });
+
+  it('returns 503 when unconfigured', async () => {
+    xboomConfigured.mockReturnValue(false);
+    const res = makeRes();
+
+    await handleXboomCatalog(makeGetReq('?search=x'), res as any);
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchXboomCatalog).not.toHaveBeenCalled();
+  });
+
+  it('returns 502 when the upstream catalog fetch fails', async () => {
+    fetchXboomCatalog.mockResolvedValue({ ok: false, reason: 'XBoom unreachable: timeout' });
+    const res = makeRes();
+
+    await handleXboomCatalog(makeGetReq('?search=x'), res as any);
+
+    expect(res.statusCode).toBe(502);
+    expect(JSON.parse(res.body).reason).toContain('unreachable');
   });
 });

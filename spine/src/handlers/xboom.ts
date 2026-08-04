@@ -13,7 +13,12 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
-import { submitLeadToXboom, xboomConfigured, XboomLead } from '../services/xboom';
+import {
+  fetchXboomCatalog,
+  submitLeadToXboom,
+  xboomConfigured,
+  XboomLead,
+} from '../services/xboom';
 import { RobotEvent } from '../types';
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -73,6 +78,7 @@ export async function handleXboomLead(
     name,
     phone,
     product,
+    productCode: capped(body.product_code, 64),
     email: capped(body.email, 120),
     quantity:
       typeof body.quantity === 'number' && Number.isFinite(body.quantity)
@@ -101,4 +107,43 @@ export async function handleXboomLead(
   });
 
   return json(res, 200, { ok: true, reference: result.reference ?? null });
+}
+
+/**
+ * GET /xboom/catalog?search=&limit=&offset= — kiosk product browser, proxied
+ * (and TTL-cached) from XBoom's robot-catalog function so the robot never
+ * holds XBoom credentials. Read-only; no audit event (it's just browsing).
+ */
+export async function handleXboomCatalog(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+
+  if (!xboomConfigured()) {
+    return json(res, 503, {
+      ok: false,
+      reason: 'XBoom Workflow integration not configured (set XBOOM_LEAD_ENDPOINT + XBOOM_WEBHOOK_SECRET)',
+    });
+  }
+
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const search = (url.searchParams.get('search') ?? '').trim().slice(0, 120);
+  // Absent params keep their defaults — Number(null) is 0, so parse only when present.
+  const intParam = (name: string, fallback: number, min: number, max: number): number => {
+    const raw = url.searchParams.get(name);
+    if (raw === null || raw === '') return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : fallback;
+  };
+  const limit = intParam('limit', 30, 1, 50);
+  const offset = intParam('offset', 0, 0, 10_000);
+
+  const result = await fetchXboomCatalog({ search, limit, offset });
+  if (!result.ok) {
+    console.error('[xboom] catalog fetch failed:', result.reason);
+    return json(res, 502, { ok: false, reason: result.reason ?? 'XBoom catalog unavailable' });
+  }
+  return json(res, 200, { ok: true, products: result.products, total: result.total });
 }
