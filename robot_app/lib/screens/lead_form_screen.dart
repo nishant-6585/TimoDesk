@@ -12,9 +12,20 @@ import '../services/xboom_lead_api.dart';
 /// thank-you and returns to the face on its own so the kiosk never sits on a
 /// stale form.
 class LeadFormScreen extends StatefulWidget {
-  const LeadFormScreen({super.key, required this.kind});
+  const LeadFormScreen({
+    super.key,
+    required this.kind,
+    this.initialProduct,
+    this.initialProductCode,
+  });
 
   final LeadKind kind;
+
+  /// Prefill from the catalog picker. When the visitor keeps the product text
+  /// unchanged, the real SKU ([initialProductCode]) is submitted as
+  /// product_code; editing the text drops the SKU (it no longer matches).
+  final String? initialProduct;
+  final String? initialProductCode;
 
   @override
   State<LeadFormScreen> createState() => _LeadFormScreenState();
@@ -46,6 +57,7 @@ class _LeadFormScreenState extends State<LeadFormScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialProduct != null) _product.text = widget.initialProduct!;
     _restartIdleTimer();
   }
 
@@ -77,11 +89,16 @@ class _LeadFormScreenState extends State<LeadFormScreen> {
       _submitting = true;
       _error = null;
     });
+    // The SKU only stays valid while the product text is what the catalog gave us.
+    final productText = _product.text.trim();
+    final code =
+        productText == widget.initialProduct?.trim() ? widget.initialProductCode : null;
     final res = await _api.submit(
       kind: widget.kind,
       name: _name.text.trim(),
       phone: _phone.text.trim(),
-      product: _product.text.trim(),
+      product: productText,
+      productCode: code,
       email: _email.text.trim(),
       quantity: _isOrder ? _quantity : null,
       notes: _notes.text.trim(),

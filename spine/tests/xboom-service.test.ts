@@ -9,13 +9,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHmac } from 'crypto';
 
-import { submitLeadToXboom, xboomConfigured, XboomLead } from '../src/services/xboom';
+import {
+  clearCatalogCache,
+  fetchXboomCatalog,
+  submitLeadToXboom,
+  xboomConfigured,
+  XboomLead,
+} from '../src/services/xboom';
 
 const lead: XboomLead = {
   kind: 'order',
   name: 'Asha Rao',
   phone: '+91 98765 43210',
   product: 'Agriculture drone',
+  productCode: 'AGR-X10',
   email: 'asha@example.com',
   quantity: 2,
   notes: 'wants a demo first',
@@ -71,6 +78,7 @@ describe('submitLeadToXboom', () => {
       name: 'Asha Rao',
       phone: '+91 98765 43210',
       product: 'Agriculture drone',
+      product_code: 'AGR-X10',
       email: 'asha@example.com',
       quantity: 2,
       notes: 'wants a demo first',
@@ -81,10 +89,11 @@ describe('submitLeadToXboom', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await submitLeadToXboom({ ...lead, email: null, quantity: null, notes: null });
+    await submitLeadToXboom({ ...lead, productCode: null, email: null, quantity: null, notes: null });
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const parsed = JSON.parse(init.body as string);
+    expect(parsed).not.toHaveProperty('product_code');
     expect(parsed).not.toHaveProperty('email');
     expect(parsed).not.toHaveProperty('quantity');
     expect(parsed).not.toHaveProperty('notes');
@@ -120,5 +129,70 @@ describe('submitLeadToXboom', () => {
 
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('XBoom unreachable');
+  });
+});
+
+describe('fetchXboomCatalog', () => {
+  beforeEach(() => clearCatalogCache());
+
+  const productsResponse = () =>
+    new Response(
+      JSON.stringify({ ok: true, products: [{ product_name: 'Nano drone', woo_sku: 'ND-1' }], total: 1 }),
+      { status: 200 }
+    );
+
+  it('signs the query body and derives the catalog URL from the lead endpoint', async () => {
+    const fetchMock = vi.fn(async () => productsResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchXboomCatalog({ search: 'drone', limit: 30, offset: 0 });
+
+    expect(result.ok).toBe(true);
+    expect(result.products).toHaveLength(1);
+    expect(result.total).toBe(1);
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://xboom.example/functions/v1/robot-catalog');
+    const rawBody = init.body as string;
+    expect(JSON.parse(rawBody)).toEqual({ search: 'drone', limit: 30, offset: 0 });
+    const expected = `sha256=${createHmac('sha256', SECRET).update(rawBody).digest('hex')}`;
+    expect((init.headers as Record<string, string>)['x-xbm-signature']).toBe(expected);
+  });
+
+  it('honors an explicit XBOOM_CATALOG_ENDPOINT override', async () => {
+    process.env.XBOOM_CATALOG_ENDPOINT = 'https://other.example/robot-catalog';
+    const fetchMock = vi.fn(async () => productsResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchXboomCatalog({ search: '', limit: 30, offset: 0 });
+
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('https://other.example/robot-catalog');
+    delete process.env.XBOOM_CATALOG_ENDPOINT;
+  });
+
+  it('serves a repeated query from cache without a second fetch', async () => {
+    const fetchMock = vi.fn(async () => productsResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchXboomCatalog({ search: 'drone', limit: 30, offset: 0 });
+    await fetchXboomCatalog({ search: 'drone', limit: 30, offset: 0 });
+    await fetchXboomCatalog({ search: 'drone', limit: 30, offset: 30 }); // different page → real fetch
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('oops', { status: 500 }))
+      .mockResolvedValueOnce(productsResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = await fetchXboomCatalog({ search: '', limit: 30, offset: 0 });
+    const second = await fetchXboomCatalog({ search: '', limit: 30, offset: 0 });
+
+    expect(first.ok).toBe(false);
+    expect(second.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

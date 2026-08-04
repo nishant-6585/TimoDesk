@@ -50,7 +50,7 @@ import { handleKbProviders } from './handlers/kb-providers';
 import { getKbProviderRegistry } from './services/kb-providers';
 import { handleRecordings } from './handlers/recordings';
 import { handleNavPoints } from './handlers/nav-points';
-import { handleXboomLead } from './handlers/xboom';
+import { handleXboomLead, handleXboomCatalog } from './handlers/xboom';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
 import { FaceRecognitionService } from './services/face-recognition';
@@ -677,6 +677,10 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // sales pipeline. Talks to the XBOOM_* project, not spine's own Supabase.
       if (url === '/xboom/lead' && req.method === 'POST') {
         await handleXboomLead(req, res, broadcastRobotEvent);
+        return;
+      }
+      if (url.startsWith('/xboom/catalog') && req.method === 'GET') {
+        await handleXboomCatalog(req, res);
         return;
       }
 
