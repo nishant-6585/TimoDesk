@@ -73,12 +73,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # ERRORS are the gate. The app also carries ~170 pre-existing warnings and
-      # infos (unused imports, withOpacity deprecations, avoid_print) that would
-      # fail --fatal-warnings on day one. Clear those, then drop this flag —
-      # don't add new ones in the meantime.
+      # ERRORS are the gate. The app still carries ~250 pre-existing INFO lints
+      # (withOpacity deprecations, avoid_print, dart:html) — and unlike `dart
+      # analyze`, `flutter analyze` treats infos as fatal BY DEFAULT, so both
+      # flags are required for an errors-only gate. Warnings were cleared
+      # 2026-08-06; clear the infos, then drop --no-fatal-infos.
       - name: Analyze
-        run: flutter analyze --no-fatal-warnings
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
 
       # Fatal, deliberately. All three suites are deterministic unit tests, so a
       # red result here means something is actually broken. (robot_app's step is
