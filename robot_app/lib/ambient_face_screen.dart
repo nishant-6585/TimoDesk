@@ -683,31 +683,46 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // ── Barge-in gate ───────────────────────────────────────────────────────────
-  // The robot is half-duplex (no hardware AEC), so the vendor CAE re-transcribes
-  // fragments of Mikee's own voice while he speaks. A genuine interruption must
-  // therefore clear two bars: it's a SUBSTANTIAL utterance (short blips are echo
-  // leak / room noise), AND it doesn't overlap what he's currently saying. Both
-  // thresholds are deliberately conservative and logged so they can be tuned on
-  // hardware — lower _bargeMinWords for a snappier cut-off if false triggers stay
-  // rare; raise it (or _bargeEchoOverlap) if he interrupts himself.
-  static const int _bargeMinWords = 3;
-  static const int _bargeMinChars = 12;
+  // The robot is half-duplex (no hardware AEC): while Mikee speaks ENGLISH the
+  // vendor CAE mis-transcribes his OWN leaked voice as short Chinese/garbage
+  // fragments (要怀疑mfc…, 一路惟) that carry ~no Latin words. So a genuine visitor
+  // interruption is either (a) an explicit interrupt word — "stop", "wait" — at
+  // ANY length (these are exactly how people cut him off), or (b) a phrase with
+  // >= _bargeMinLatinWords real Latin content-words. Whatever passes still must
+  // not overlap his own current reply (a word he actually just said). Logged so
+  // it can be tuned on hardware. VERIFIED on robot 2026-08-06: a long sentence
+  // fired correctly; "stop"/"stop talking" were wrongly rejected as too short —
+  // hence the interrupt-word path + Latin-word floor (was a blunt >=3-word gate).
+  static const int _bargeMinLatinWords = 2;
   static const double _bargeEchoOverlap = 0.5;
+  static const List<String> _interruptWords = [
+    'stop', 'quiet', 'enough', 'wait', 'cancel', 'listen', 'hey', 'hello',
+    'mikee', 'shut up', 'be quiet', 'hold on', 'excuse me', 'one moment',
+  ];
 
   bool _isGenuineBargeIn(String text) {
     final t = text.trim();
     if (t.isEmpty || t == '...') return false;
-    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.length < _bargeMinWords || t.length < _bargeMinChars) {
-      debugPrint('BargeIn: reject — too short (${words.length}w/${t.length}c) "$t"');
+    final lower = t.toLowerCase();
+    final latinWords =
+        RegExp(r'[a-z]{2,}').allMatches(lower).map((m) => m.group(0)!).toList();
+    final wordSet = latinWords.toSet();
+    // Single-word interrupt words must match a whole word; phrases (with a
+    // space) match as a substring.
+    final hasInterrupt = _interruptWords
+        .any((w) => w.contains(' ') ? lower.contains(w) : wordSet.contains(w));
+    if (!hasInterrupt && latinWords.length < _bargeMinLatinWords) {
+      debugPrint('BargeIn: reject — not genuine speech '
+          '(${latinWords.length} latin words) "$t"');
       return false;
     }
     final overlap = _echoOverlap(t, _voiceAgent.lastAgentText);
     if (overlap >= _bargeEchoOverlap) {
-      debugPrint('BargeIn: reject — echo of own speech (overlap '
-          '${overlap.toStringAsFixed(2)}) "$t"');
+      debugPrint('BargeIn: reject — echo of own speech '
+          '(${overlap.toStringAsFixed(2)}) "$t"');
       return false;
     }
+    debugPrint('BargeIn: accept — "$t"');
     return true;
   }
 
