@@ -46,11 +46,11 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
     setState(() =>
         _status = ok ? 'Connected — starting up' : 'Server not reachable — starting offline');
 
-    // Keep the splash on screen a minimum time so it reads as intentional.
+    // Keep the splash on screen long enough for the boot animation (5.52s,
+    // 138 frames @ 25fps) to play through once — it loops if the probe is slow.
     final elapsed = DateTime.now().difference(started);
-    final remain = const Duration(milliseconds: 1600) - elapsed;
+    final remain = const Duration(milliseconds: 5600) - elapsed;
     if (remain > Duration.zero) await Future.delayed(remain);
-    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AmbientFaceScreen()),
@@ -61,36 +61,40 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset('assets/xboom_logo.png', width: 160, height: 160),
-            const SizedBox(height: 28),
-            const Text(
-              'Mikee',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Fullscreen animated boot splash (1920x1080, loops until handoff).
+          Image.asset(
+            'assets/splash_animation.webp',
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 36),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(_accent)),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_status,
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          shadows: [Shadow(color: Colors.black87, blurRadius: 6)])),
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            const Text('Reception Robot · xboom',
-                style: TextStyle(color: Colors.white38, fontSize: 14)),
-            const SizedBox(height: 40),
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(_accent)),
-            ),
-            const SizedBox(height: 18),
-            Text(_status,
-                style: const TextStyle(color: Colors.white60, fontSize: 14)),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
