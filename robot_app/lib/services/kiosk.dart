@@ -24,6 +24,16 @@ class Kiosk {
     } catch (_) {}
   }
 
+  /// Show or hide the Android system bars to match kiosk state. Call alongside
+  /// [setSystemUi]/[start]: maintenance ([allowSystemUi] true) → edge-to-edge so
+  /// the status-bar pulldown the Settings switch promises actually works;
+  /// lockdown (false) → immersiveSticky (bars hidden). Pure Flutter-side, so it
+  /// applies even when the app isn't device-owner.
+  static void applySystemUiChrome(bool allowSystemUi) {
+    SystemChrome.setEnabledSystemUIMode(
+        allowSystemUi ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky);
+  }
+
   /// True when this app is the device-owner (kiosk actually enforceable).
   static Future<bool> isDeviceOwner() async {
     try {

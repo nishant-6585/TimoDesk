@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'battery_service.dart';
@@ -31,7 +30,7 @@ void main() async {
   // Kiosk: immersive (hide system bars) + enter Lock Task Mode. No-ops safely if
   // the app isn't device-owner. The Settings switch can re-allow Home/Recents/
   // status-bar for maintenance (kioskAllowSystemUi).
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  Kiosk.applySystemUiChrome(RobotConfig.kioskAllowSystemUi);
   // Enter Lock Task AFTER the first frame — startLockTask() requires a RESUMED
   // activity, so calling it here (before runApp) silently no-ops.
   WidgetsBinding.instance.addPostFrameCallback(
