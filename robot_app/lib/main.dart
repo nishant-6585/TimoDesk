@@ -6,6 +6,7 @@ import 'config.dart';
 import 'connecting_splash.dart';
 import 'nav_points_provider.dart';
 import 'services/kiosk.dart';
+import 'splash_animation.dart';
 
 // #89 P1 — the robot chest screen now opens to an AMBIENT FACE (front-of-house
 // shell), not the old _StreamScreen. The face → Dashboard → feature tiles. The
@@ -16,6 +17,11 @@ import 'services/kiosk.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Start decoding the boot animation NOW so it overlaps the rest of app init
+  // (config load, kiosk setup, engine warm-up) instead of adding blank time
+  // after the first frame. Deliberately not awaited.
+  SplashAnimation.instance.preload();
 
   // Robot chest screen is LANDSCAPE-ONLY. Orientation is FIXED in the manifest
   // (android:screenOrientation="reverseLandscape") — a non-"USER" fixed value

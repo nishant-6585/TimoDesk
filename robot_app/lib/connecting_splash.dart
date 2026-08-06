@@ -5,11 +5,14 @@ import 'package:http/http.dart' as http;
 
 import 'config.dart';
 import 'ambient_face_screen.dart';
+import 'splash_animation.dart';
 
-/// Branded boot splash that shows the connection-establishing state (like the
-/// vendor reception app), then hands off to the ambient face screen. It probes
-/// the spine once so the operator sees whether the server is reachable, but
-/// NEVER blocks startup — a min display + hard timeout guarantee it proceeds.
+/// Branded boot splash: plays the animated brand intro while probing the spine
+/// once so the operator sees whether the server is reachable. Hands off to the
+/// ambient face screen only after BOTH the probe settled AND the animation has
+/// played through once (SplashAnimationPlayer's completion callback — never a
+/// wall-clock guess). Neither wait can block startup: the probe has its own
+/// timeout and a broken animation asset completes immediately.
 class ConnectingSplash extends StatefulWidget {
   const ConnectingSplash({super.key});
 
@@ -19,8 +22,9 @@ class ConnectingSplash extends StatefulWidget {
 
 class _ConnectingSplashState extends State<ConnectingSplash> {
   static const _accent = Color(0xFFFF6B35);
-  static const _bg = Color(0xFF0F0F0F);
+
   String _status = 'Starting Mikee…';
+  final _playedOnce = Completer<void>();
 
   @override
   void initState() {
@@ -29,7 +33,6 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
   }
 
   Future<void> _boot() async {
-    final started = DateTime.now();
     if (mounted) setState(() => _status = 'Establishing connection to server…');
 
     bool ok = false;
@@ -46,11 +49,13 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
     setState(() =>
         _status = ok ? 'Connected — starting up' : 'Server not reachable — starting offline');
 
-    // Keep the splash on screen a minimum time so it reads as intentional.
-    final elapsed = DateTime.now().difference(started);
-    final remain = const Duration(milliseconds: 1600) - elapsed;
-    if (remain > Duration.zero) await Future.delayed(remain);
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Let the animation finish its first full pass. Hard cap well above the
+    // nominal 5.52s so a pathologically slow decode still can't wedge boot.
+    try {
+      await _playedOnce.future.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      // proceed anyway
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AmbientFaceScreen()),
@@ -60,37 +65,38 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset('assets/xboom_logo.png', width: 160, height: 160),
-            const SizedBox(height: 28),
-            const Text(
-              'Mikee',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5),
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          SplashAnimationPlayer(onCompletedOnce: () {
+            if (!_playedOnce.isCompleted) _playedOnce.complete();
+          }),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 36),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(_accent)),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_status,
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          shadows: [Shadow(color: Colors.black87, blurRadius: 6)])),
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            const Text('Reception Robot · xboom',
-                style: TextStyle(color: Colors.white38, fontSize: 14)),
-            const SizedBox(height: 40),
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(_accent)),
-            ),
-            const SizedBox(height: 18),
-            Text(_status,
-                style: const TextStyle(color: Colors.white60, fontSize: 14)),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

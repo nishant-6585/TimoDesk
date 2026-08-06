@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <!-- Branded splash: Xboom logo centered on black (see drawable/launch_background). -->
+        <!-- Plain black — the Flutter animated splash is the branding; no static
+             logo flash before it (API 31+ icon splash blanked in values-v31). -->
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
