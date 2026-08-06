@@ -1,12 +1,8 @@
 import 'dart:async';
-import 'dart:collection';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import '../../../core/constants.dart';
-import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/face_detection_provider.dart';
 import '../../../services/spine/spine_provider.dart';
@@ -26,7 +22,6 @@ class ControlScreen extends ConsumerStatefulWidget {
 }
 
 class _ControlScreenState extends ConsumerState<ControlScreen> {
-  double _driveX = 0, _driveY = 0;
   double _headX = 50, _headY = 50;
   double _maxSpeed = 0.5;
   String _driveStatus = 'IDLE';
@@ -43,8 +38,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void _handleDriveJoystick(double x, double y, double mag) {
     // Update UI state
     setState(() {
-      _driveX = x;
-      _driveY = y;
       const deadzone = 0.15;
       if (mag < deadzone) {
         _driveStatus = 'IDLE';

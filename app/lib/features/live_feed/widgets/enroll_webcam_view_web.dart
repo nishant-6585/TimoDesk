@@ -22,7 +22,6 @@ class DeviceWebcamView extends StatefulWidget {
 
 class _DeviceWebcamViewState extends State<DeviceWebcamView> {
   String _status = 'requesting'; // requesting | ready | denied
-  String _error = '';
   html.MediaStream? _stream;
   String? _viewType;
 
@@ -35,7 +34,6 @@ class _DeviceWebcamViewState extends State<DeviceWebcamView> {
   Future<void> _start() async {
     setState(() {
       _status = 'requesting';
-      _error = '';
     });
     try {
       final media = html.window.navigator.mediaDevices;
@@ -76,7 +74,6 @@ class _DeviceWebcamViewState extends State<DeviceWebcamView> {
       if (!mounted) return;
       setState(() {
         _status = 'denied';
-        _error = e.toString();
       });
     }
   }

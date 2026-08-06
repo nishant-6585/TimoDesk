@@ -46,7 +46,7 @@ class _PulseDotState extends State<PulseDot> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    if (widget.pulse && _controller != null) {
+    if (widget.pulse) {
       _controller.dispose();
     }
     super.dispose();

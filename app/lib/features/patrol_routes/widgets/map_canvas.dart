@@ -44,9 +44,7 @@ class _MapCanvasState extends State<MapCanvas> {
 
   void _handlePointerMove(PointerMoveEvent event) {
     if (_draggingWaypointId == null) return;
-    final waypoint = widget.waypoints.firstWhere((w) => w.id == _draggingWaypointId);
-    final offset = _screenToRoom(event.position);
-    widget.onWaypointDrag(offset);
+    widget.onWaypointDrag(_screenToRoom(event.position));
   }
 
   void _handlePointerUp(PointerUpEvent event) {
@@ -55,9 +53,7 @@ class _MapCanvasState extends State<MapCanvas> {
 
   void _handleMapTap(TapDownDetails details) {
     if (widget.waypoints.isEmpty) {
-      final offset = _screenToRoom(details.globalPosition);
       widget.onEmptyMapClick();
-      // offset will be used by parent
     }
   }
 
