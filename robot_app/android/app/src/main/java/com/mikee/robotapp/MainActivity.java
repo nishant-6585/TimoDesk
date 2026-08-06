@@ -25,16 +25,20 @@ public class MainActivity extends FlutterActivity {
     private static final String FACE_EVENT_CH      = "com.mikee/face_events";
     private static final String FACE_SAVE_METHOD_CH = "com.mikee/face_save";
 
+    // Held so onResume can re-assert lockdown if the kiosk fell out of lock task.
+    private KioskPlugin kioskPlugin;
+
     @Override
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
 
         // Kiosk / Lock Task Mode control (device-owner). Registered first so the
         // Dart side can lock down as early as possible.
+        kioskPlugin = new KioskPlugin(this);
         new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 "com.mikee/kiosk"
-        ).setMethodCallHandler(new KioskPlugin(this));
+        ).setMethodCallHandler(kioskPlugin);
 
         CameraStreamPlugin cameraPlugin = new CameraStreamPlugin(this);
 
@@ -141,5 +145,16 @@ public class MainActivity extends FlutterActivity {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 FACE_SAVE_METHOD_CH
         ).setMethodCallHandler(faceSavePlugin);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-pin if we're supposed to be locked but fell out of lock task (a stray
+        // system intent, dialog, or maintenance-app return). No-op in maintenance
+        // mode or when not device-owner.
+        if (kioskPlugin != null) {
+            kioskPlugin.reassertLock();
+        }
     }
 }

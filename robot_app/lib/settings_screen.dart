@@ -354,6 +354,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() => _allowSystemUi = v);
               RobotConfig.setKioskAllowSystemUi(v);
               Kiosk.setSystemUi(v);
+              Kiosk.applySystemUiChrome(v);
             },
             activeThumbColor: _orange,
             contentPadding: EdgeInsets.zero,
