@@ -37,17 +37,6 @@ class SensorStatusCard extends StatelessWidget {
     }
   }
 
-  Color _sensorStateColor(SensorState state) {
-    switch (state) {
-      case SensorState.ok:
-        return MikeeColors.success;
-      case SensorState.warn:
-        return const Color(0xFFF59E0B);
-      case SensorState.error:
-        return MikeeColors.error;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
