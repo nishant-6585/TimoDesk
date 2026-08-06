@@ -79,6 +79,18 @@ class VoiceAgent {
   final List<Map<String, dynamic>> _transcript = [];
   List<Map<String, dynamic>> get transcript => List.unmodifiable(_transcript);
 
+  /// The most recent agent (assistant) reply text, or '' if none yet. Used by the
+  /// barge-in gate to reject the vendor CAE's imperfectly-cancelled echo of
+  /// Mikee's OWN voice (an interruption should be the visitor's words, not his).
+  String get lastAgentText {
+    for (var i = _transcript.length - 1; i >= 0; i--) {
+      if (_transcript[i]['role'] == 'assistant') {
+        return (_transcript[i]['text'] as String?) ?? '';
+      }
+    }
+    return '';
+  }
+
   /// Queue a one-shot context line to deliver as the FIRST user turn of the next
   /// session — e.g. `injectGreeting('STAFF_RECOGNIZED: Nishant')` so the agent
   /// greets that staff member by name (the agent's system prompt interprets the

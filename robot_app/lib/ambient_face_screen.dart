@@ -641,9 +641,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // timer → the session never auto-closes. Ignore any transcript that arrives
     // while he's speaking or within the echo tail.
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (_face.state == FaceStateKind.speaking ||
-        (now - _lastSpeakingMs) < _echoGuardMs) {
-      return;
+    final duringSpeech = _face.state == FaceStateKind.speaking ||
+        (now - _lastSpeakingMs) < _echoGuardMs;
+    if (duringSpeech) {
+      // BARGE-IN: while (and just after) Mikee speaks, the CAE stream still leaks
+      // fragments of his OWN imperfectly-cancelled voice — the reason the old
+      // always-on barge-in was pulled. So only cut him off on a SUBSTANTIAL
+      // utterance that isn't an echo of what he's saying (see _isGenuineBargeIn);
+      // otherwise keep suppressing it (the original half-duplex behaviour).
+      if (!_isGenuineBargeIn(partial)) return;
+      debugPrint('BargeIn: visitor cut in — "$partial"');
+      InteractionLog.log('barge_in', partial);
+      _dropFirstAgentTurn = true; // drop the rest of the interrupted agent turn
+      _audioBridge.stopPlayback(); // cut Mikee off immediately
+      _lastSpeakingMs = 0; // clear the echo tail — we're actively listening now
+      setState(() =>
+          _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
+      // fall through: aggregate + handle this utterance like any other turn.
     }
     _asrUtterance = partial.trim();
     _bumpActivity(); // real user speech — keep the session alive
@@ -668,6 +682,69 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     });
   }
 
+  // ── Barge-in gate ───────────────────────────────────────────────────────────
+  // The robot is half-duplex (no hardware AEC): while Mikee speaks ENGLISH the
+  // vendor CAE mis-transcribes his OWN leaked voice as short Chinese/garbage
+  // fragments (要怀疑mfc…, 一路惟) that carry ~no Latin words. So a genuine visitor
+  // interruption is either (a) an explicit interrupt word — "stop", "wait" — at
+  // ANY length (these are exactly how people cut him off), or (b) a phrase with
+  // >= _bargeMinLatinWords real Latin content-words. Whatever passes still must
+  // not overlap his own current reply (a word he actually just said). Logged so
+  // it can be tuned on hardware. VERIFIED on robot 2026-08-06: a long sentence
+  // fired correctly; "stop"/"stop talking" were wrongly rejected as too short —
+  // hence the interrupt-word path + Latin-word floor (was a blunt >=3-word gate).
+  static const int _bargeMinLatinWords = 2;
+  static const double _bargeEchoOverlap = 0.5;
+  static const List<String> _interruptWords = [
+    'stop', 'quiet', 'enough', 'wait', 'cancel', 'listen', 'hey', 'hello',
+    'mikee', 'shut up', 'be quiet', 'hold on', 'excuse me', 'one moment',
+  ];
+
+  bool _isGenuineBargeIn(String text) {
+    final t = text.trim();
+    if (t.isEmpty || t == '...') return false;
+    final lower = t.toLowerCase();
+    final latinWords =
+        RegExp(r'[a-z]{2,}').allMatches(lower).map((m) => m.group(0)!).toList();
+    final wordSet = latinWords.toSet();
+    // Single-word interrupt words must match a whole word; phrases (with a
+    // space) match as a substring.
+    final hasInterrupt = _interruptWords
+        .any((w) => w.contains(' ') ? lower.contains(w) : wordSet.contains(w));
+    if (!hasInterrupt && latinWords.length < _bargeMinLatinWords) {
+      debugPrint('BargeIn: reject — not genuine speech '
+          '(${latinWords.length} latin words) "$t"');
+      return false;
+    }
+    final overlap = _echoOverlap(t, _voiceAgent.lastAgentText);
+    if (overlap >= _bargeEchoOverlap) {
+      debugPrint('BargeIn: reject — echo of own speech '
+          '(${overlap.toStringAsFixed(2)}) "$t"');
+      return false;
+    }
+    debugPrint('BargeIn: accept — "$t"');
+    return true;
+  }
+
+  // Fraction of the heard content-words that also appear in Mikee's own reply.
+  // High overlap ⇒ the CAE re-transcribed his voice, not a new speaker. Words
+  // ≤2 chars are dropped as noise on both sides.
+  double _echoOverlap(String heard, String own) {
+    if (own.isEmpty) return 0;
+    Set<String> tokens(String s) => s
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.length > 2)
+        .toSet();
+    final ownWords = tokens(own);
+    if (ownWords.isEmpty) return 0;
+    final heardWords =
+        heard.toLowerCase().split(RegExp(r'[^a-z0-9]+')).where((w) => w.length > 2).toList();
+    if (heardWords.isEmpty) return 0;
+    final hits = heardWords.where(ownWords.contains).length;
+    return hits / heardWords.length;
+  }
+
   // ── Voice navigation ("go to <saved point>") ────────────────────────────────
   // Returns true when [transcript] was a navigation command (handled here —
   // spoken reply + action); false lets the conversational agent answer normally.
@@ -682,6 +759,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // or answer a navigation question it knows nothing about.
     _dropFirstAgentTurn = true;
     _audioBridge.stopPlayback();
+
+    // "Go to the dock" / "go charge" / "go home" → return to the charging dock.
+    // The dock isn't a saved point; goHome() drives home via the SDK IR-align
+    // path and speaks its own departure + failure lines, so we just close the
+    // session (navigation owns the speaker) and dispatch.
+    if (result.isDock) {
+      debugPrint('NavVoice: "$transcript" → return to charging dock (goHome)');
+      InteractionLog.log('nav_command', 'heard "$transcript" → return to charging dock');
+      if (_voiceActive) _endVoice();
+      ref.read(navPointsProvider.notifier).goHome();
+      return true;
+    }
+
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
