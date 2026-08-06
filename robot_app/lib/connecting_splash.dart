@@ -20,7 +20,19 @@ class ConnectingSplash extends StatefulWidget {
 class _ConnectingSplashState extends State<ConnectingSplash> {
   static const _accent = Color(0xFFFF6B35);
   static const _bg = Color(0xFF0F0F0F);
+
+  // Boot animation length: 138 frames @ 25fps (verified against the ANMF
+  // frame durations inside the webp).
+  static const _animLoop = Duration(milliseconds: 5520);
+
   String _status = 'Starting Mikee…';
+
+  // Decoding the 1920x1080 138-frame webp takes noticeable time on the chest
+  // tablet, so the animation starts well after initState. Anchor the "played
+  // through once" clock to the first frame actually delivered, not to boot.
+  final _firstFrame = Completer<DateTime>();
+  ImageStream? _animStream;
+  ImageStreamListener? _animListener;
 
   @override
   void initState() {
@@ -28,8 +40,29 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
     _boot();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_animStream == null) {
+      final stream = const AssetImage('assets/splash_animation.webp')
+          .resolve(createLocalImageConfiguration(context));
+      _animListener = ImageStreamListener((_, __) {
+        if (!_firstFrame.isCompleted) _firstFrame.complete(DateTime.now());
+      }, onError: (_, __) {
+        if (!_firstFrame.isCompleted) _firstFrame.complete(DateTime.now());
+      });
+      stream.addListener(_animListener!);
+      _animStream = stream;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_animListener != null) _animStream?.removeListener(_animListener!);
+    super.dispose();
+  }
+
   Future<void> _boot() async {
-    final started = DateTime.now();
     if (mounted) setState(() => _status = 'Establishing connection to server…');
 
     bool ok = false;
@@ -46,10 +79,16 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
     setState(() =>
         _status = ok ? 'Connected — starting up' : 'Server not reachable — starting offline');
 
-    // Keep the splash on screen long enough for the boot animation (5.52s,
-    // 138 frames @ 25fps) to play through once — it loops if the probe is slow.
-    final elapsed = DateTime.now().difference(started);
-    final remain = const Duration(milliseconds: 5600) - elapsed;
+    // Wait for the animation to actually start (hard cap so a broken asset
+    // never blocks boot), then hold until it completes a full loop. If the
+    // probe outlived the first loop, hold to the NEXT loop boundary so the
+    // handoff never cuts the animation mid-play.
+    final t0 = await _firstFrame.future
+        .timeout(const Duration(seconds: 8), onTimeout: () => DateTime.now());
+    final played = DateTime.now().difference(t0);
+    final loops = (played.inMilliseconds / _animLoop.inMilliseconds).ceil();
+    final end = t0.add(_animLoop * (loops < 1 ? 1 : loops));
+    final remain = end.difference(DateTime.now());
     if (remain > Duration.zero) await Future.delayed(remain);
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
