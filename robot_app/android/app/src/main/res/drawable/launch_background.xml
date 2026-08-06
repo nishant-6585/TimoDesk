@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Xboom-branded launch splash: logo centered on black. -->
+<!-- Plain black launch background — the animated Flutter splash takes over
+     as soon as the engine draws, so no static logo flash before it. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/black" />
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/xboom_logo" />
-    </item>
 </layer-list>
