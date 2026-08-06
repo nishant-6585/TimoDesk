@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -48,15 +49,15 @@ class SpineService extends StateNotifier<SpineState> {
       // browser URL so LAN-served builds work from any device.
       _spineUrl = spineWsUrl;
 
-      print('[SpineService] ========================================');
-      print('[SpineService] CONNECTING TO SPINE BROKER');
-      print('[SpineService] Spine WebSocket: $_spineUrl');
-      print('[SpineService] (Camera stream from robot: http://192.168.1.5:8080)');
-      print('[SpineService] ========================================');
+      developer.log('[SpineService] ========================================', name: 'SpineService');
+      developer.log('[SpineService] CONNECTING TO SPINE BROKER', name: 'SpineService');
+      developer.log('[SpineService] Spine WebSocket: $_spineUrl', name: 'SpineService');
+      developer.log('[SpineService] (Camera stream from robot: http://192.168.1.5:8080)', name: 'SpineService');
+      developer.log('[SpineService] ========================================', name: 'SpineService');
 
       await connect(_spineUrl!, _jwt!);
     } catch (e) {
-      print('[SpineService] Init error: $e');
+      developer.log('[SpineService] Init error: $e', name: 'SpineService', level: 1000);
       _scheduleReconnect();
     }
   }
@@ -66,14 +67,14 @@ class SpineService extends StateNotifier<SpineState> {
       _spineUrl = spineUrl;
       _jwt = jwt;
 
-      print('[SpineService] Connecting to $spineUrl (attempt ${_reconnectAttempts + 1})');
+      developer.log('[SpineService] Connecting to $spineUrl (attempt ${_reconnectAttempts + 1})', name: 'SpineService');
       _channel = WebSocketChannel.connect(Uri.parse(spineUrl));
 
       // Add connection timeout - fail if not authenticated within 10 seconds
       _connectionTimeoutTimer?.cancel();
       _connectionTimeoutTimer = Timer(const Duration(seconds: 10), () {
         if (!state.connected) {
-          print('[SpineService] Connection timeout - no auth response');
+          developer.log('[SpineService] Connection timeout - no auth response', name: 'SpineService', level: 1000);
           _channel?.sink.close();
           _onDisconnect();
         }
@@ -87,7 +88,7 @@ class SpineService extends StateNotifier<SpineState> {
         (message) => _handleMessage(jsonDecode(message)),
         onDone: _onDisconnect,
         onError: (error) {
-          print('[SpineService] WebSocket error: $error');
+          developer.log('[SpineService] WebSocket error: $error', name: 'SpineService', level: 1000);
           _onDisconnect();
         },
       );
@@ -95,9 +96,9 @@ class SpineService extends StateNotifier<SpineState> {
       state = state.copyWith(connected: true);
       _reconnectAttempts = 0; // Reset attempts on successful connection
       _connectionTimeoutTimer?.cancel();
-      print('[SpineService] Connected successfully');
+      developer.log('[SpineService] Connected successfully', name: 'SpineService');
     } catch (e) {
-      print('[SpineService] Connection error: $e');
+      developer.log('[SpineService] Connection error: $e', name: 'SpineService', level: 1000);
       state = state.copyWith(connected: false);
       _scheduleReconnect();
     }
@@ -105,37 +106,37 @@ class SpineService extends StateNotifier<SpineState> {
 
   void _handleMessage(Map<String, dynamic> msg) {
     final msgType = msg['type'];
-    print('[SpineService] ======== MESSAGE RECEIVED ========');
-    print('[SpineService] Type: $msgType');
-    print('[SpineService] Full payload: $msg');
+    developer.log('[SpineService] ======== MESSAGE RECEIVED ========', name: 'SpineService');
+    developer.log('[SpineService] Type: $msgType', name: 'SpineService');
+    developer.log('[SpineService] Full payload: $msg', name: 'SpineService');
 
     if (msgType == 'error') {
       // Log detailed error message
       final errorMsg = msg['message'];
-      print('[SpineService] [ERROR] Message: $errorMsg');
-      print('[SpineService] [ERROR] This error blocks the intent from executing');
+      developer.log('[SpineService] [ERROR] Message: $errorMsg', name: 'SpineService', level: 1000);
+      developer.log('[SpineService] [ERROR] This error blocks the intent from executing', name: 'SpineService', level: 1000);
     } else if (msgType == 'authenticated') {
       // Cancel connection timeout - we got authenticated
-      print('[SpineService] [AUTH SUCCESS] Connected and authenticated');
+      developer.log('[SpineService] [AUTH SUCCESS] Connected and authenticated', name: 'SpineService');
       _connectionTimeoutTimer?.cancel();
       // Request initial status
-      print('[SpineService] Requesting initial robot status...');
+      developer.log('[SpineService] Requesting initial robot status...', name: 'SpineService');
       sendIntent({'intent': 'get_status'});
     } else if (msgType == 'robot_status' && msg['status'] != null) {
-      print('[SpineService] [STATUS UPDATE] Received robot status');
+      developer.log('[SpineService] [STATUS UPDATE] Received robot status', name: 'SpineService');
       final status = RobotStatus.fromJson(msg['status']);
-      print('[SpineService] Status details: online=${status.online}, isMoving=${status.isMoving}, obstacleState=${status.obstacleState}');
+      developer.log('[SpineService] Status details: online=${status.online}, isMoving=${status.isMoving}, obstacleState=${status.obstacleState}', name: 'SpineService');
       state = state.copyWith(status: status);
     } else if (msgType == 'stopped') {
-      print('[SpineService] [STOP ACK] System stopped - updating UI state to stopped=true');
+      developer.log('[SpineService] [STOP ACK] System stopped - updating UI state to stopped=true', name: 'SpineService');
       state = state.copyWith(stopped: true);
     } else if (msgType == 'resumed') {
-      print('[SpineService] [RESUME ACK] System resumed - updating UI state to stopped=false');
+      developer.log('[SpineService] [RESUME ACK] System resumed - updating UI state to stopped=false', name: 'SpineService');
       state = state.copyWith(stopped: false);
     } else if (msgType == 'event') {
       final eventType = msg['event'] as String?;
       final eventPayload = msg['eventPayload'] as Map<String, dynamic>?;
-      print('[SpineService] Robot event: $eventType payload: $eventPayload');
+      developer.log('[SpineService] Robot event: $eventType payload: $eventPayload', name: 'SpineService');
 
       if (eventType == 'face_detected' && eventPayload != null) {
         // The broker spreads RobotEvent.payload into eventPayload, so the fields
@@ -144,7 +145,7 @@ class SpineService extends StateNotifier<SpineState> {
         final name = (inner['name'] as String?) ?? 'unknown';
         final matched = name != 'unknown';
         final distance = (inner['distance'] as num?)?.toDouble() ?? 0.0;
-        print('[SpineService] Face detection → $name (L2 $distance)');
+        developer.log('[SpineService] Face detection → $name (L2 $distance)', name: 'SpineService');
         _ref.read(faceDetectionProvider.notifier).report(
               FaceDetection(
                 name: name,
@@ -160,7 +161,7 @@ class SpineService extends StateNotifier<SpineState> {
         // Same nesting as face_detected: fields live under eventPayload['payload'].
         final inner = (eventPayload['payload'] as Map<String, dynamic>?) ?? eventPayload;
         final naviEvent = inner['event'] as String?;
-        print('[SpineService] Navi event: $naviEvent data: ${inner['data']}');
+        developer.log('[SpineService] Navi event: $naviEvent data: ${inner['data']}', name: 'SpineService');
         if (naviEvent == 'cancel_result') {
           _ref.read(naviStatusProvider.notifier).clear();
         }
@@ -183,7 +184,7 @@ class SpineService extends StateNotifier<SpineState> {
       // Request-response reply to {intent:'get_position'}. Resolve the pending
       // completer with the captured pose, then clear it. Ignore stray/late
       // position messages when no request is in flight.
-      print('[SpineService] [POSITION] Received pose reply');
+      developer.log('[SpineService] [POSITION] Received pose reply', name: 'SpineService');
       final pos = msg['position'] as Map<String, dynamic>?;
       final completer = _positionCompleter;
       _positionTimeoutTimer?.cancel();
@@ -208,7 +209,7 @@ class SpineService extends StateNotifier<SpineState> {
           .read(escortStatusProvider.notifier)
           .sync(msg['escort'] as Map<String, dynamic>?);
       final active = msg['active'] == true;
-      print('[SpineService] [NAVI STATE] active=$active name=${msg['name']} cancelling=${msg['cancelling']}');
+      developer.log('[SpineService] [NAVI STATE] active=$active name=${msg['name']} cancelling=${msg['cancelling']}', name: 'SpineService');
       final notifier = _ref.read(naviStatusProvider.notifier);
       if (active) {
         notifier.syncActive(
@@ -231,9 +232,9 @@ class SpineService extends StateNotifier<SpineState> {
             maxMs: (msg['maxMs'] as num?)?.toInt(),
           );
     } else if (msgType == 'ack') {
-      print('[SpineService] [ACK] Command acknowledged: ${msg['intent']}');
+      developer.log('[SpineService] [ACK] Command acknowledged: ${msg['intent']}', name: 'SpineService');
     }
-    print('[SpineService] ======== END MESSAGE ========');
+    developer.log('[SpineService] ======== END MESSAGE ========', name: 'SpineService');
   }
 
   /// Request the robot's current SLAM pose. Sends {intent:'get_position'} and
@@ -242,7 +243,7 @@ class SpineService extends StateNotifier<SpineState> {
   /// the caller never hangs.
   Future<Map<String, double>?> getPosition() async {
     if (!state.connected) {
-      print('[SpineService] getPosition: not connected');
+      developer.log('[SpineService] getPosition: not connected', name: 'SpineService');
       return null;
     }
     // Abort any prior in-flight request (resolve it null) before starting a new one.
@@ -254,7 +255,7 @@ class SpineService extends StateNotifier<SpineState> {
     _positionCompleter = completer;
     _positionTimeoutTimer = Timer(const Duration(seconds: 7), () {
       if (_positionCompleter == completer && !completer.isCompleted) {
-        print('[SpineService] getPosition: timed out');
+        developer.log('[SpineService] getPosition: timed out', name: 'SpineService');
         _positionCompleter = null;
         completer.complete(null);
       }
@@ -283,20 +284,20 @@ class SpineService extends StateNotifier<SpineState> {
 
   void sendIntent(Map<String, dynamic> intent) {
     if (!state.connected) {
-      print('[SpineService] !!!! NOT CONNECTED - DROPPING INTENT !!!!');
-      print('[SpineService] Dropped intent: $intent');
+      developer.log('[SpineService] !!!! NOT CONNECTED - DROPPING INTENT !!!!', name: 'SpineService', level: 900);
+      developer.log('[SpineService] Dropped intent: $intent', name: 'SpineService', level: 900);
       return;
     }
-    print('[SpineService] ======== SENDING INTENT ========');
-    print('[SpineService] Intent type: ${intent['intent']}');
-    print('[SpineService] Full intent: $intent');
-    print('[SpineService] Sending via WebSocket to Spine...');
+    developer.log('[SpineService] ======== SENDING INTENT ========', name: 'SpineService');
+    developer.log('[SpineService] Intent type: ${intent['intent']}', name: 'SpineService');
+    developer.log('[SpineService] Full intent: $intent', name: 'SpineService');
+    developer.log('[SpineService] Sending via WebSocket to Spine...', name: 'SpineService');
     _channel?.sink.add(jsonEncode({'type': 'intent', 'intent': intent}));
-    print('[SpineService] Intent sent, waiting for response...');
+    developer.log('[SpineService] Intent sent, waiting for response...', name: 'SpineService');
   }
 
   void _onDisconnect() {
-    print('[SpineService] Disconnected');
+    developer.log('[SpineService] Disconnected', name: 'SpineService');
     _connectionTimeoutTimer?.cancel();
     // Abort any pending get_position so the UI doesn't hang waiting for a reply
     // that will never come on a dead socket.
@@ -319,7 +320,7 @@ class SpineService extends StateNotifier<SpineState> {
 
     _reconnectAttempts++;
 
-    print('[SpineService] Scheduling reconnect in ${(delayMs / 1000).toStringAsFixed(1)}s (attempt $_reconnectAttempts)');
+    developer.log('[SpineService] Scheduling reconnect in ${(delayMs / 1000).toStringAsFixed(1)}s (attempt $_reconnectAttempts)', name: 'SpineService');
     _reconnectTimer = Timer(delay, () {
       // Re-fetch JWT in case it expired
       final session = Supabase.instance.client.auth.currentSession;
