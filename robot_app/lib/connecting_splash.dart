@@ -5,11 +5,14 @@ import 'package:http/http.dart' as http;
 
 import 'config.dart';
 import 'ambient_face_screen.dart';
+import 'splash_animation.dart';
 
-/// Branded boot splash that shows the connection-establishing state (like the
-/// vendor reception app), then hands off to the ambient face screen. It probes
-/// the spine once so the operator sees whether the server is reachable, but
-/// NEVER blocks startup — a min display + hard timeout guarantee it proceeds.
+/// Branded boot splash: plays the animated brand intro while probing the spine
+/// once so the operator sees whether the server is reachable. Hands off to the
+/// ambient face screen only after BOTH the probe settled AND the animation has
+/// played through once (SplashAnimationPlayer's completion callback — never a
+/// wall-clock guess). Neither wait can block startup: the probe has its own
+/// timeout and a broken animation asset completes immediately.
 class ConnectingSplash extends StatefulWidget {
   const ConnectingSplash({super.key});
 
@@ -19,47 +22,14 @@ class ConnectingSplash extends StatefulWidget {
 
 class _ConnectingSplashState extends State<ConnectingSplash> {
   static const _accent = Color(0xFFFF6B35);
-  static const _bg = Color(0xFF0F0F0F);
-
-  // Boot animation length: 138 frames @ 25fps (verified against the ANMF
-  // frame durations inside the webp).
-  static const _animLoop = Duration(milliseconds: 5520);
 
   String _status = 'Starting Mikee…';
-
-  // Decoding the 1920x1080 138-frame webp takes noticeable time on the chest
-  // tablet, so the animation starts well after initState. Anchor the "played
-  // through once" clock to the first frame actually delivered, not to boot.
-  final _firstFrame = Completer<DateTime>();
-  ImageStream? _animStream;
-  ImageStreamListener? _animListener;
+  final _playedOnce = Completer<void>();
 
   @override
   void initState() {
     super.initState();
     _boot();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_animStream == null) {
-      final stream = const AssetImage('assets/splash_animation.webp')
-          .resolve(createLocalImageConfiguration(context));
-      _animListener = ImageStreamListener((_, __) {
-        if (!_firstFrame.isCompleted) _firstFrame.complete(DateTime.now());
-      }, onError: (_, __) {
-        if (!_firstFrame.isCompleted) _firstFrame.complete(DateTime.now());
-      });
-      stream.addListener(_animListener!);
-      _animStream = stream;
-    }
-  }
-
-  @override
-  void dispose() {
-    if (_animListener != null) _animStream?.removeListener(_animListener!);
-    super.dispose();
   }
 
   Future<void> _boot() async {
@@ -79,17 +49,13 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
     setState(() =>
         _status = ok ? 'Connected — starting up' : 'Server not reachable — starting offline');
 
-    // Wait for the animation to actually start (hard cap so a broken asset
-    // never blocks boot), then hold until it completes a full loop. If the
-    // probe outlived the first loop, hold to the NEXT loop boundary so the
-    // handoff never cuts the animation mid-play.
-    final t0 = await _firstFrame.future
-        .timeout(const Duration(seconds: 8), onTimeout: () => DateTime.now());
-    final played = DateTime.now().difference(t0);
-    final loops = (played.inMilliseconds / _animLoop.inMilliseconds).ceil();
-    final end = t0.add(_animLoop * (loops < 1 ? 1 : loops));
-    final remain = end.difference(DateTime.now());
-    if (remain > Duration.zero) await Future.delayed(remain);
+    // Let the animation finish its first full pass. Hard cap well above the
+    // nominal 5.52s so a pathologically slow decode still can't wedge boot.
+    try {
+      await _playedOnce.future.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      // proceed anyway
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AmbientFaceScreen()),
@@ -99,16 +65,13 @@ class _ConnectingSplashState extends State<ConnectingSplash> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Fullscreen animated boot splash (1920x1080, loops until handoff).
-          Image.asset(
-            'assets/splash_animation.webp',
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-          ),
+          SplashAnimationPlayer(onCompletedOnce: () {
+            if (!_playedOnce.isCompleted) _playedOnce.complete();
+          }),
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
