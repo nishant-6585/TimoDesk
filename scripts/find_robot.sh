@@ -83,7 +83,9 @@ echo "✓ Updated spine/.env + app hardcoded IPs -> $robot_ip"
 serial="$(adb devices | awk 'NR>1 && $2=="device" {print $1}' | head -1)"
 if [ -n "$serial" ]; then
   prefs="/data/data/com.mikee.robotapp/shared_prefs/FlutterSharedPreferences.xml"
-  adb -s "$serial" shell "run-as com.mikee.robotapp sed -i -E \
+  # su, not run-as: run-as only works on debuggable builds and the robot now
+  # runs the RELEASE APK (this robot has root).
+  adb -s "$serial" shell "su 0 sed -i -E \
     's|<string name=\"flutter.spine_base_url\">http://[^<]*</string>|<string name=\"flutter.spine_base_url\">http://$mac_ip:4000</string>|' $prefs" \
     && echo "✓ Robot pref spine_base_url -> http://$mac_ip:4000 (restart the Mikee app on the robot)"
 else
