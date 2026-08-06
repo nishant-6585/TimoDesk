@@ -641,9 +641,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // timer → the session never auto-closes. Ignore any transcript that arrives
     // while he's speaking or within the echo tail.
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (_face.state == FaceStateKind.speaking ||
-        (now - _lastSpeakingMs) < _echoGuardMs) {
-      return;
+    final duringSpeech = _face.state == FaceStateKind.speaking ||
+        (now - _lastSpeakingMs) < _echoGuardMs;
+    if (duringSpeech) {
+      // BARGE-IN: while (and just after) Mikee speaks, the CAE stream still leaks
+      // fragments of his OWN imperfectly-cancelled voice — the reason the old
+      // always-on barge-in was pulled. So only cut him off on a SUBSTANTIAL
+      // utterance that isn't an echo of what he's saying (see _isGenuineBargeIn);
+      // otherwise keep suppressing it (the original half-duplex behaviour).
+      if (!_isGenuineBargeIn(partial)) return;
+      debugPrint('BargeIn: visitor cut in — "$partial"');
+      InteractionLog.log('barge_in', partial);
+      _dropFirstAgentTurn = true; // drop the rest of the interrupted agent turn
+      _audioBridge.stopPlayback(); // cut Mikee off immediately
+      _lastSpeakingMs = 0; // clear the echo tail — we're actively listening now
+      setState(() =>
+          _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
+      // fall through: aggregate + handle this utterance like any other turn.
     }
     _asrUtterance = partial.trim();
     _bumpActivity(); // real user speech — keep the session alive
@@ -666,6 +680,54 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
       }
     });
+  }
+
+  // ── Barge-in gate ───────────────────────────────────────────────────────────
+  // The robot is half-duplex (no hardware AEC), so the vendor CAE re-transcribes
+  // fragments of Mikee's own voice while he speaks. A genuine interruption must
+  // therefore clear two bars: it's a SUBSTANTIAL utterance (short blips are echo
+  // leak / room noise), AND it doesn't overlap what he's currently saying. Both
+  // thresholds are deliberately conservative and logged so they can be tuned on
+  // hardware — lower _bargeMinWords for a snappier cut-off if false triggers stay
+  // rare; raise it (or _bargeEchoOverlap) if he interrupts himself.
+  static const int _bargeMinWords = 3;
+  static const int _bargeMinChars = 12;
+  static const double _bargeEchoOverlap = 0.5;
+
+  bool _isGenuineBargeIn(String text) {
+    final t = text.trim();
+    if (t.isEmpty || t == '...') return false;
+    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.length < _bargeMinWords || t.length < _bargeMinChars) {
+      debugPrint('BargeIn: reject — too short (${words.length}w/${t.length}c) "$t"');
+      return false;
+    }
+    final overlap = _echoOverlap(t, _voiceAgent.lastAgentText);
+    if (overlap >= _bargeEchoOverlap) {
+      debugPrint('BargeIn: reject — echo of own speech (overlap '
+          '${overlap.toStringAsFixed(2)}) "$t"');
+      return false;
+    }
+    return true;
+  }
+
+  // Fraction of the heard content-words that also appear in Mikee's own reply.
+  // High overlap ⇒ the CAE re-transcribed his voice, not a new speaker. Words
+  // ≤2 chars are dropped as noise on both sides.
+  double _echoOverlap(String heard, String own) {
+    if (own.isEmpty) return 0;
+    Set<String> tokens(String s) => s
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.length > 2)
+        .toSet();
+    final ownWords = tokens(own);
+    if (ownWords.isEmpty) return 0;
+    final heardWords =
+        heard.toLowerCase().split(RegExp(r'[^a-z0-9]+')).where((w) => w.length > 2).toList();
+    if (heardWords.isEmpty) return 0;
+    final hits = heardWords.where(ownWords.contains).length;
+    return hits / heardWords.length;
   }
 
   // ── Voice navigation ("go to <saved point>") ────────────────────────────────
