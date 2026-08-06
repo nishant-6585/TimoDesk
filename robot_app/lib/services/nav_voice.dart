@@ -10,20 +10,29 @@ import 'voice_fuzzy.dart';
 ///  • a match with [point] null — it WAS a nav command but no saved point fits
 ///    [heard]; the robot should say so (and list what it knows).
 class NavVoiceResult {
-  const NavVoiceResult._(this.isCommand, this.point, this.heard);
+  const NavVoiceResult._(this.isCommand, this.point, this.heard, this.isDock);
 
   static const NavVoiceResult notACommand =
-      NavVoiceResult._(false, null, '');
+      NavVoiceResult._(false, null, '', false);
+
+  /// The visitor asked Mikee to return to its charging dock. The dock is NOT a
+  /// saved point — the SDK goHome/IR-align path owns the approach — so this is
+  /// a distinct command with no [point].
+  static const NavVoiceResult dockCommand =
+      NavVoiceResult._(true, null, 'dock', true);
 
   const NavVoiceResult.found(NavPoint this.point, this.heard)
-      : isCommand = true;
+      : isCommand = true,
+        isDock = false;
   const NavVoiceResult.unknown(this.heard)
       : isCommand = true,
-        point = null;
+        point = null,
+        isDock = false;
 
   final bool isCommand;
   final NavPoint? point;
   final String heard; // the location text as heard, for the "not found" reply
+  final bool isDock; // true → return to the charging dock (goHome), not a point
 }
 
 /// Matches transcripts like "go to nishant desk" / "take me to the sofa" /
@@ -39,7 +48,27 @@ class NavVoice {
     caseSensitive: false,
   );
 
+  // "Go to the dock" / "go charge" / "go home" → return to the charging dock.
+  // The dock is not a saved point, so these must be caught BEFORE the point
+  // matcher (else "dock" fuzzy-matches nothing → "no such place") and before
+  // the phrase falls through to the chit-chat agent. Substring match, mirroring
+  // the keyword style in VoiceCommandHandler; kept imperative so questions like
+  // "where is the charging station?" don't trigger a drive.
+  static const List<String> _dockPhrases = [
+    'go to the dock', 'go to dock', 'navigate to the dock', 'navigate to dock',
+    'return to the dock', 'return to dock', 'back to the dock',
+    'go to your dock', 'go to the charger', 'go to the charging station',
+    'go charge', 'go and charge', 'go to charge', 'go recharge',
+    'go and recharge', 'dock yourself', 'head to the dock', 'come to the dock',
+    'go home', 'return home', 'go back home', 'head home',
+  ];
+
   static NavVoiceResult match(String transcript, List<NavPoint> points) {
+    final lower = transcript.toLowerCase();
+    for (final d in _dockPhrases) {
+      if (lower.contains(d)) return NavVoiceResult.dockCommand;
+    }
+
     final m = _command.firstMatch(transcript.trim());
     if (m == null) return NavVoiceResult.notACommand;
     final heard = m.group(1)!.trim().replaceAll(RegExp(r'[.?!,]+$'), '');

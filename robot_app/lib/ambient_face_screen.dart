@@ -682,6 +682,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // or answer a navigation question it knows nothing about.
     _dropFirstAgentTurn = true;
     _audioBridge.stopPlayback();
+
+    // "Go to the dock" / "go charge" / "go home" → return to the charging dock.
+    // The dock isn't a saved point; goHome() drives home via the SDK IR-align
+    // path and speaks its own departure + failure lines, so we just close the
+    // session (navigation owns the speaker) and dispatch.
+    if (result.isDock) {
+      debugPrint('NavVoice: "$transcript" → return to charging dock (goHome)');
+      InteractionLog.log('nav_command', 'heard "$transcript" → return to charging dock');
+      if (_voiceActive) _endVoice();
+      ref.read(navPointsProvider.notifier).goHome();
+      return true;
+    }
+
     if (result.point != null) {
       final p = result.point!;
       debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
