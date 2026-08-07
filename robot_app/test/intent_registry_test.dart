@@ -58,4 +58,65 @@ void main() {
       expect(reg.match('stop talking', ctx)?.kind, VoiceIntentKind.stop);
     });
   });
+
+  group('IntentRegistry extended intents', () {
+    IntentMatch? m(String t) => reg.match(t, ctx);
+
+    test('patrol start / end with action slot', () {
+      expect(m('start patrolling the floor')?.kind, VoiceIntentKind.patrol);
+      expect(m('start patrolling the floor')?.slot<String>('action'), 'start');
+      expect(m('end patrol')?.slot<String>('action'), 'stop');
+    });
+
+    test('escort follow-me / stay-here', () {
+      expect(m('follow me to the meeting room')?.kind, VoiceIntentKind.escort);
+      expect(m('follow me to the meeting room')?.slot<String>('action'), 'start');
+      expect(m('you can stay here')?.slot<String>('action'), 'stop');
+    });
+
+    test('drive direction slot', () {
+      expect(m('move forward')?.kind, VoiceIntentKind.drive);
+      expect(m('move forward')?.slot<String>('direction'), 'forward');
+      expect(m('turn left')?.slot<String>('direction'), 'left');
+    });
+
+    test('gesture wave vs reset', () {
+      expect(m('wave hello')?.slot<String>('gesture'), 'wave');
+      expect(m('stand straight')?.slot<String>('gesture'), 'reset');
+    });
+
+    test('volume up / down / mute', () {
+      expect(m('speak louder')?.slot<String>('action'), 'up');
+      expect(m('turn it down')?.slot<String>('action'), 'down');
+      expect(m('mute')?.slot<String>('action'), 'mute');
+    });
+
+    test('language extraction, gated to known languages', () {
+      expect(m('can you speak in Hindi')?.kind, VoiceIntentKind.language);
+      expect(m('can you speak in Hindi')?.slot<String>('language'), 'hindi');
+      expect(m('switch to English')?.slot<String>('language'), 'english');
+      // "switch to the front desk" is not a language change.
+      expect(m('switch to the front desk')?.kind, isNot(VoiceIntentKind.language));
+    });
+
+    test('snapshot, help, resume, cancel-nav, sleep/wake', () {
+      expect(m('take a photo')?.kind, VoiceIntentKind.snapshot);
+      expect(m('what can you do')?.kind, VoiceIntentKind.help);
+      expect(m('carry on')?.kind, VoiceIntentKind.resume);
+      expect(m('I changed my mind')?.kind, VoiceIntentKind.cancelNav);
+      expect(m('go to sleep')?.slot<String>('action'), 'sleep');
+      expect(m('wake up')?.slot<String>('action'), 'wake');
+    });
+
+    test('bare "cancel" / "never mind" fall to the safety stop, not cancelNav', () {
+      // The stop reflex owns those synonyms — the global STOP interlock halts
+      // navigation anyway, so this is the safe resolution.
+      expect(m('cancel')?.kind, VoiceIntentKind.stop);
+      expect(m('never mind')?.kind, VoiceIntentKind.stop);
+    });
+
+    test('a saved point still beats the new verbs (no false capture)', () {
+      expect(m('take me to restroom')?.slot<NavPoint>('point')?.name, 'Rest Room');
+    });
+  });
 }

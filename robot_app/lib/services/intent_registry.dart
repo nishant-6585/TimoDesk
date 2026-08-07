@@ -19,8 +19,34 @@ import 'nav_voice.dart';
 import 'persona_voice.dart';
 import 'checkin_voice.dart';
 
-/// The kind of on-device command a transcript resolved to.
-enum VoiceIntentKind { stop, navigate, dock, persona, checkin }
+/// The kind of on-device command a transcript resolved to. Grouped by skill:
+///  • system    — stop, resume, volume, language, sleepWake, help
+///  • navigation — navigate, dock, cancelNav, patrol, escort
+///  • social     — gesture (wave / reset), snapshot, drive
+///  • reception  — checkin
+///  • persona    — persona (rename / voice)
+/// Each maps to a real capability: navigation/patrol/escort/dock/cancelNav and
+/// drive/gesture/snapshot are spine intents; volume/language/sleepWake/help are
+/// app-level. Adding a kind here + a matcher below is how a use case is added
+/// today; the roadmap moves the phrase lists into the spine catalog.
+enum VoiceIntentKind {
+  stop,
+  resume,
+  navigate,
+  dock,
+  cancelNav,
+  patrol,
+  escort,
+  gesture,
+  snapshot,
+  drive,
+  volume,
+  language,
+  sleepWake,
+  help,
+  persona,
+  checkin,
+}
 
 /// A resolved command: its [kind] plus any extracted slots. Slots are kept as a
 /// small typed map so new intents can carry their own payload without widening
@@ -75,14 +101,135 @@ class IntentRegistry {
     return null;
   }
 
-  /// The default on-device set, in the historical ambient-face order:
-  /// stop → navigation/dock → persona → check-in.
+  /// The default on-device set. Safety/interaction control is checked first
+  /// (stop wins), then the specific navigation verbs BEFORE the broad "go to X"
+  /// matcher, then social / system commands, then persona and check-in last.
   static IntentRegistry get standard => IntentRegistry([
+        // 0 — interaction stop; always wins.
         _StopIntent(),
+        // 1 — resume a paused reply / motion.
+        _KeywordIntent('system.resume', 1, VoiceIntentKind.resume,
+            const ['resume', 'carry on', 'keep going', 'continue', 'go on', 'proceed']),
+        // 5 — cancel an in-progress navigation. Phrases are kept clear of the
+        // stop reflex ("cancel", "never mind", "forget it" are stop synonyms) and
+        // of escort's "stay here" — so a bare "cancel"/"stop" still lands on the
+        // global safety stop, and only these specific phrases mean "don't go".
+        _KeywordIntent('navigation.cancel', 5, VoiceIntentKind.cancelNav, const [
+          'abort', 'call it off', 'i changed my mind', 'not anymore',
+          "don't take me there", "don't go there", 'go back instead',
+        ]),
+        // 6 — patrol rounds (spine patrol_start / patrol_stop).
+        _RuleIntent('navigation.patrol', 6, VoiceIntentKind.patrol, const [
+          (['end patrol', 'end patrolling', 'finish patrol', 'cancel patrol',
+            'stop the patrol', 'come back from patrol'], {'action': 'stop'}),
+          (['start patrol', 'begin patrol', 'start patrolling', 'do a patrol',
+            'patrol the', 'make your rounds', 'start your rounds', 'go on patrol'],
+            {'action': 'start'}),
+        ]),
+        // 7 — escort / follow-me (spine escort_start / escort_stop).
+        _RuleIntent('navigation.escort', 7, VoiceIntentKind.escort, const [
+          (['end escort', 'you can stay here', 'you can stop following',
+            'wait here', 'stay there', "don't follow me anymore"], {'action': 'stop'}),
+          (['escort me', 'follow me', 'come with me', 'lead the way', 'guide me',
+            'walk me to', 'take me along', 'show me the way'], {'action': 'start'}),
+        ]),
+        // 8 — sleep / wake the face.
+        _RuleIntent('system.sleepWake', 8, VoiceIntentKind.sleepWake, const [
+          (['wake up', 'are you awake', 'wake', 'attention'], {'action': 'wake'}),
+          (['go to sleep', 'you can sleep', 'take a nap', 'rest now', 'go idle'],
+            {'action': 'sleep'}),
+        ]),
+        // 8 — language switch (extracts the language name).
+        _LanguageIntent(),
+        // 9 — social gestures (spine wave / reset_body).
+        _RuleIntent('social.gesture', 9, VoiceIntentKind.gesture, const [
+          (['stand straight', 'reset your posture', 'reset position',
+            'straighten up', 'reset your body'], {'gesture': 'reset'}),
+          (['wave', 'say hello', 'greet', 'wave hello', 'give a wave',
+            'wave at', 'say hi'], {'gesture': 'wave'}),
+        ]),
+        // 9 — snapshot (spine snapshot).
+        _KeywordIntent('social.snapshot', 9, VoiceIntentKind.snapshot, const [
+          'take a photo', 'take a picture', 'take a selfie', 'snapshot',
+          'capture this', 'take my photo', 'click a photo',
+        ]),
+        // 9 — teleop drive nudges (spine drive; slot = direction).
+        _RuleIntent('social.drive', 9, VoiceIntentKind.drive, const [
+          (['go forward', 'move forward', 'move ahead', 'come forward'], {'direction': 'forward'}),
+          (['go back', 'move back', 'back up', 'reverse', 'move backward'], {'direction': 'back'}),
+          (['turn left', 'go left', 'rotate left'], {'direction': 'left'}),
+          (['turn right', 'go right', 'rotate right'], {'direction': 'right'}),
+        ]),
+        // 9 — playback volume (app-level).
+        _RuleIntent('system.volume', 9, VoiceIntentKind.volume, const [
+          (['mute', 'be silent', 'silence yourself', 'no sound'], {'action': 'mute'}),
+          (['louder', 'speak up', 'turn it up', 'volume up', 'speak louder'], {'action': 'up'}),
+          (['quieter', 'turn it down', 'volume down', 'lower the volume',
+            'not so loud', 'speak softly'], {'action': 'down'}),
+        ]),
+        // 9 — capability help ("what can you do").
+        _KeywordIntent('system.help', 9, VoiceIntentKind.help, const [
+          'what can you do', 'how can you help', 'what are your features',
+          'what do you do', 'help me with', 'tell me what you can do',
+          'what are you capable of',
+        ]),
+        // 10 — "take me to <saved point>" and dock (fuzzy, needs nav points).
         _NavIntent(),
+        // 20 — persona (rename / voice).
         _PersonaIntent(),
+        // 30 — visitor check-in.
         _CheckinIntent(),
       ]);
+}
+
+// ── Compact matchers for fixed-phrase commands ───────────────────────────────
+
+/// Fires [kind] with fixed [slots] when any of [phrases] is a substring of the
+/// transcript. Substring matching mirrors the existing keyword style; keep
+/// phrases specific enough that they don't collide with the broad stop reflex.
+class _KeywordIntent implements VoiceIntent {
+  _KeywordIntent(this.id, this.priority, this._kind, this._phrases,
+      {Map<String, Object?> slots = const {}})
+      : _slots = slots;
+  @override
+  final String id;
+  @override
+  final int priority;
+  final VoiceIntentKind _kind;
+  final List<String> _phrases;
+  final Map<String, Object?> _slots;
+
+  @override
+  IntentMatch? match(String transcript, IntentContext ctx) {
+    final lower = transcript.toLowerCase();
+    for (final p in _phrases) {
+      if (lower.contains(p)) return IntentMatch(_kind, slots: _slots);
+    }
+    return null;
+  }
+}
+
+/// Like [_KeywordIntent] but with several (phrases → slots) rules for one kind —
+/// e.g. a start/stop pair. First matching rule wins.
+class _RuleIntent implements VoiceIntent {
+  _RuleIntent(this.id, this.priority, this._kind, this._rules);
+  @override
+  final String id;
+  @override
+  final int priority;
+  final VoiceIntentKind _kind;
+  final List<(List<String>, Map<String, Object?>)> _rules;
+
+  @override
+  IntentMatch? match(String transcript, IntentContext ctx) {
+    final lower = transcript.toLowerCase();
+    for (final (phrases, slots) in _rules) {
+      for (final p in phrases) {
+        if (lower.contains(p)) return IntentMatch(_kind, slots: slots);
+      }
+    }
+    return null;
+  }
 }
 
 // ── Intents (thin adapters over the existing matchers) ───────────────────────
@@ -167,5 +314,35 @@ class _CheckinIntent implements VoiceIntent {
     final r = CheckinVoice.match(transcript);
     if (!r.isCommand) return null;
     return IntentMatch(VoiceIntentKind.checkin, slots: {'host': r.hostHeard});
+  }
+}
+
+/// "speak in Hindi" / "switch to English" / "talk in Tamil" — extracts the
+/// language name into the `language` slot. Gated to a known set so "switch to
+/// the front desk" doesn't read as a language change; the app maps the name to
+/// an ElevenLabs language code.
+class _LanguageIntent implements VoiceIntent {
+  @override
+  String get id => 'system.language';
+  @override
+  int get priority => 8;
+
+  static final RegExp _cmd = RegExp(
+    r'\b(?:speak|talk|respond|reply|switch|change)\b[\w\s]*?\b(?:in|to)\s+([a-z]+)',
+    caseSensitive: false,
+  );
+  static const _known = {
+    'english', 'hindi', 'tamil', 'telugu', 'kannada', 'malayalam', 'marathi',
+    'bengali', 'gujarati', 'punjabi', 'urdu', 'spanish', 'french', 'german',
+    'arabic', 'chinese', 'japanese',
+  };
+
+  @override
+  IntentMatch? match(String transcript, IntentContext ctx) {
+    final m = _cmd.firstMatch(transcript.toLowerCase());
+    if (m == null) return null;
+    final lang = m.group(1)!;
+    if (!_known.contains(lang)) return null;
+    return IntentMatch(VoiceIntentKind.language, slots: {'language': lang});
   }
 }
