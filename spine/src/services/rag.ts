@@ -155,6 +155,18 @@ export function isLocalMiss(topSimilarity: number | null): boolean {
   return topSimilarity === null || topSimilarity < LOCAL_MISS_THRESHOLD;
 }
 
+/**
+ * True when the spine grounded an answer (local KB, cached FAQ, or a registered
+ * 3rd-party provider) — the ElevenLabs agent should then PREFER this answer over
+ * any overlapping document in its OWN hosted KB. A 'handoff' means everything
+ * local missed, so the agent is free to fall back to its own KB, then a human.
+ * This is the "local KB wins on overlap" rule, surfaced to the agent as the
+ * `authoritative` flag on the /elevenlabs/ask response.
+ */
+export function isAuthoritative(source: AnswerSource): boolean {
+  return source !== 'handoff';
+}
+
 function defaultAskProviders(question: string): Promise<ProviderAnswer | null> {
   return queryProviders(getKbProviderRegistry().enabledInOrder(), question);
 }
