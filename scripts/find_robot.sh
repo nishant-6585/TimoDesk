@@ -85,9 +85,22 @@ if [ -n "$serial" ]; then
   prefs="/data/data/com.xboom.robot.mini/shared_prefs/FlutterSharedPreferences.xml"
   # su, not run-as: run-as only works on debuggable builds and the robot now
   # runs the RELEASE APK (this robot has root).
-  adb -s "$serial" shell "su 0 sed -i -E \
-    's|<string name=\"flutter.spine_base_url\">http://[^<]*</string>|<string name=\"flutter.spine_base_url\">http://$mac_ip:4000</string>|' $prefs" \
-    && echo "✓ Robot pref spine_base_url -> http://$mac_ip:4000 (restart the Mikee app on the robot)"
+  url="http://$mac_ip:4000"
+  # Robust set: REPLACE the entry if present, INSERT it if the prefs file exists
+  # without it (a fresh app after a reinstall has a prefs file but no
+  # spine_base_url — the old replace-only sed silently no-op'd then, leaving the
+  # robot on its default/wrong spine URL), or CREATE the file if missing. The
+  # remote script is base64'd so nested adb/su/sh quoting can't mangle it.
+  remote="if [ -f \"$prefs\" ] && grep -q flutter.spine_base_url \"$prefs\"; then
+  sed -i -E 's#<string name=\"flutter.spine_base_url\">http://[^<]*</string>#<string name=\"flutter.spine_base_url\">$url</string>#' \"$prefs\"
+elif [ -f \"$prefs\" ]; then
+  sed -i 's#</map>#<string name=\"flutter.spine_base_url\">$url</string></map>#' \"$prefs\"
+else
+  printf '%s' '<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?><map><string name=\"flutter.spine_base_url\">$url</string></map>' > \"$prefs\"
+fi"
+  b64="$(printf '%s' "$remote" | base64 | tr -d '\n')"
+  adb -s "$serial" shell "su 0 sh -c 'echo $b64 | base64 -d | sh'" \
+    && echo "✓ Robot pref spine_base_url -> $url (add-or-replace; restart the Mini app on the robot)"
 else
   echo "⚠ adb not connected — robot's spine_base_url pref NOT updated (set to http://$mac_ip:4000 in the robot app's settings screen)"
 fi
