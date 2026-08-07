@@ -82,7 +82,7 @@ echo "✓ Updated spine/.env + app hardcoded IPs -> $robot_ip"
 
 serial="$(adb devices | awk 'NR>1 && $2=="device" {print $1}' | head -1)"
 if [ -n "$serial" ]; then
-  prefs="/data/data/com.mikee.robotapp/shared_prefs/FlutterSharedPreferences.xml"
+  prefs="/data/data/com.xboom.robot.mini/shared_prefs/FlutterSharedPreferences.xml"
   # su, not run-as: run-as only works on debuggable builds and the robot now
   # runs the RELEASE APK (this robot has root).
   adb -s "$serial" shell "su 0 sed -i -E \

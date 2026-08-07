@@ -1,4 +1,4 @@
-package com.mikee.robotapp;
+package com.xboom.robot.mini;
 
 import android.content.Context;
 import android.os.BatteryManager;

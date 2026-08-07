@@ -1,4 +1,4 @@
-package com.mikee.robotapp;
+package com.xboom.robot.mini;
 
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;

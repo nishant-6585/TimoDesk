@@ -1,4 +1,4 @@
-package com.mikee.robotapp;
+package com.xboom.robot.mini;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 /// NOTE: RECORD_AUDIO is a runtime permission (Android 6+). The native side only
 /// CHECKS it (returns MIC_PERMISSION if missing); granting is a deployment step —
 /// on the kiosk robot, pre-grant it (launcher/MDM or `adb shell pm grant
-/// com.mikee.robotapp android.permission.RECORD_AUDIO`). A permission_handler
+/// com.xboom.robot.mini android.permission.RECORD_AUDIO`). A permission_handler
 /// flow would be a new dependency, so it's intentionally out of scope here.
 class AudioBridge {
   static const _method = MethodChannel('com.mikee/audio_control');
