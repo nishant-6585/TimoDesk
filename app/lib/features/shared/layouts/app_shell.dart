@@ -124,7 +124,7 @@ class _ShellHeader extends StatelessWidget {
             if (!compact) ...[
               const SizedBox(width: 12),
               Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Mikee', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
+                Text('Mini', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary, height: 1.0)),
                 Text('xboom', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.15, color: MikeeColors.textMuted, height: 1.0)),
               ]),
             ]
@@ -132,7 +132,7 @@ class _ShellHeader extends StatelessWidget {
           // Center: Subtitle (desktop only)
           if (!compact)
             Text(
-              'Mikee — Reception Robot',
+              'Mini — Reception Robot',
               style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary),
             ),
           // Right: Status pills and avatar

@@ -189,7 +189,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     // the render CPU on the RK3576 with no visible loss for a face.
     _paintAccum += dt;
     if (_paintAccum < 0.033) return;
-    // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Mikee stays
+    // Dashboard-only: pin gaze slightly forward/down (gazeY≈0.04) so Mini stays
     // engaged with whoever's at the desk (the ambient face is a separate rig).
     _rig.tick(_face, _paintAccum.clamp(0.0, 0.05), followGx: 0, followGy: 0.04);
     _paintAccum = 0;
@@ -262,7 +262,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   void _onPlaybackLevel(double level) {
     if (!mounted || !_voiceActive) return;
     if (level < 0) {
-      // Mikee's audio drained → he's done talking. Return to LISTENING (green)
+      // Mini's audio drained → he's done talking. Return to LISTENING (green)
       // so while the visitor speaks it doesn't stay stuck on "Speaking". Matches
       // the ambient face screen's playback→listening transition.
       setState(() =>
@@ -480,7 +480,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Action tiles (§5) ───────────────────────────────────────────────────────
   /// A greeting was published (staff by name, or an unknown visitor) → show it
   /// on the dashboard face. The ambient screen still does the speaking, so this
-  /// is display only: no TTS here, or Mikee would say it twice.
+  /// is display only: no TTS here, or Mini would say it twice.
   void _onGreeting(ActiveGreeting g) {
     if (!mounted) return;
     _resting = false; // someone is here — wake the face
@@ -580,7 +580,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     }
   }
 
-  /// Speak a phrase aloud in Mikee's real voice — ElevenLabs TTS (same voice as the
+  /// Speak a phrase aloud in Mini's real voice — ElevenLabs TTS (same voice as the
   /// face screen), streamed through the shared speaker. Falls back to the on-device
   /// Google TTS only if ElevenLabs is unreachable.
   Future<void> _say(String text) async {
@@ -663,7 +663,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               Text.rich(
                 TextSpan(children: [
                   TextSpan(
-                      text: 'Mikee ',
+                      text: 'Mini ',
                       style: TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
                   TextSpan(
                       text: 'Dashboard',
@@ -788,7 +788,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Mikee', style: TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w700)),
+                  Text('Mini', style: TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w700)),
                   SizedBox(height: 2),
                   Text('FRONT DESK · BAY 1',
                       style: TextStyle(

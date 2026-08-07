@@ -34,7 +34,7 @@ class VoiceCommandsScreen extends ConsumerWidget {
                   style: GoogleFonts.inter(
                       fontSize: 22, fontWeight: FontWeight.bold, color: MikeeColors.textPrimary)),
               const SizedBox(height: 4),
-              Text('What Mikee listens for — edit a phrase, toggle a command, or add one. No rebuild.',
+              Text('What Mini listens for — edit a phrase, toggle a command, or add one. No rebuild.',
                   style: GoogleFonts.inter(fontSize: 13, color: MikeeColors.textSecondary)),
             ]),
           ),

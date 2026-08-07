@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Full-screen overlay that shows a custom-drawn waving palm + greeting text
-/// when Mikee detects a visitor. [visible] controls fade in/out; the caller
+/// when Mini detects a visitor. [visible] controls fade in/out; the caller
 /// sets it to false after the hold timer expires.
 ///
 /// Uses a [CustomPainter] palm so it looks sharp on every Android version

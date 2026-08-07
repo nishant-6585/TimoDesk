@@ -1,4 +1,4 @@
-package com.mikee.robotapp;
+package com.xboom.robot.mini;
 
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
@@ -12,7 +12,7 @@ import io.flutter.plugin.common.MethodChannel;
 
 /**
  * Kiosk / Lock Task Mode. Enforceable only when the app is DEVICE-OWNER:
- *   adb shell dpm set-device-owner com.mikee.robotapp/.KioskAdminReceiver
+ *   adb shell dpm set-device-owner com.xboom.robot.mini/.KioskAdminReceiver
  * All calls no-op gracefully if not device-owner (app still runs, just unlocked).
  *
  * PLATFORM NOTE: this robot runs Android 14 (API 34) — verified via

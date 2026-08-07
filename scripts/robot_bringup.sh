@@ -24,7 +24,7 @@ set -uo pipefail
 IP="${1:-192.168.1.27}"
 PORT=5555
 ADB="adb -s ${IP}:${PORT}"
-APP=com.mikee.robotapp
+APP=com.xboom.robot.mini
 SDK=com.csjbot.robotsdk.ten
 ASR=com.csjbot.asragent
 
@@ -52,7 +52,7 @@ say "3/6  Option B — FREE THE MIC: stop robotsdk's own AIUI wake-word engine"
 $ADB shell "am stopservice ${SDK}/com.csjbot.asragent.aiui_soft.AiuiMixedService" >/dev/null 2>&1
 sleep 2
 FREED=$($ADB shell "su 0 sh -c 'for p in /proc/[0-9]*; do ls -l \$p/fd 2>/dev/null | grep -q pcmC1D0c && cat \$p/cmdline; done'" 2>/dev/null | tr -d '\0')
-echo "  mic after stop: ${FREED:-<FREE>}   (want: <FREE> or com.mikee.robotapp)"
+echo "  mic after stop: ${FREED:-<FREE>}   (want: <FREE> or com.xboom.robot.mini)"
 
 say "4/6  Start the Mikee app (binds a FRESH chassis binder to the running SDK; grabs the now-FREE mic)"
 $ADB shell "am force-stop ${APP}" >/dev/null 2>&1

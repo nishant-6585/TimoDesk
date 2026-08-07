@@ -1,7 +1,7 @@
 /// persona_voice.dart — voice commands that change the robot's IDENTITY:
 ///
 ///   "change your name to Rocky" / "your name is now Rocky" /
-///   "change your name from Minee to Rocky"      → rename
+///   "change your name from Mini to Rocky"      → rename
 ///   "change your voice to rocky" / "sound deeper" / "use a female voice"
 ///                                               → switch ElevenLabs voice preset
 ///

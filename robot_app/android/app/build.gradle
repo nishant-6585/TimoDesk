@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace "com.mikee.robotapp"
+    namespace "com.xboom.robot.mini"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.mikee.robotapp"
+        applicationId = "com.xboom.robot.mini"
         minSdk = 25
         targetSdk = 34
         versionCode = flutter.versionCode

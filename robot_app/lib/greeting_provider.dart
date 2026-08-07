@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'config.dart';
 
-/// A greeting currently being delivered: the line Mikee is saying and, for
+/// A greeting currently being delivered: the line Mini is saying and, for
 /// enrolled staff, who it is for. Any screen can render this.
 @immutable
 class ActiveGreeting {
@@ -38,7 +38,7 @@ class GreetingNotifier extends StateNotifier<ActiveGreeting?> {
   /// May we greet [name] right now? Records the greeting when it returns true.
   ///
   /// [busy] means an interaction that OWNS the speaker is in progress —
-  /// navigation/escort, a live voice session, or Mikee mid-sentence. The
+  /// navigation/escort, a live voice session, or Mini mid-sentence. The
   /// priority rule is unchanged (nav > session > greeting) and nothing is ever
   /// queued or replayed.
   ///
@@ -47,7 +47,7 @@ class GreetingNotifier extends StateNotifier<ActiveGreeting?> {
   /// re-greet lockout on every tick — one blocked greeting silenced that person
   /// for as long as the blocking condition held, and a navigation left stale
   /// silenced them permanently. Skipping the record lets a LATER recognition
-  /// event greet them once Mikee is free.
+  /// event greet them once Mini is free.
   bool mayGreetStaff(String name, {required bool busy}) {
     final now = DateTime.now();
     final last = _greetedAt[name];

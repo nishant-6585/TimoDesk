@@ -14,7 +14,7 @@ import 'services/thinking_filler.dart';
 /// The SAME pipeline the ElevenLabs agent uses via its server-tool webhook:
 /// FAQ fast-path (exact curated answers) → Claude RAG over the company KB →
 /// honest human handoff. Typed question in, answer shown AND spoken in
-/// Mikee's voice — so the KB is demoable even without the voice loop.
+/// Mini's voice — so the KB is demoable even without the voice loop.
 class VoiceQaScreen extends StatefulWidget {
   const VoiceQaScreen({super.key});
 
@@ -97,7 +97,7 @@ class _VoiceQaScreenState extends State<VoiceQaScreen> {
         _answer = answer;
         _source = (body['source'] ?? 'kb') as String;
       });
-      // Speak it in Mikee's real voice; device TTS as the fallback.
+      // Speak it in Mini's real voice; device TTS as the fallback.
       final ok = await _tts.speak(answer);
       if (!ok) await _audio.speak(answer);
     } catch (e) {

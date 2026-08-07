@@ -85,12 +85,12 @@ class RobotConfig {
   // Rocky"). Used in UI titles, spoken confirmations, the {robot} greeting
   // placeholder, and passed to the ElevenLabs agent as the {{robot_name}}
   // dynamic variable (reference it in the dashboard system prompt).
-  static const String defaultRobotName = 'Minee';
+  static const String defaultRobotName = 'Mini';
   static String robotName = defaultRobotName;
 
   // Voice language for the ElevenLabs Conversational AI session (the agent is
   // configured with 8 languages in the dashboard; we override per session). The
-  // UI stays English — only Mikee's spoken language changes. See voice_language.dart.
+  // UI stays English — only Mini's spoken language changes. See voice_language.dart.
   static String voiceLanguageCode = 'en';
   static String voiceLanguageName = 'English';
 

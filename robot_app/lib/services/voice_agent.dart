@@ -81,7 +81,7 @@ class VoiceAgent {
 
   /// The most recent agent (assistant) reply text, or '' if none yet. Used by the
   /// barge-in gate to reject the vendor CAE's imperfectly-cancelled echo of
-  /// Mikee's OWN voice (an interruption should be the visitor's words, not his).
+  /// Mini's OWN voice (an interruption should be the visitor's words, not his).
   String get lastAgentText {
     for (var i = _transcript.length - 1; i >= 0; i--) {
       if (_transcript[i]['role'] == 'assistant') {

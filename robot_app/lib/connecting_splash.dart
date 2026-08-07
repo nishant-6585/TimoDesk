@@ -23,7 +23,7 @@ class ConnectingSplash extends StatefulWidget {
 class _ConnectingSplashState extends State<ConnectingSplash> {
   static const _accent = Color(0xFFFF6B35);
 
-  String _status = 'Starting Mikee…';
+  String _status = 'Starting Mini…';
   final _playedOnce = Completer<void>();
 
   @override

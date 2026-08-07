@@ -58,7 +58,7 @@ class MikeeApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Mikee',
+      title: 'Mini',
       theme: MikeeTheme.dark,
       scaffoldMessengerKey: rootMessengerKey,
       routerConfig: router,

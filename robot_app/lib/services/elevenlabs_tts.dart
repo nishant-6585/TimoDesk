@@ -10,7 +10,7 @@ import 'audio_bridge.dart';
 /// One-shot ElevenLabs text-to-speech in the SAME voice as the conversational
 /// face agent (same `voiceId`), streamed as 16 kHz mono PCM through the existing
 /// speaker path ([AudioBridge.playChunk]). Used by the dashboard action tiles so
-/// Mikee speaks canned phrases in his real voice — not the device's Google TTS.
+/// Mini speaks canned phrases in his real voice — not the device's Google TTS.
 ///
 /// Returns `true` if audio played, `false` on any failure (no key/voice, network,
 /// non-200) so the caller can fall back to the on-device TTS.

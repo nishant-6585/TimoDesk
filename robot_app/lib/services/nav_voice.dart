@@ -15,7 +15,7 @@ class NavVoiceResult {
   static const NavVoiceResult notACommand =
       NavVoiceResult._(false, null, '', false);
 
-  /// The visitor asked Mikee to return to its charging dock. The dock is NOT a
+  /// The visitor asked Mini to return to its charging dock. The dock is NOT a
   /// saved point — the SDK goHome/IR-align path owns the approach — so this is
   /// a distinct command with no [point].
   static const NavVoiceResult dockCommand =

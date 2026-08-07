@@ -1,4 +1,4 @@
-package com.mikee.robotapp;
+package com.xboom.robot.mini;
 
 import android.Manifest;
 import android.content.Context;

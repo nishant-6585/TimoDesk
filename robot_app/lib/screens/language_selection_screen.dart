@@ -51,7 +51,7 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       ..showSnackBar(SnackBar(
         backgroundColor: _card,
         duration: const Duration(milliseconds: 1600),
-        content: Text('Switching to ${lang.name}… Mikee will reconnect',
+        content: Text('Switching to ${lang.name}… Mini will reconnect',
             style: const TextStyle(color: _ink)),
       ));
     // 5. auto-close — language is saved, the agent reconnects in the background
@@ -97,7 +97,7 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
           ),
           const Padding(
             padding: EdgeInsets.only(bottom: 14),
-            child: Text('Mikee will speak in your selected language',
+            child: Text('Mini will speak in your selected language',
                 style: TextStyle(color: _muted, fontSize: 13)),
           ),
           // ── Grid of languages ──
