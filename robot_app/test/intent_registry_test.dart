@@ -119,4 +119,32 @@ void main() {
       expect(m('take me to restroom')?.slot<NavPoint>('point')?.name, 'Rest Room');
     });
   });
+
+  group('IntentRegistry.fromCatalog', () {
+    test('disabling a command in the catalog switches it off on-device', () {
+      final reg = IntentRegistry.fromCatalog(const [
+        CatalogCommand(intent: 'snapshot', enabled: false),
+        CatalogCommand(intent: 'patrol', enabled: true),
+      ]);
+      // snapshot disabled → not a command (agent may answer).
+      expect(reg.match('take a photo', ctx), isNull);
+      // patrol still enabled.
+      expect(reg.match('start patrol', ctx)?.kind, VoiceIntentKind.patrol);
+      // stop is not in the catalog rows → keeps its code default (safety).
+      expect(reg.match('stop', ctx)?.kind, VoiceIntentKind.stop);
+    });
+
+    test('disabling dock does not disable navigate (same code matcher)', () {
+      final reg = IntentRegistry.fromCatalog(const [
+        CatalogCommand(intent: 'dock', enabled: false),
+      ]);
+      expect(reg.match('go to the dock', ctx), isNull); // dock suppressed
+      expect(reg.match('take me to restroom', ctx)?.kind, VoiceIntentKind.navigate);
+    });
+
+    test('kindByName maps catalog strings to kinds', () {
+      expect(IntentRegistry.kindByName('escort'), VoiceIntentKind.escort);
+      expect(IntentRegistry.kindByName('nope'), isNull);
+    });
+  });
 }

@@ -82,29 +82,65 @@ abstract class VoiceIntent {
 /// Priority-ordered dispatch. The first intent to claim the transcript wins —
 /// mirroring the old if-chain order exactly.
 class IntentRegistry {
-  IntentRegistry(List<VoiceIntent> intents)
+  IntentRegistry(List<VoiceIntent> intents,
+      {Set<VoiceIntentKind> disabledKinds = const {}})
       : _intents = List.unmodifiable(
           [...intents]..sort((a, b) => a.priority.compareTo(b.priority)),
-        );
+        ),
+        _disabled = disabledKinds;
 
   final List<VoiceIntent> _intents;
+  // Kinds the deployment has switched OFF in the spine catalog. A match whose
+  // kind is disabled is treated as "not a command" — the robot stops acting on
+  // it (and the conversational agent may still answer).
+  final Set<VoiceIntentKind> _disabled;
 
   /// The intents in dispatch order — exposed for tests / an admin view.
   List<VoiceIntent> get intents => _intents;
+
+  /// Kinds currently switched off (from the catalog).
+  Set<VoiceIntentKind> get disabledKinds => _disabled;
 
   /// Resolve [transcript] to a command, or null for "let the agent answer".
   IntentMatch? match(String transcript, [IntentContext ctx = const IntentContext()]) {
     for (final intent in _intents) {
       final m = intent.match(transcript, ctx);
-      if (m != null) return m;
+      if (m != null && !_disabled.contains(m.kind)) return m;
     }
     return null;
   }
 
-  /// The default on-device set. Safety/interaction control is checked first
-  /// (stop wins), then the specific navigation verbs BEFORE the broad "go to X"
-  /// matcher, then social / system commands, then persona and check-in last.
-  static IntentRegistry get standard => IntentRegistry([
+  /// Build the registry from the spine's voice command catalog: the same code
+  /// matchers (which own the slot logic), but with any command the deployment
+  /// disabled switched off. Unknown/absent catalog rows keep their code default
+  /// enabled, so a newly-added code intent is never silently dropped. Phrase
+  /// editing for the fuzzy/slot intents stays in code for now; the catalog owns
+  /// enable/disable today (and feeds the LLM tier its examples).
+  static IntentRegistry fromCatalog(List<CatalogCommand> rows) {
+    final disabled = <VoiceIntentKind>{};
+    for (final r in rows) {
+      final kind = kindByName(r.intent);
+      if (kind != null && !r.enabled) disabled.add(kind);
+    }
+    return IntentRegistry(_standardIntents(), disabledKinds: disabled);
+  }
+
+  /// Map a catalog `intent` string (the enum name, e.g. 'patrol') to its kind.
+  static VoiceIntentKind? kindByName(String name) {
+    for (final k in VoiceIntentKind.values) {
+      if (k.name == name) return k;
+    }
+    return null;
+  }
+
+  /// The default on-device set (also the offline fallback for [fromCatalog]).
+  static IntentRegistry get standard => IntentRegistry(_standardIntents());
+
+  /// The code-defined intents in priority order. Safety/interaction control is
+  /// checked first (stop wins), then the specific navigation verbs BEFORE the
+  /// broad "go to X" matcher, then social / system commands, then persona and
+  /// check-in last. [fromCatalog] gates these by the deployment's flags.
+  static List<VoiceIntent> _standardIntents() => [
         // 0 — interaction stop; always wins.
         _StopIntent(),
         // 1 — resume a paused reply / motion.
@@ -179,7 +215,31 @@ class IntentRegistry {
         _PersonaIntent(),
         // 30 — visitor check-in.
         _CheckinIntent(),
-      ]);
+      ];
+}
+
+/// One row of the spine's voice command catalog, as the robot consumes it.
+/// Only the fields the on-device registry needs — the admin/spine hold the rest.
+class CatalogCommand {
+  const CatalogCommand({
+    required this.intent,
+    required this.enabled,
+    this.examplePhrases = const [],
+    this.tier = 'reflex',
+  });
+
+  final String intent; // VoiceIntentKind name, e.g. 'patrol'
+  final bool enabled;
+  final List<String> examplePhrases;
+  final String tier; // 'reflex' | 'llm'
+
+  factory CatalogCommand.fromJson(Map<String, dynamic> j) => CatalogCommand(
+        intent: (j['intent'] ?? '') as String,
+        enabled: (j['enabled'] ?? true) as bool,
+        examplePhrases:
+            ((j['example_phrases'] ?? const []) as List).map((e) => '$e').toList(),
+        tier: (j['tier'] ?? 'reflex') as String,
+      );
 }
 
 // ── Compact matchers for fixed-phrase commands ───────────────────────────────
