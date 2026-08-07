@@ -23,7 +23,7 @@ import { ingestText, ingestUrl } from '../services/kb-ingest';
 import { syncStaffToKb } from '../services/kb-staff';
 import { ingestFile } from '../services/kb-file';
 import { crawlJobs } from '../services/kb-crawl';
-import { askQuestion } from '../services/rag';
+import { askQuestion, isAuthoritative } from '../services/rag';
 import { notifyHandoff } from '../services/notify';
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -314,9 +314,12 @@ export async function handleKbStatus(
  *   Header: x-tool-secret: <ELEVENLABS_TOOL_SECRET>
  *   Body:   { "question": "<the visitor's question>" }
  *
- * Returns { answer, source } — the agent speaks `answer` verbatim-ish, which
- * keeps its replies grounded in our KB (never its own hosted LLM's guesses).
- * Fail-closed: without the env secret the endpoint refuses every call.
+ * Returns { answer, source, authoritative } — the agent speaks `answer`
+ * verbatim-ish, which keeps its replies grounded in our KB (never its own hosted
+ * LLM's guesses). `authoritative:true` means the LOCAL KB owns this question, so
+ * the agent must PREFER it over any overlapping document in its own ElevenLabs
+ * KB; `authoritative:false` (a local miss) frees the agent to fall back to its
+ * own KB, then a human. Fail-closed: without the env secret it refuses every call.
  */
 export async function handleElevenLabsAsk(
   req: IncomingMessage,
@@ -350,7 +353,17 @@ export async function handleElevenLabsAsk(
       void logEvent('handoff_requested', { question, similarity: result.similarity, via: 'elevenlabs' });
     }
     // Flat shape — ElevenLabs feeds the tool result straight to the agent.
-    return json(res, 200, { answer: result.answer, source: result.source });
+    // `authoritative` tells the agent to PREFER our local KB over its own hosted
+    // documents when they overlap: true = the spine grounded an answer (local KB,
+    // cached FAQ, or a registered provider) → speak `answer`, ignore your own
+    // uploaded KB. false = local miss → the agent may fall back to its own KB,
+    // then offer a human. This is the "local KB wins on overlap" contract; the
+    // agent's dashboard prompt keys off this flag.
+    return json(res, 200, {
+      answer: result.answer,
+      source: result.source,
+      authoritative: isAuthoritative(result.source),
+    });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error('[elevenlabs/ask] failed:', reason);
@@ -358,10 +371,12 @@ export async function handleElevenLabsAsk(
     // that most needs a human, so page one before answering.
     void notifyHandoff(question, `knowledge base unreachable: ${reason}`);
     void logEvent('handoff_requested', { question, via: 'elevenlabs', error: reason });
-    // Give the agent a speakable fallback rather than an opaque 500.
+    // Give the agent a speakable fallback rather than an opaque 500. Not
+    // authoritative — the brain is down, so the agent may use its own KB.
     return json(res, 200, {
       answer: "I couldn't reach the knowledge base just now — let me connect you to a team member.",
       source: 'handoff',
+      authoritative: false,
     });
   }
 }

@@ -50,6 +50,7 @@ import { handleKbProviders } from './handlers/kb-providers';
 import { getKbProviderRegistry } from './services/kb-providers';
 import { handleRecordings } from './handlers/recordings';
 import { handleNavPoints } from './handlers/nav-points';
+import { handleVoiceCommands } from './handlers/voice-commands';
 import { handleXboomLead, handleXboomCatalog } from './handlers/xboom';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
@@ -684,6 +685,23 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         return;
       }
 
+      // Robot network config for clients (the admin camera viewer). The camera
+      // MJPEG/snapshot server runs ON the robot at robotIp:8080, and the spine
+      // already knows ROBOT_IP (it dials the robot). So clients FETCH the IP here
+      // instead of hardcoding it: when the robot's DHCP lease moves, find_robot.sh
+      // updates spine/.env + restarts the spine, and every client repoints on next
+      // load — no rebuild, no editing settings in four places. Unauthed on purpose:
+      // it's a LAN IP the open camera port already exposes, and the admin needs it
+      // before a session exists in dev-bypass mode.
+      if (url === '/robot/config' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          robotIp: process.env.ROBOT_IP ?? null,
+          cameraPort: 8080,
+        }));
+        return;
+      }
+
       // MCP plugin platform: add/remove/toggle external MCP servers (Slack,
       // Microsoft 365, CRM, …) via config — no Supabase dependency.
       if (url.startsWith('/mcp/plugins')) {
@@ -735,6 +753,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Nav points — brokered here so the robot_app doesn't need the Supabase
       // anon key (migration 017 takes anon off the nav_points table).
       if (await handleNavPoints(req, res, supabase)) {
+        return;
+      }
+
+      // Voice command catalog (Admin "Voice Commands" screen). Brokered like
+      // nav_points — the table has no anon/authenticated RLS.
+      if (await handleVoiceCommands(req, res, supabase)) {
         return;
       }
 

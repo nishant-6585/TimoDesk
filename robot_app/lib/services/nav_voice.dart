@@ -63,21 +63,47 @@ class NavVoice {
     'go home', 'return home', 'go back home', 'head home',
   ];
 
+  // Generic drive commands ("go to sleep", "go forward") are not locations —
+  // leave them to the keyword command handler.
+  static const List<String> _reserved = ['sleep', 'forward', 'back', 'left', 'right', 'home'];
+
+  /// The spoken place from a "go to X" command, or null when it isn't one (not a
+  /// nav phrase, empty, or a reserved drive word). Case preserved (spoken back).
+  static String? heardPlace(String transcript) {
+    final m = _command.firstMatch(transcript.trim());
+    if (m == null) return null;
+    final heard = m.group(1)!.trim().replaceAll(RegExp(r'[.?!,]+$'), '');
+    if (heard.isEmpty || _reserved.contains(fuzzyNormalize(heard))) return null;
+    return heard;
+  }
+
+  /// The saved points whose top fuzzy score TIES (e.g. "Nishant" matching both
+  /// "Nishant Kumar" and "Nishant Sharma") — the same-name ambiguity the caller
+  /// disambiguates ("which Nishant?"). Empty when there's a clear single best.
+  static List<NavPoint> topTies(String transcript, List<NavPoint> points) {
+    final heard = heardPlace(transcript);
+    if (heard == null) return const [];
+    final nh = fuzzyNormalize(heard);
+    final scored = points
+        .map((p) => MapEntry(p, fuzzyScore(nh, fuzzyNormalize(p.name))))
+        .where((e) => e.value >= 0.5)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    if (scored.length < 2) return const [];
+    final top = scored.first.value;
+    final tied =
+        scored.where((e) => (e.value - top).abs() < 1e-9).map((e) => e.key).toList();
+    return tied.length >= 2 ? tied : const [];
+  }
+
   static NavVoiceResult match(String transcript, List<NavPoint> points) {
     final lower = transcript.toLowerCase();
     for (final d in _dockPhrases) {
       if (lower.contains(d)) return NavVoiceResult.dockCommand;
     }
 
-    final m = _command.firstMatch(transcript.trim());
-    if (m == null) return NavVoiceResult.notACommand;
-    final heard = m.group(1)!.trim().replaceAll(RegExp(r'[.?!,]+$'), '');
-    if (heard.isEmpty) return NavVoiceResult.notACommand;
-
-    // Guard: the generic drive commands ("go to sleep", "go forward") are not
-    // locations — leave them to the existing keyword command handler.
-    const reserved = ['sleep', 'forward', 'back', 'left', 'right', 'home'];
-    if (reserved.contains(fuzzyNormalize(heard))) return NavVoiceResult.notACommand;
+    final heard = heardPlace(transcript);
+    if (heard == null) return NavVoiceResult.notACommand;
 
     NavPoint? best;
     double bestScore = 0;

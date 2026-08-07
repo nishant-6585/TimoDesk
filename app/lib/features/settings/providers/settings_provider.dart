@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/spine_base.dart';
 
@@ -31,9 +34,35 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     // NEVER use cached/old settings from SharedPreferences
     : super(SettingsState(
         spineUrl: spineWsUrl,
-        robotIp: '192.168.1.5',
+        robotIp: _fallbackRobotIp,
       )) {
     _clearOldCachedSettings();
+    _syncRobotIpFromSpine();
+  }
+
+  // Last-resort default if the spine is unreachable at startup. The REAL IP is
+  // fetched from the spine (see _syncRobotIpFromSpine) — this only bootstraps the
+  // very first frame before that returns.
+  static const String _fallbackRobotIp = '192.168.1.13';
+
+  // Durable fix for the recurring DHCP-churn hardcode: the spine already knows
+  // ROBOT_IP (it dials the robot), so fetch it instead of hardcoding it here.
+  // When the robot's lease moves, find_robot.sh updates spine/.env + restarts the
+  // spine and this repoints the camera on next load — no source edit, no rebuild.
+  Future<void> _syncRobotIpFromSpine() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$spineHttpBase/robot/config'))
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode != 200) return;
+      final ip = (jsonDecode(res.body) as Map<String, dynamic>)['robotIp'];
+      if (ip is String && ip.isNotEmpty && ip != state.robotIp) {
+        state = state.copyWith(robotIp: ip);
+        print('[SettingsNotifier] Robot IP from spine: $ip (camera repointed)');
+      }
+    } catch (e) {
+      print('[SettingsNotifier] spine robot IP fetch failed ($e) — using $_fallbackRobotIp');
+    }
   }
 
   Future<void> _clearOldCachedSettings() async {
@@ -46,9 +75,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
       print('[SettingsNotifier] ════════════════════════════════════════');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.1.5');
+      print('[SettingsNotifier] Robot IP: 192.168.1.13');
       print('[SettingsNotifier] Spine: $spineWsUrl');
-      print('[SettingsNotifier] Camera: http://192.168.1.5:8080/stream');
+      print('[SettingsNotifier] Camera: http://192.168.1.13:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
       print('[SettingsNotifier] ════════════════════════════════════════');
     } catch (e) {
@@ -70,7 +99,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.1.5');
+      state = state.copyWith(robotIp: '192.168.1.13');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }

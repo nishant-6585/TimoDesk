@@ -19,8 +19,12 @@ import 'pin_screen.dart';
 import 'nav_points_provider.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
+import 'services/voice_fuzzy.dart';
 import 'services/persona_voice.dart';
 import 'services/checkin_voice.dart';
+import 'services/intent_registry.dart';
+import 'services/voice_command_catalog.dart';
+import 'services/robot_gestures.dart';
 import 'services/interaction_log.dart';
 import 'services/checkin_api.dart';
 import 'waving_hand_overlay.dart';
@@ -128,6 +132,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   List<StaffMember>? _staffCache; // GET /staff cache for host matching
   DateTime? _staffCacheAt;
   static const Duration _staffCacheTtl = Duration(minutes: 5);
+  // Same-name disambiguation: set when we asked "which <name>?"; the next
+  // utterance is resolved against these candidates instead of re-matching.
+  List<NavPoint>? _pendingNavCandidates;
+  Timer? _pendingNavTimeout;
+  // The staff member we're currently escorting a visitor to meet (their desk
+  // name), so the arrival hook can check whether they're actually there.
+  String? _meetStaffName;
+  Timer? _meetPresenceCheck;
   static const Duration _checkinNameWindow = Duration(seconds: 25);
 
   // ── Escort arrival check ────────────────────────────────────────────────────
@@ -345,6 +357,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _recognitionWaitTimer?.cancel();
     _checkinTimeout?.cancel();
     _escortArrivalCheck?.cancel();
+    _pendingNavTimeout?.cancel();
+    _meetPresenceCheck?.cancel();
     _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
@@ -668,13 +682,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
       InteractionLog.log('user_utterance_vendor_asr', utterance);
-      if (_handleStopCommand(utterance)) return;
-      if (_handleNavVoice(utterance)) return;
-      if (_handlePersonaVoice(utterance)) return;
-      if (_handleCheckinVoice(utterance)) {
-        InteractionLog.log('checkin_turn', utterance);
-        return;
-      }
+      if (_dispatchVoiceCommand(utterance)) return;
       if (_voiceActive) {
         _voiceAgent.sendUserText(utterance);
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
@@ -745,6 +753,105 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     return hits / heardWords.length;
   }
 
+  // ── Intent dispatch (the single voice-command entry point) ──────────────────
+  // The spine catalog decides WHAT is a command and which are enabled for this
+  // deployment; this maps the matched kind to the action. Replaces the old
+  // _handleStop → _handleNav → _handlePersona → _handleCheckin if-chain (still
+  // used underneath for the four rich handlers). Returns true when it WAS a
+  // command, so the caller does NOT forward the utterance to the chat agent.
+  IntentRegistry get _registry =>
+      ref.read(intentRegistryProvider).valueOrNull ?? IntentRegistry.standard;
+
+  // Language name → ElevenLabs code, for the "speak in Hindi" intent.
+  static const Map<String, String> _langCodes = {
+    'english': 'en', 'hindi': 'hi', 'tamil': 'ta', 'telugu': 'te',
+    'kannada': 'kn', 'malayalam': 'ml', 'marathi': 'mr', 'bengali': 'bn',
+    'gujarati': 'gu', 'punjabi': 'pa', 'urdu': 'ur', 'spanish': 'es',
+    'french': 'fr', 'german': 'de', 'arabic': 'ar', 'chinese': 'zh', 'japanese': 'ja',
+  };
+
+  bool _dispatchVoiceCommand(String utterance) {
+    // An open "which <name>?" disambiguation captures the next utterance as its
+    // answer — before any other matching.
+    if (_pendingNavCandidates != null) {
+      _resolvePendingNav(utterance);
+      return true;
+    }
+    final points =
+        ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+    final m = _registry.match(utterance, IntentContext(navPoints: points));
+    if (m == null) return false;
+    switch (m.kind) {
+      case VoiceIntentKind.stop:
+        return _handleStopCommand(utterance);
+      case VoiceIntentKind.navigate:
+      case VoiceIntentKind.dock:
+        return _handleNavVoice(utterance);
+      case VoiceIntentKind.persona:
+        return _handlePersonaVoice(utterance);
+      case VoiceIntentKind.checkin:
+        final ok = _handleCheckinVoice(utterance);
+        if (ok) InteractionLog.log('checkin_turn', utterance);
+        return ok;
+      default:
+        return _handleExtendedIntent(m, utterance);
+    }
+  }
+
+  // Actions for the extended intents. Physical commands with no verified on-device
+  // bridge in this screen (patrol, drive, snapshot, volume) are RECOGNIZED but get
+  // a graceful spoken reply instead of a blind motor command or leaking to chat.
+  bool _handleExtendedIntent(IntentMatch m, String utterance) {
+    InteractionLog.log('intent', '${m.kind.name} ← "$utterance"');
+    _dropFirstAgentTurn = true; // ours — the agent must not also answer this turn
+    _audioBridge.stopPlayback();
+    switch (m.kind) {
+      case VoiceIntentKind.cancelNav:
+        ref.read(navPointsProvider.notifier).cancel();
+        _speakGreeting("Okay, I'll stay here.");
+        return true;
+      case VoiceIntentKind.gesture:
+        if (m.slot<String>('gesture') == 'wave') {
+          ref.read(armProvider.notifier).wave();
+          _speakGreeting('Hello there!');
+        } else {
+          RobotGestures.headCenter();
+          _speakGreeting('There — all reset.');
+        }
+        return true;
+      case VoiceIntentKind.sleepWake:
+        final wake = m.slot<String>('action') == 'wake';
+        setState(() => _face = _face.copyWith(
+            state: wake ? FaceStateKind.attentive : FaceStateKind.idle));
+        _speakGreeting(wake ? "I'm here!" : 'Okay, resting now.');
+        return true;
+      case VoiceIntentKind.language:
+        final code = _langCodes[m.slot<String>('language') ?? ''];
+        if (code != null) {
+          _speakGreeting('Switching languages.');
+          _voiceAgent.switchLanguage(code);
+        }
+        return true;
+      case VoiceIntentKind.help:
+        _speakGreeting('I can greet visitors, take you to people and places, '
+            'return to my charging dock, check you in for a meeting, and answer '
+            'questions about us. Just ask!');
+        return true;
+      case VoiceIntentKind.resume:
+        _speakGreeting('Sure.');
+        return true;
+      case VoiceIntentKind.escort:
+      case VoiceIntentKind.patrol:
+      case VoiceIntentKind.drive:
+      case VoiceIntentKind.snapshot:
+      case VoiceIntentKind.volume:
+        _speakGreeting("I'm not able to do that just yet, but it's on my list.");
+        return true;
+      default:
+        return false;
+    }
+  }
+
   // ── Voice navigation ("go to <saved point>") ────────────────────────────────
   // Returns true when [transcript] was a navigation command (handled here —
   // spoken reply + action); false lets the conversational agent answer normally.
@@ -772,56 +879,134 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       return true;
     }
 
-    if (result.point != null) {
-      final p = result.point!;
-      debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
-      InteractionLog.log('nav_command', 'heard "$transcript" → go to "${p.name}"');
-      // One interaction at a time: navigation OWNS the speaker from here
-      // (departure phrase → escort reassurance → arrival). Close the agent
-      // session so motor noise can't trigger stray agent replies mid-route.
-      // The mic re-opens automatically on arrival if the visitor is in view.
-      if (_voiceActive) _endVoice();
-      // The departure phrase is spoken by goTo() itself (instantly, before the
-      // spine round-trip) — speaking it here too would double up.
-      ref.read(navPointsProvider.notifier).goTo(p).then((ok) {
-        // Never fail silently: if BOTH the spine and native dispatch failed,
-        // the visitor is standing there waiting — tell them.
-        if (!ok && mounted) {
-          InteractionLog.log('nav_dispatch_failed', p.name);
-          _speakGreeting("Sorry, I couldn't start navigating to ${p.name}. "
-              'Please try again in a moment.');
-        }
-      });
-    } else {
-      // The spoken place may be a point captured AFTER our list was loaded
-      // (e.g. just added from the admin app) — refresh from spine and retry
-      // once before apologising, so new locations are voice-actionable
-      // immediately, no app restart needed.
-      () async {
-        await ref.read(navPointsProvider.notifier).refresh();
-        if (!mounted) return;
-        final fresh =
-            ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
-        final retry = NavVoice.match(transcript, fresh);
-        if (retry.point != null) {
-          debugPrint(
-              'NavVoice: "$transcript" → go to "${retry.point!.name}" (after refresh)');
-          InteractionLog.log('nav_command',
-              'heard "$transcript" → go to "${retry.point!.name}" (after refresh)');
-          ref.read(navPointsProvider.notifier).goTo(retry.point!);
-          return;
-        }
-        final known = fresh.map((p) => p.name).take(3).join(', ');
-        debugPrint('NavVoice: "$transcript" → no point matches "${result.heard}"');
-        InteractionLog.log(
-            'nav_no_match', 'heard "$transcript" → nothing matches "${result.heard}"');
-        _speakGreeting(fresh.isEmpty
-            ? "I don't have any saved locations yet."
-            : "I couldn't find a place called ${result.heard}. "
-                'I can take you to: $known.');
-      }();
+    // Same-name ambiguity ("Nishant" matches both Nishant Kumar and Nishant
+    // Sharma) → ask which one; the next utterance resolves it (_resolvePendingNav).
+    final ties = NavVoice.topTies(transcript, points);
+    if (ties.length >= 2) {
+      _askWhichPerson(ties);
+      return true;
     }
+
+    if (result.point != null) {
+      _navigateToPoint(result.point!, transcript);
+      return true;
+    }
+
+    // No matching point. The place may have been captured AFTER our list loaded
+    // (just added in admin) — refresh + retry once; still nothing → a staff-aware
+    // reply beats "no such place".
+    () async {
+      await ref.read(navPointsProvider.notifier).refresh();
+      if (!mounted) return;
+      final fresh =
+          ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+      final retry = NavVoice.match(transcript, fresh);
+      if (retry.point != null) {
+        _navigateToPoint(retry.point!, transcript);
+        return;
+      }
+      await _speakNoDestination(result.heard, fresh);
+    }();
     return true;
+  }
+
+  /// Drive to [p], and — if it's a staff desk — remember we're taking the visitor
+  /// to MEET that person, so the arrival hook checks whether they're there.
+  /// Navigation owns the speaker from here (goTo speaks its own departure line),
+  /// so we close the agent session first.
+  void _navigateToPoint(NavPoint p, String transcript) {
+    debugPrint('NavVoice: "$transcript" → go to "${p.name}"');
+    InteractionLog.log('nav_command', 'heard "$transcript" → go to "${p.name}"');
+    _meetStaffName = p.kind == 'staff_desk' ? p.name : null;
+    if (_voiceActive) _endVoice();
+    ref.read(navPointsProvider.notifier).goTo(p).then((ok) {
+      if (!ok && mounted) {
+        InteractionLog.log('nav_dispatch_failed', p.name);
+        _meetStaffName = null;
+        _speakGreeting("Sorry, I couldn't start navigating to ${p.name}. "
+            'Please try again in a moment.');
+      }
+    });
+  }
+
+  /// Same-name disambiguation: ask which person, and hold the candidates so the
+  /// next utterance ("Kumar" / "Nishant Sharma") is matched against them.
+  void _askWhichPerson(List<NavPoint> candidates) {
+    _pendingNavCandidates = candidates;
+    _pendingNavTimeout?.cancel();
+    _pendingNavTimeout = Timer(const Duration(seconds: 15), () {
+      if (_pendingNavCandidates != null) {
+        _clearPendingNav();
+        if (mounted) _speakGreeting('No problem — just ask again when you like.');
+      }
+    });
+    final names = candidates.map((p) => p.name).join(', or ');
+    InteractionLog.log('nav_disambiguate', names);
+    _dropFirstAgentTurn = true;
+    _speakGreeting('I know a few people by that name — which one: $names?');
+  }
+
+  /// Resolve the clarification for an open "which <name>?" question.
+  void _resolvePendingNav(String utterance) {
+    final candidates = _pendingNavCandidates ?? const <NavPoint>[];
+    _clearPendingNav();
+    _dropFirstAgentTurn = true;
+    _audioBridge.stopPlayback();
+    final norm = fuzzyNormalize(utterance);
+    NavPoint? pick;
+    double best = 0;
+    for (final p in candidates) {
+      final s = fuzzyScore(norm, fuzzyNormalize(p.name));
+      if (s > best) {
+        best = s;
+        pick = p;
+      }
+    }
+    if (pick != null && best >= 0.5) {
+      _navigateToPoint(pick, utterance);
+    } else {
+      final names = candidates.map((p) => p.name).join(' or ');
+      _speakGreeting("Sorry, I didn't catch which one. You can say $names.");
+    }
+  }
+
+  void _clearPendingNav() {
+    _pendingNavCandidates = null;
+    _pendingNavTimeout?.cancel();
+    _pendingNavTimeout = null;
+  }
+
+  /// The "I can't take you there" reply — staff-aware: if the heard name is a
+  /// known colleague whose desk simply isn't captured, say THAT specifically
+  /// instead of "no such place".
+  Future<void> _speakNoDestination(String heard, List<NavPoint> known) async {
+    try {
+      final staff = await _staffList();
+      final nh = fuzzyNormalize(heard);
+      StaffMember? who;
+      double best = 0;
+      for (final s in staff) {
+        final score = fuzzyScore(nh, fuzzyNormalize(s.fullName));
+        if (score > best) {
+          best = score;
+          who = s;
+        }
+      }
+      if (who != null && best >= 0.5 && mounted) {
+        InteractionLog.log('nav_staff_no_desk', who.fullName);
+        _speakGreeting("I know ${who.fullName}, but I don't have their desk "
+            'saved yet — someone can capture it from the robot.');
+        return;
+      }
+    } catch (_) {
+      // fall through to the generic reply
+    }
+    if (!mounted) return;
+    final list = known.map((p) => p.name).take(3).join(', ');
+    InteractionLog.log('nav_no_match', 'nothing matches "$heard"');
+    _speakGreeting(known.isEmpty
+        ? "I don't have any saved locations yet."
+        : "I couldn't find a place called $heard. I can take you to: $list.");
   }
 
   // ── Stop command ("stop", "be quiet", "that's enough", "goodbye"…) ─────────
@@ -1075,6 +1260,26 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // shows up in front of the camera shortly after a non-patrol arrival, the
   // visitor was lost en route: say so (configurable, {name} = the point).
   void _onEscortArrived(String pointName) {
+    // Meeting a staff member? Check whether they're actually at their desk. The
+    // camera faces forward, so a short settle after arriving gives the presence
+    // (facePresent) signal time to catch them.
+    if (_meetStaffName != null && _meetStaffName == pointName) {
+      final name = _meetStaffName!;
+      _meetStaffName = null;
+      _meetPresenceCheck?.cancel();
+      _meetPresenceCheck = Timer(const Duration(seconds: 4), () {
+        if (!mounted) return;
+        if (_present) {
+          InteractionLog.log('meet_staff_present', name);
+          _speakGreeting("Here we are — this is $name's desk.");
+        } else {
+          InteractionLog.log('meet_staff_absent', name);
+          _speakGreeting("This is $name's desk, but it looks like "
+              "they've stepped away for now.");
+        }
+      });
+      return; // meet-staff arrival owns this event; skip the escort follower check
+    }
     if (ref.read(navPointsProvider).navSource == 'patrol') return;
     _escortArrivalCheck?.cancel();
     _escortArrivalCheck = Timer(const Duration(seconds: 8), () {
@@ -1325,30 +1530,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             break;
           }
         }
-        // "Stop" / "be quiet" / "that's enough" — the visitor wants Mikee to
-        // stop. Ends the session (mic off, stops speaking, back to attentive).
-        // Checked FIRST so it always wins over other intents.
-        if (e.text != null && _handleStopCommand(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Voice navigation: "go to <saved point>" spoken to Mikee. When the
-        // transcript is a nav command WE handle the reply + action and drop the
-        // agent's own answer to this turn (it doesn't know the saved points).
-        if (e.text != null && _handleNavVoice(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Persona ("change your name to Rocky" / "change your voice…") — ours:
-        // the agent can't rename itself or swap its own voice.
-        if (e.text != null && _handlePersonaVoice(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Visitor check-in ("I'm here to see <host>") — ours end-to-end too:
-        // the agent doesn't know the staff directory or the /visit flow.
-        if (e.text != null && _handleCheckinVoice(e.text!)) {
-          InteractionLog.log('checkin_turn', e.text!);
+        // Voice command? (stop, navigation/dock, persona, check-in, and the
+        // catalog's extended intents). Recognized via the spine-driven registry;
+        // WE handle the reply + action and drop the agent's own answer to this
+        // turn (it doesn't know our saved points, staff directory, or /visit).
+        // Stop still wins first — it's priority 0 inside the registry.
+        if (e.text != null && _dispatchVoiceCommand(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }

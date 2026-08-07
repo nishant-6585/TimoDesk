@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { pickFaqAnswer, askQuestion, FAQ_FAST_PATH_THRESHOLD, Answer } from '../src/services/rag';
+import {
+  pickFaqAnswer,
+  askQuestion,
+  isAuthoritative,
+  FAQ_FAST_PATH_THRESHOLD,
+  Answer,
+} from '../src/services/rag';
 import { KbHit } from '../src/services/kb';
 
 const hit = (over: Partial<KbHit>): KbHit => ({
@@ -30,6 +36,17 @@ describe('pickFaqAnswer', () => {
 
   it('returns null on an empty result set', () => {
     expect(pickFaqAnswer([])).toBeNull();
+  });
+});
+
+describe('isAuthoritative — local KB wins on overlap', () => {
+  it('a grounded local / provider answer is authoritative (agent prefers it)', () => {
+    expect(isAuthoritative('kb')).toBe(true);
+    expect(isAuthoritative('claude')).toBe(true);
+    expect(isAuthoritative('provider')).toBe(true);
+  });
+  it('a local miss (handoff) is NOT authoritative — agent may use its own KB', () => {
+    expect(isAuthoritative('handoff')).toBe(false);
   });
 });
 

@@ -61,4 +61,59 @@ void main() {
       expect(r.isCommand, isFalse);
     });
   });
+
+  group('NavVoice staff-desk navigation (meet a staff member)', () {
+    // Staff desks arrive as nav points named after the person (spine
+    // staff-desks.ts), so navigating to a colleague uses the same matcher.
+    final staff = [_pt('Nishant'), _pt('Narasimha'), _pt('Reception')];
+
+    test('"take me to Nishant" → Nishant\'s desk', () {
+      final r = NavVoice.match('take me to Nishant', staff);
+      expect(r.point?.name, 'Nishant');
+    });
+
+    test('"go to Nishant\'s desk" → Nishant (possessive + "desk" tolerated)', () {
+      final r = NavVoice.match("go to Nishant's desk", staff);
+      expect(r.point?.name, 'Nishant');
+    });
+
+    test('"navigate to Narasimha" → Narasimha\'s desk', () {
+      final r = NavVoice.match('navigate to Narasimha', staff);
+      expect(r.point?.name, 'Narasimha');
+    });
+
+    test('an unknown colleague is a command with no point (robot says so)', () {
+      final r = NavVoice.match('take me to Priyanka', staff);
+      expect(r.isCommand, isTrue);
+      expect(r.point, isNull);
+      expect(r.heard, 'Priyanka'); // case preserved — spoken verbatim in the reply
+    });
+  });
+
+  group('NavVoice.topTies — same-first-name disambiguation', () {
+    final twoNishants = [_pt('Nishant Kumar'), _pt('Nishant Sharma'), _pt('Reception')];
+
+    test('"take me to Nishant" ties both Nishants', () {
+      final ties = NavVoice.topTies('take me to Nishant', twoNishants);
+      expect(ties.map((p) => p.name), containsAll(['Nishant Kumar', 'Nishant Sharma']));
+      expect(ties.length, 2);
+    });
+
+    test('the full name disambiguates → no tie', () {
+      expect(NavVoice.topTies('take me to Nishant Kumar', twoNishants), isEmpty);
+      // and it resolves to the right person
+      expect(NavVoice.match('take me to Nishant Kumar', twoNishants).point?.name,
+          'Nishant Kumar');
+    });
+
+    test('a unique name has no tie', () {
+      expect(NavVoice.topTies('take me to Reception', twoNishants), isEmpty);
+    });
+
+    test('heardPlace extracts the spoken place / null for non-nav', () {
+      expect(NavVoice.heardPlace("go to Nishant's desk"), "Nishant's desk");
+      expect(NavVoice.heardPlace('what is the weather'), isNull);
+      expect(NavVoice.heardPlace('go to sleep'), isNull); // reserved
+    });
+  });
 }
