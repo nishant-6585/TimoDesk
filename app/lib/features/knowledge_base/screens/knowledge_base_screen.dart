@@ -5,7 +5,7 @@ import '../providers/kb_provider.dart';
 import '../widgets/kb_add_dialogs.dart';
 import '../widgets/kb_sources_section.dart';
 
-/// Knowledge Base management — the content Mikee's voice answers from.
+/// Knowledge Base management — the content Mini's voice answers from.
 ///
 /// Three zones:
 ///  • Status banner — which halves of the brain are configured (embeddings /
@@ -415,7 +415,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
             style: TextStyle(color: Colors.white54, fontSize: 15)),
         const SizedBox(height: 6),
         Text(
-          'Add company facts, FAQs, or a web page — Mikee will answer '
+          'Add company facts, FAQs, or a web page — Mini will answer '
           'visitors from this content only.',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
@@ -544,7 +544,7 @@ class _AddTextDialogState extends State<_AddTextDialog> {
             style: const TextStyle(color: Colors.white),
             decoration: _dec(
                 'The knowledge itself — facts, an FAQ answer, a policy…\n'
-                'Mikee answers visitors from this text.'),
+                'Mini answers visitors from this text.'),
           ),
           const SizedBox(height: 8),
           CheckboxListTile(

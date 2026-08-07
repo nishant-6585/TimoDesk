@@ -40,7 +40,7 @@ class RobotGestures {
   }
 
   /// Subtle speaking sway driven by TTS amplitude (0..1). Called repeatedly
-  /// while Mikee talks; the caller throttles to ~once per 300 ms.
+  /// while Mini talks; the caller throttles to ~once per 300 ms.
   static Future<void> headSway(double amplitude) async {
     final lr = (50 + amplitude * 12).clamp(35.0, 65.0).round();
     await _setHead(lr, 55);
@@ -52,7 +52,7 @@ class RobotGestures {
   }
 
   /// Perk up to speak — a brief forward lean (approximated on the head ud axis,
-  /// as Mikee exposes no separate chest joint), then settle.
+  /// as Mini exposes no separate chest joint), then settle.
   static Future<void> chestAttention() async {
     await _setHead(50, 40);
     await Future<void>.delayed(const Duration(milliseconds: 300));

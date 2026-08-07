@@ -24,7 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _speed = '0.5x';
 
   // Robot identity (relayed to the robot app via spine set_config).
-  final _robotName = TextEditingController(text: 'Minee');
+  final _robotName = TextEditingController(text: 'Mini');
   final _companyName = TextEditingController(text: 'xboom');
   final _greetVisitor =
       TextEditingController(text: 'Hello! Welcome to xboom!');
@@ -126,7 +126,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Text('Pushed to the robot instantly — no need to touch its screen.',
                     style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
                 const SizedBox(height: 14),
-                _IdField('Robot name', _robotName, 'e.g. Minee, Rocky'),
+                _IdField('Robot name', _robotName, 'e.g. Mini, Rocky'),
                 const SizedBox(height: 12),
                 _IdField('Company name', _companyName, 'e.g. xboom'),
                 const SizedBox(height: 12),
@@ -365,7 +365,7 @@ class _AccountCard extends StatelessWidget {
         const SizedBox(height: 16),
         Divider(color: MikeeColors.border, height: 1),
         const SizedBox(height: 16),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mikee', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('v2.4.1 · xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textSecondary))]), Text('build 2406', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textMuted))]),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Mini', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)), const SizedBox(height: 2), Text('v2.4.1 · xboom · Land Air Water', style: GoogleFonts.inter(fontSize: 10, color: MikeeColors.textSecondary))]), Text('build 2406', style: GoogleFonts.jetBrainsMono(fontSize: 10, color: MikeeColors.textMuted))]),
       ]),
     );
   }

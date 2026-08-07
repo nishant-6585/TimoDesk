@@ -201,14 +201,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Mikee',
+                    'Mini',
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       color: MikeeColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Mikee Reception Robot Control',
+                    'Mini Reception Robot Control',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: MikeeColors.textSecondary,
                     ),

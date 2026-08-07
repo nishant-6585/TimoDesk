@@ -168,26 +168,26 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Auto-listen UX: after a greeting, open the mic automatically so a visitor can
   // just start talking (no tap). _pendingAutoListen waits for the greeting audio
   // to finish (drain signal) before opening the session — so the mic never hears
-  // Mikee's own greeting. _autoSession marks a session that should auto-close
+  // Mini's own greeting. _autoSession marks a session that should auto-close
   // after _engageWindow of silence; manual (button) sessions stay open.
   bool _pendingAutoListen = false;
   Timer? _autoListenFallback;
   bool _autoSession = false;
   Timer? _idleWatch; // periodic idle watchdog → auto-close on inactivity
-  // Idle is measured as ACCUMULATED SILENCE — seconds elapsed while Mikee is NOT
+  // Idle is measured as ACCUMULATED SILENCE — seconds elapsed while Mini is NOT
   // speaking and no genuine user WORDS have arrived. It is reset ONLY by real
   // transcribed user words / hold-to-talk (see _bumpActivity) — never by raw mic
   // loudness or empty "..." VAD turns, both of which trip on ambient room noise
-  // with no AEC and used to keep the session alive forever. It FREEZES while Mikee
+  // with no AEC and used to keep the session alive forever. It FREEZES while Mini
   // talks (his answer time must not eat the visitor's reply window) but does not
   // reset, so a talk-to-noise loop still closes once the gaps between turns add up.
   int _silenceAccumMs = 0;
   // Consecutive agent turns triggered with NO real user words (empty "..." VAD
-  // trips on noise, or echo). 3 in a row = Mikee is answering the room, not a
+  // trips on noise, or echo). 3 in a row = Mini is answering the room, not a
   // person → close. Reset to 0 by any genuine user words.
   int _phantomTurns = 0;
   static const int _maxPhantomTurns = 3;
-  int _lastSpeakingMs = 0; // last time Mikee's speaker was active → mic-gate tail
+  int _lastSpeakingMs = 0; // last time Mini's speaker was active → mic-gate tail
 
   // Resilience (#obs3): if ElevenLabs drops the connection unexpectedly mid-visit
   // (e.g. a transient `code 1002` agent error), reopen the session ONCE instead of
@@ -209,16 +209,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // circuits this window — the timeout only covers spine being slow/offline.
   static const Duration _recognitionWindow = Duration(milliseconds: 2000);
   static const Duration _conversationIdle = Duration(seconds: 15); // mid-chat silence → close
-  // Mic stays muted this long after Mikee's last speaker output. Must cover BOTH
+  // Mic stays muted this long after Mini's last speaker output. Must cover BOTH
   // the AudioTrack drain AND the room-reverb tail: with no hardware AEC, feeding
-  // that tail to ElevenLabs made its server-side ASR transcribe Mikee's own voice
+  // that tail to ElevenLabs made its server-side ASR transcribe Mini's own voice
   // into coherent "user" sentences (e.g. "Can you help me?") ~3.5s later — past
   // the transcript echo guard — which reset the idle timer forever. Aligned with
   // _echoGuardMs so the feed and the guard cover the same window. The cost is that
-  // a real reply within 2.5s of Mikee finishing is clipped; hold-to-talk (mic
+  // a real reply within 2.5s of Mini finishing is clipped; hold-to-talk (mic
   // button) bypasses this entirely for an eager visitor.
   static const int _micTailGuardMs = 2500;
-  // A transcript arriving within this window of Mikee's own speech is treated as
+  // A transcript arriving within this window of Mini's own speech is treated as
   // ECHO (his voice fed back), NOT a real user turn — so it doesn't reset the
   // idle watchdog or make him reply to himself.
   static const int _echoGuardMs = 2500;
@@ -322,8 +322,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (!_voiceAgent.isActive) _startVoice();
     });
     // NOTE: the on-device CSJBot CAE barge-in was removed — it kept mis-hearing
-    // Mikee's own speaker echo as the user and cut him off mid-sentence. Hands-free,
-    // Mikee now finishes his replies; hold-to-talk stays the reliable way to
+    // Mini's own speaker echo as the user and cut him off mid-sentence. Hands-free,
+    // Mini now finishes his replies; hold-to-talk stays the reliable way to
     // interrupt him (it stops playback and routes the full mic to ElevenLabs).
 
     // Start the camera stream so /snapshot serves frames to the on-device face
@@ -470,7 +470,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     //   navigation/escort  >  active voice interaction  >  face greeting.
     // A greeting that loses is CANCELLED outright — we record the greet so the
     // ~500ms recognition tick doesn't re-fire it as a delayed retry (the old
-    // behaviour queued it until Mikee's mouth was free, which made greetings
+    // behaviour queued it until Mini's mouth was free, which made greetings
     // land on top of the visitor's next command). Speaking a hello mid-session
     // is also banned: it trips the half-duplex gate and MUTES the mic exactly
     // while the visitor is giving a command.
@@ -481,7 +481,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         talking;
     // Decision (debounce + priority) lives in greetingProvider now. A blocked
     // greeting is no longer recorded as delivered, so it can still land on a
-    // later recognition tick once Mikee is free — nothing is queued.
+    // later recognition tick once Mini is free — nothing is queued.
     if (!ref.read(greetingProvider.notifier).mayGreetStaff(e.name, busy: busy)) {
       return;
     }
@@ -649,7 +649,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // becomes a TEXT turn to the ElevenLabs agent (voice reply as usual).
   void _onVendorAsr(String partial) {
     if (partial.trim().isEmpty) return;
-    // ECHO GUARD: the CSJBot vendor ASR also hears Mikee's OWN speaker output
+    // ECHO GUARD: the CSJBot vendor ASR also hears Mini's OWN speaker output
     // and transcribes it. Without this, his own words (a) get sent back to the
     // ElevenLabs agent → it replies to itself forever, and (b) bump the idle
     // timer → the session never auto-closes. Ignore any transcript that arrives
@@ -658,7 +658,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     final duringSpeech = _face.state == FaceStateKind.speaking ||
         (now - _lastSpeakingMs) < _echoGuardMs;
     if (duringSpeech) {
-      // BARGE-IN: while (and just after) Mikee speaks, the CAE stream still leaks
+      // BARGE-IN: while (and just after) Mini speaks, the CAE stream still leaks
       // fragments of his OWN imperfectly-cancelled voice — the reason the old
       // always-on barge-in was pulled. So only cut him off on a SUBSTANTIAL
       // utterance that isn't an echo of what he's saying (see _isGenuineBargeIn);
@@ -667,7 +667,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       debugPrint('BargeIn: visitor cut in — "$partial"');
       InteractionLog.log('barge_in', partial);
       _dropFirstAgentTurn = true; // drop the rest of the interrupted agent turn
-      _audioBridge.stopPlayback(); // cut Mikee off immediately
+      _audioBridge.stopPlayback(); // cut Mini off immediately
       _lastSpeakingMs = 0; // clear the echo tail — we're actively listening now
       setState(() =>
           _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
@@ -691,7 +691,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // ── Barge-in gate ───────────────────────────────────────────────────────────
-  // The robot is half-duplex (no hardware AEC): while Mikee speaks ENGLISH the
+  // The robot is half-duplex (no hardware AEC): while Mini speaks ENGLISH the
   // vendor CAE mis-transcribes his OWN leaked voice as short Chinese/garbage
   // fragments (要怀疑mfc…, 一路惟) that carry ~no Latin words. So a genuine visitor
   // interruption is either (a) an explicit interrupt word — "stop", "wait" — at
@@ -705,7 +705,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   static const double _bargeEchoOverlap = 0.5;
   static const List<String> _interruptWords = [
     'stop', 'quiet', 'enough', 'wait', 'cancel', 'listen', 'hey', 'hello',
-    'mikee', 'shut up', 'be quiet', 'hold on', 'excuse me', 'one moment',
+    'mini', 'mikee', 'shut up', 'be quiet', 'hold on', 'excuse me', 'one moment',
   ];
 
   bool _isGenuineBargeIn(String text) {
@@ -734,7 +734,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     return true;
   }
 
-  // Fraction of the heard content-words that also appear in Mikee's own reply.
+  // Fraction of the heard content-words that also appear in Mini's own reply.
   // High overlap ⇒ the CAE re-transcribed his voice, not a new speaker. Words
   // ≤2 chars are dropped as noise on both sides.
   double _echoOverlap(String heard, String own) {
@@ -1010,7 +1010,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // ── Stop command ("stop", "be quiet", "that's enough", "goodbye"…) ─────────
-  // The visitor wants Mikee to stop: cut off any speech, close the mic/session,
+  // The visitor wants Mini to stop: cut off any speech, close the mic/session,
   // and settle to attentive (a person is still likely there) or idle. Returns
   // true when the utterance was a stop request (handled here, agent turn dropped).
   static final RegExp _stopPhrase = RegExp(
@@ -1310,15 +1310,15 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // Greet the person and STOP. We deliberately do NOT auto-open the mic after a
-  // greeting: an open mic with no real speaker made Mikee re-hear its own greeting
+  // greeting: an open mic with no real speaker made Mini re-hear its own greeting
   // echo and monologue forever. The visitor taps the mic button to start talking;
-  // until then Mikee stays quiet and attentive. (_startAutoListen / _pendingAutoListen
+  // until then Mini stays quiet and attentive. (_startAutoListen / _pendingAutoListen
   // are now dormant — kept only for the hold-to-talk / voice-command paths that open
   // a session directly via _startVoice.)
   void _greetThenListen(String phrase) {
     if (_voiceActive) return; // already in a conversation
     // Auto-open the mic after the greeting ONLY if enabled (Settings). Default
-    // OFF: Mikee greets, but the mic opens only when a person taps Talk.
+    // OFF: Mini greets, but the mic opens only when a person taps Talk.
     if (RobotConfig.autoOpenMic) {
       _pendingAutoListen = true;
       _autoListenFallback?.cancel();
@@ -1341,7 +1341,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // Single idle watchdog for ALL sessions — auto AND manual (mic button). Closes
   // the session after _engageWindow of silence before the first exchange
   // (passer-by / mic pressed but nobody talks), or after _conversationIdle once a
-  // real conversation has started. "Activity" = Mikee speaking (playback) OR the
+  // real conversation has started. "Activity" = Mini speaking (playback) OR the
   // user speaking (agentThinking / userSpeaking) — see _bumpActivity — so an
   // active back-and-forth keeps it open on EITHER screen, while genuine silence
   // closes it (mic button reverts to the idle orange mic). A held push-to-talk
@@ -1359,8 +1359,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       }
       final speaking = _face.state == FaceStateKind.speaking ||
           _face.state == FaceStateKind.thinking;
-      // Count ONLY genuine silence: seconds where Mikee isn't talking and no real
-      // user words have landed. While Mikee speaks the counter FREEZES (his own
+      // Count ONLY genuine silence: seconds where Mini isn't talking and no real
+      // user words have landed. While Mini speaks the counter FREEZES (his own
       // answer must not burn the visitor's reply window) but does NOT reset — so a
       // talk-to-noise loop still closes as the gaps accumulate. Reset happens only
       // in _bumpActivity (real words / hold-to-talk), never from mic loudness.
@@ -1476,7 +1476,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         '${e.text != null && e.text!.isNotEmpty ? " [${e.text}]" : ""}');
     switch (e.kind) {
       case VoiceEventKind.sessionStarted:
-        // Open in listening — Mikee is waiting for the user (the ring shows).
+        // Open in listening — Mini is waiting for the user (the ring shows).
         // Also clear any stale playback (e.g. a reply cut off by a language
         // switch reconnect) so we don't talk over the new session.
         _suppressTeardown = false; // a new session is live — clear any pending recovery
@@ -1490,7 +1490,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         break;
       case VoiceEventKind.userSpeaking:
         // EL's VAD fired "user started talking". This is NOT a reliable person
-        // signal — it also trips on ambient room noise and Mikee's own echo — so
+        // signal — it also trips on ambient room noise and Mini's own echo — so
         // it does NOT reset the idle timer (only real transcribed words do, in
         // agentThinking below). We just barge-in: stop playback and show listening.
         _dropFirstAgentTurn = false; // allow the upcoming agent audio again
@@ -1505,11 +1505,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _dropFirstAgentTurn = false; // real reply coming → play it
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
         // Reset the idle timer ONLY on GENUINE user words — a non-empty transcript
-        // that isn't Mikee's own echo. Two failure modes this rules out:
-        //   • echo: Mikee's voice re-transcribed while/just after he speaks, and
+        // that isn't Mini's own echo. Two failure modes this rules out:
+        //   • echo: Mini's voice re-transcribed while/just after he speaks, and
         //   • phantom: an empty "..." turn where EL's VAD tripped on room noise.
         // Both used to reset the watchdog forever. A phantom/echo turn instead
-        // increments _phantomTurns; 3 in a row means Mikee is answering the room,
+        // increments _phantomTurns; 3 in a row means Mini is answering the room,
         // not a person, so we close.
         final now = DateTime.now().millisecondsSinceEpoch;
         final likelyEcho = _face.state == FaceStateKind.speaking ||
@@ -1545,12 +1545,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       case VoiceEventKind.agentSpeaking:
         // Mute the robot's built-in (Chinese) TTS so only the ElevenLabs voice is
         // heard — the CSJBot AIUI runs in parallel (it gives us the mic) but must
-        // not talk over Mikee.
+        // not talk over Mini.
         _audioBridge.stopSpeak();
         // Auto session's unprompted FIRST message: drop it (we already greeted) and
         // stay in listening so the mic isn't muted before the visitor can speak.
         if (_dropFirstAgentTurn) break;
-        // NOTE: deliberately NOT bumping activity here — Mikee's OWN speech must not
+        // NOTE: deliberately NOT bumping activity here — Mini's OWN speech must not
         // keep the session alive, or an agent that keeps talking with no visitor
         // never returns to idle (obs 1). Only USER input resets the idle timer.
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
@@ -1558,7 +1558,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       case VoiceEventKind.audioChunk:
         // Just QUEUE the chunk for playback. Lip-sync (mouthOpen) + the
         // speaking→listening transition are driven by _onPlaybackLevel, which
-        // tracks the SPEAKER (not network arrival) — so lips move while Mikee is
+        // tracks the SPEAKER (not network arrival) — so lips move while Mini is
         // actually talking and close exactly when playback ends.
         // Dropped after a barge-in, the auto first message, or while holding to talk.
         if (_dropFirstAgentTurn || _pushToTalk) break;
@@ -1653,7 +1653,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // first real user input. Manual (button) sessions keep the first message.
     _dropFirstAgentTurn = false; // TEMP: reverted — dropping it may break EL turn-taking
     // Prime the agent with the freshly-recognised staff member (spine OR on-device)
-    // so this session opens KNOWING who's in front of it — Mikee can greet by name
+    // so this session opens KNOWING who's in front of it — Mini can greet by name
     // and answer "do you recognize me?". One-shot first turn; the agent's dashboard
     // prompt interprets the STAFF_RECOGNIZED: prefix. Freshness-guarded so a stale
     // name from an earlier visit doesn't leak into a much later manual session.
@@ -1677,23 +1677,23 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _updateMicLevel(rms);
         return;
       }
-      // Half-duplex echo gate (the ONLY gate now): never feed Mikee's own voice back
+      // Half-duplex echo gate (the ONLY gate now): never feed Mini's own voice back
       // to ElevenLabs. His voice plays through a separate AudioTrack the CSJBot CAE
       // does NOT echo-cancel, so otherwise he hears himself and loops forever. The
       // tail-guard covers the speaker buffer after we flip to listening.
       final speakingMuted = _face.state == FaceStateKind.speaking ||
           (now - _lastSpeakingMs) < _micTailGuardMs;
       // NOTE: mic loudness is NOT used to keep the session alive. Without hardware
-      // AEC, ambient room noise crosses any amplitude threshold ~5s after Mikee
+      // AEC, ambient room noise crosses any amplitude threshold ~5s after Mini
       // stops and both (a) reset the idle timer and (b) tripped ElevenLabs' VAD
       // into phantom "..." turns, so the session never auto-closed. The idle timer
       // now advances on wall-clock silence and resets only on real transcribed
       // words (see _startIdleWatch / _bumpActivity).
       // The amplitude noise gate (squelch) was REMOVED (obs 3): it dropped soft and
       // sentence-onset speech (RMS < 0.04 → silence sent), so capture was hit-or-miss.
-      // We now feed ElevenLabs the REAL mic continuously whenever Mikee isn't
+      // We now feed ElevenLabs the REAL mic continuously whenever Mini isn't
       // speaking and let its own server-side VAD decide when a turn starts/ends.
-      // While Mikee speaks we send SILENCE so the stream stays unbroken for EL's VAD
+      // While Mini speaks we send SILENCE so the stream stays unbroken for EL's VAD
       // without leaking his echo back in.
       _voiceAgent.sendAudioChunk(speakingMuted ? Uint8List(chunk.length) : chunk);
       _updateMicLevel(rms);
@@ -1727,7 +1727,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // bypassing the noise gate for reliable capture in a loud room. On release the
   // mic resumes its gated/silence stream so ElevenLabs finalises the turn + replies.
   void _startHoldToTalk() {
-    _audioBridge.stopPlayback(); // barge-in: silence Mikee so the visitor can talk
+    _audioBridge.stopPlayback(); // barge-in: silence Mini so the visitor can talk
     setState(() {
       _pushToTalk = true;
       _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0);
@@ -1742,7 +1742,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _bumpActivity(); // a turn was just spoken → keep the session alive for the reply
   }
 
-  // Mikee's voice backend (ElevenLabs) is unreachable — most often an expired
+  // Mini's voice backend (ElevenLabs) is unreachable — most often an expired
   // subscription / out of credits / disabled key. Tell the operator plainly so
   // it isn't mistaken for an app bug. Shown above any pushed screen; guarded so
   // it never stacks.
@@ -1760,7 +1760,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           Text('Voice unavailable', style: TextStyle(color: Colors.white)),
         ]),
         content: Text(
-          "Mikee's voice service (ElevenLabs) closed the connection. The "
+          "Mini's voice service (ElevenLabs) closed the connection. The "
           "subscription has likely expired or run out of credits.\n\n"
           "Please renew / recharge the ElevenLabs account, then tap the mic again."
           "${detail != null && detail.isNotEmpty ? '\n\n$detail' : ''}",
@@ -1796,21 +1796,21 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     if (level < 0) {
       // Turn ended (queue drained) → back to listening. We do NOT reset the idle
-      // clock here anymore: the watchdog FREEZES the silence counter while Mikee
+      // clock here anymore: the watchdog FREEZES the silence counter while Mini
       // speaks (so his answer never eats the visitor's reply window) and resumes
       // it on drain. Bumping on every drain also reset the counter on PHANTOM
-      // turns (Mikee answering room noise), so the session never auto-closed.
+      // turns (Mini answering room noise), so the session never auto-closed.
       debugPrint('Playback: drained → listening');
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
     } else if (level < _speechFloor) {
       // Near-silent straggler chunk (trailing/padding audio that lands after the
       // real speech, often just after a drain). Don't let it drive "speaking" —
-      // that's what twitched the mouth while Mikee was actually just listening.
+      // that's what twitched the mouth while Mini was actually just listening.
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
     } else {
       // Amplify the speech-range RMS so the mouth opens convincingly.
       _lastSpeakingMs = DateTime.now().millisecondsSinceEpoch; // drives the mic gate
-      // NOTE: NOT bumping activity here — Mikee's own playback must not reset the
+      // NOTE: NOT bumping activity here — Mini's own playback must not reset the
       // idle timer (obs 1). The watchdog's mid-utterance guard prevents cutting him
       // off mid-reply; only USER speech keeps the session alive.
       final mouth = (level * 3.5).clamp(0.04, 1.0);
@@ -2023,7 +2023,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   }
 
   // Open the visitor order/enquiry flow (catalog picker → details form). Any
-  // live voice session is closed first so Mikee doesn't keep talking (or
+  // live voice session is closed first so Mini doesn't keep talking (or
   // listening) over the on-screen keyboard.
   Future<void> _openLeadForm(LeadKind kind) async {
     if (_voiceActive) _endVoice();

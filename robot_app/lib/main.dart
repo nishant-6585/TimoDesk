@@ -59,7 +59,7 @@ class _App extends ConsumerWidget {
     // was opened once — arrivals were silent if the app sat on the face screen.
     ref.read(navPointsProvider);
     return MaterialApp(
-      title: 'Mikee — Robot',
+      title: 'Mini — Robot',
       themeMode: ThemeMode.dark,
       debugShowCheckedModeBanner: false,
       darkTheme: ThemeData(

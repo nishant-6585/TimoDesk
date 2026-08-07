@@ -31,7 +31,7 @@ class AudioBridge {
 
   /// Recognized user speech (CSJBot CAE, echo-cancelled). Emits the live
   /// transcription string each time the user is detected speaking — used for
-  /// on-device barge-in (cut Mikee off when the user starts talking).
+  /// on-device barge-in (cut Mini off when the user starts talking).
   Stream<String> get asrTextStream => _asrText ??=
       _asrChannel.receiveBroadcastStream().map((e) => e?.toString() ?? '');
 

@@ -18,7 +18,7 @@ const _info = Color(0xFF3B82F6);
 const _red = Color(0xFFFF5247);
 const _accent = kOrange;
 
-/// On-robot Navigation Points: an operator drives Mikee to a spot, taps
+/// On-robot Navigation Points: an operator drives Mini to a spot, taps
 /// "Capture point" to save its live SLAM pose to Supabase (SHARED with the web
 /// admin), and one-taps "Go" to send the robot to any saved point. Big
 /// tablet-friendly controls; dark theme + kOrange accents.

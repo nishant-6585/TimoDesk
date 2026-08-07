@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
 import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
-import 'services/elevenlabs_tts.dart'; // arrival speech (Mikee's real voice)
+import 'services/elevenlabs_tts.dart'; // arrival speech (Mini's real voice)
 import 'services/interaction_log.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_points_cache.dart';
@@ -152,7 +152,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   // navi_state broadcast (admin-initiated navs, or our own echoed back).
   String? _announcedDeparture;
 
-  /// Speak an arrival announcement through Mikee's real voice (ElevenLabs →
+  /// Speak an arrival announcement through Mini's real voice (ElevenLabs →
   /// proven speaker path). The device-TTS fallback exists because ElevenLabs
   /// needs internet + key — but device TTS is NOT guaranteed installed on this
   /// Android build, which is why ElevenLabs is primary.

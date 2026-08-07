@@ -207,7 +207,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         break;
       case 'wave':
         notifier.sendIntent({'intent': 'wave'});
-        _pushToast(Icons.waving_hand, MikeeColors.primary, 'Mikee is waving hello 👋');
+        _pushToast(Icons.waving_hand, MikeeColors.primary, 'Mini is waving hello 👋');
         _addEvent({'type': 'command_head', 'details': 'gesture: wave', 'session': 'admin'});
         break;
       case 'home':

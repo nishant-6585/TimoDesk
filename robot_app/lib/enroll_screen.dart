@@ -1077,7 +1077,7 @@ class _RegisterTabState extends ConsumerState<_RegisterTab> with AutomaticKeepAl
     setState(() {
       _sdkEnrolling = false;
       _sdkResult = ok
-          ? 'Registered with Mikee ✓ — will be greeted by name'
+          ? 'Registered with Mini ✓ — will be greeted by name'
           : 'Robot not reachable — try again while on the robot';
     });
   }
@@ -1341,12 +1341,12 @@ class _RegisterTabState extends ConsumerState<_RegisterTab> with AutomaticKeepAl
             const SizedBox(height: 24),
             const Divider(color: Color(0xFF262626)),
             const SizedBox(height: 16),
-            const Text('Register with Mikee Robot',
+            const Text('Register with Mini Robot',
                 style: TextStyle(
                     color: _ink, fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             const Text(
-              'Stay in front of the robot camera and tap below.\nMikee will capture and remember your face on-device for instant recognition.',
+              'Stay in front of the robot camera and tap below.\nMini will capture and remember your face on-device for instant recognition.',
               textAlign: TextAlign.center,
               style: TextStyle(color: _muted, fontSize: 12),
             ),
@@ -1378,8 +1378,8 @@ class _RegisterTabState extends ConsumerState<_RegisterTab> with AutomaticKeepAl
               label: Text(_sdkEnrolling
                   ? 'Capturing…'
                   : _sdkResult?.contains('✓') == true
-                      ? 'Registered with Mikee'
-                      : 'Register with Mikee Robot'),
+                      ? 'Registered with Mini'
+                      : 'Register with Mini Robot'),
               style: FilledButton.styleFrom(
                 backgroundColor: _indigo,
                 padding:

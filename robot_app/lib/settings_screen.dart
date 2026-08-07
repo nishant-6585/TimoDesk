@@ -176,7 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Live preview of both greeting templates rendered in the active voice
-  /// language, so the operator sees exactly what Mikee will say before saving.
+  /// language, so the operator sees exactly what Mini will say before saving.
   Widget _greetingPreview() {
     final lang = languageForCode(RobotConfig.voiceLanguageCode);
     final staff = lang.renderGreeting(_greetStaff.text,
@@ -362,7 +362,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 16)),
             subtitle: const Text(
                 'On = unlock the kiosk for maintenance (system UI + other apps '
-                'reachable). Off = full lockdown, only Mikee.',
+                'reachable). Off = full lockdown, only Mini.',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
           ),
           const SizedBox(height: 8),
@@ -374,7 +374,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Auto-open mic after greeting',
                 style: TextStyle(color: Colors.white, fontSize: 16)),
             subtitle: const Text(
-                'Off (default) = Mikee greets, but the mic opens only when a '
+                'Off (default) = Mini greets, but the mic opens only when a '
                 'person taps Talk. On = mic auto-opens after a greeting.',
                 style: TextStyle(color: Colors.white54, fontSize: 13)),
           ),

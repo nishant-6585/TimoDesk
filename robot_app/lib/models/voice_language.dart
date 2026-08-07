@@ -1,4 +1,4 @@
-/// A voice language Mikee can speak. The ElevenLabs agent is configured with all
+/// A voice language Mini can speak. The ElevenLabs agent is configured with all
 /// of these in the dashboard; we override `agent.language` per session with [code].
 class VoiceLanguage {
   final String code; // ElevenLabs language code, e.g. "hi"
@@ -53,7 +53,7 @@ class VoiceLanguage {
   }
 }
 
-/// The 8 languages Mikee supports (matches the ElevenLabs agent config).
+/// The 8 languages Mini supports (matches the ElevenLabs agent config).
 const List<VoiceLanguage> kSupportedLanguages = [
   VoiceLanguage(
       code: "en",
