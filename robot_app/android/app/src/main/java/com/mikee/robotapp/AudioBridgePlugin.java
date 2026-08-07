@@ -365,12 +365,57 @@ public class AudioBridgePlugin
             } catch (Throwable t) {
                 Log.w(TAG, "startAudioRecognize: " + t.getMessage());
             }
+            suppressVendorSceneQa();
             Log.d(TAG, "speech engine STARTED (session-gated, mic freed via Option B)");
         } catch (Throwable t) {
             Log.w(TAG, "startSpeechEngine failed: " + t.getMessage());
             engineRunning = false;
         }
         }, "mikee-speech-start").start();
+    }
+
+    /**
+     * Kill the vendor scene QA — the CSJBot "zhanguan" chat that answers every
+     * utterance in Chinese ("这个已经超出我的学识范围了…") in parallel with our
+     * ElevenLabs brain — WITHOUT losing recognition.
+     *
+     * AIUIMixedManager delivers recognized TEXT through a single
+     * PushSpeechRecgContentListener; the vendor's own listener (installed by
+     * HandlerMsgService) both feeds the recognized text downstream AND fires the
+     * zhanguan QA (getAnswer). Verified on-device: no-op'ing it silences the QA but
+     * ALSO kills the text feed our on-device barge-in / commands read. So instead of
+     * dropping the text we TAKE OVER the listener: forward the recognized text
+     * straight to Dart (asrSink) — exactly what the old speechInfo type=0 did — and
+     * simply never call getAnswer. ElevenLabs keeps its own server-side ASR from the
+     * PCM stream; this restores the vendor text stream for barge-in.
+     *
+     * The vendor re-installs its listener whenever AiuiMixedService (re)binds —
+     * which our startSpeechService() above triggers asynchronously — so re-apply a
+     * few times to win that race. Runs on the mikee-speech-start worker thread.
+     */
+    private void suppressVendorSceneQa() {
+        final com.csjbot.asragent.aiui_soft.AIUIPushSpeechRecgContentListener forwardNoQa =
+                (text, last) -> {
+                    // Feed recognition to Dart (barge-in + on-device commands); do
+                    // NOT trigger the vendor QA. Replaces speechInfo type=0.
+                    if (text != null && !text.isEmpty()) {
+                        final String t = text;
+                        main.post(() -> { if (asrSink != null) asrSink.success(t); });
+                    }
+                };
+        for (int i = 0; i < 5; i++) {
+            try {
+                // The static field the vendor reads when its service (re)binds…
+                com.csjbot.asragent.aiui_soft.AiuiMixedService.setPushDataListener(forwardNoQa);
+                // …and the LIVE reference AIUIMixedManager actually invokes.
+                com.csjbot.asragent.aiui_soft.AIUIMixedManager.getInstance()
+                        .setPushSpeechRecgContentListener(forwardNoQa);
+            } catch (Throwable t) {
+                Log.w(TAG, "suppressVendorSceneQa: " + t.getMessage());
+            }
+            try { Thread.sleep(600); } catch (InterruptedException ignore) { break; }
+        }
+        Log.d(TAG, "vendor scene QA killed; recognition rerouted to asrSink (no getAnswer)");
     }
 
     private void stopSpeechEngine() {
