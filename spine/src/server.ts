@@ -50,6 +50,7 @@ import { handleKbProviders } from './handlers/kb-providers';
 import { getKbProviderRegistry } from './services/kb-providers';
 import { handleRecordings } from './handlers/recordings';
 import { handleNavPoints } from './handlers/nav-points';
+import { handleVoiceCommands } from './handlers/voice-commands';
 import { handleXboomLead, handleXboomCatalog } from './handlers/xboom';
 import { getSupabaseClient } from './supabase/client';
 import { initializeFaceModels } from './services/face-embedding';
@@ -752,6 +753,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       // Nav points — brokered here so the robot_app doesn't need the Supabase
       // anon key (migration 017 takes anon off the nav_points table).
       if (await handleNavPoints(req, res, supabase)) {
+        return;
+      }
+
+      // Voice command catalog (Admin "Voice Commands" screen). Brokered like
+      // nav_points — the table has no anon/authenticated RLS.
+      if (await handleVoiceCommands(req, res, supabase)) {
         return;
       }
 
