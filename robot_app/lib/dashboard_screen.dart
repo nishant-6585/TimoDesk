@@ -16,6 +16,8 @@ import 'services/audio_bridge.dart';
 import 'services/elevenlabs_tts.dart';
 import 'services/robot_gestures.dart';
 import 'services/voice_command_handler.dart';
+import 'services/intent_registry.dart';
+import 'services/voice_command_catalog.dart';
 import 'models/voice_language.dart';
 import 'screens/language_selection_screen.dart';
 import 'config.dart';
@@ -104,7 +106,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   late final Animation<double> _pulse;
 
   // Head/body gestures on voice events — best-effort, non-overlapping.
-  late final VoiceCommandHandler _cmd;
   bool _gestureInProgress = false;
   int _lastSwayMs = 0; // throttle speaking sway to ~once / 300ms
   int _lastNodMs = 0; //  throttle acknowledging nod to ~once / 2.5s
@@ -148,7 +149,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _voiceSub = widget.voiceAgent.events.listen(_onVoiceEvent);
     _playbackSub = widget.audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
     _asrSub = widget.audioBridge.asrTextStream.listen(_onUserSpeechGesture);
-    _cmd = VoiceCommandHandler(_runVoiceCommand);
     _tts = ElevenLabsTts(
       apiKey: RobotConfig.elevenLabsApiKey,
       voiceId: RobotConfig.elevenLabsVoiceId,
@@ -240,8 +240,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case VoiceEventKind.agentThinking:
         _setKind(FaceStateKind.thinking);
         _gesture(RobotGestures.headTilt); // curious "thinking" tilt
-        final t = e.text; // ElevenLabs user transcript → keyword commands
-        if (t != null && t.trim().isNotEmpty) _cmd.handle(t);
+        final t = e.text; // ElevenLabs user transcript → catalog voice commands
+        if (t != null && t.trim().isNotEmpty) _dispatchVoiceCommand(t);
         break;
       case VoiceEventKind.agentSpeaking:
         _setKind(FaceStateKind.speaking);
@@ -302,6 +302,61 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       // off-device or SDK busy — ignore
     } finally {
       _gestureInProgress = false;
+    }
+  }
+
+  // The catalog-driven registry (same one the face screen uses, so enable/disable
+  // applies everywhere); offline falls back to the hardcoded set.
+  IntentRegistry get _registry =>
+      ref.read(intentRegistryProvider).valueOrNull ?? IntentRegistry.standard;
+
+  // Recognize a spoken command and run the DASHBOARD action for it. The dashboard
+  // is the teleop surface, so only motion/gesture/state kinds map here (drive,
+  // stop, wave/reset, sleep/wake, snapshot, resume); navigation / persona /
+  // check-in belong to the ambient face and are ignored here.
+  void _dispatchVoiceCommand(String transcript) {
+    final m = _registry.match(transcript);
+    if (m == null) return;
+    final cmd = _dashboardCommandFor(m);
+    if (cmd != null) _runVoiceCommand(cmd);
+  }
+
+  VoiceCommand? _dashboardCommandFor(IntentMatch m) {
+    switch (m.kind) {
+      case VoiceIntentKind.drive:
+        switch (m.slot<String>('direction')) {
+          case 'forward':
+            return const VoiceCommand(
+                VoiceCommandKind.driveForward, 'go forward', Icons.arrow_upward_rounded);
+          case 'back':
+            return const VoiceCommand(
+                VoiceCommandKind.driveBack, 'go back', Icons.arrow_downward_rounded);
+          case 'left':
+            return const VoiceCommand(
+                VoiceCommandKind.driveLeft, 'turn left', Icons.turn_left_rounded);
+          case 'right':
+            return const VoiceCommand(
+                VoiceCommandKind.driveRight, 'turn right', Icons.turn_right_rounded);
+        }
+        return null;
+      case VoiceIntentKind.stop:
+        return const VoiceCommand(VoiceCommandKind.stop, 'stop', Icons.pan_tool_rounded);
+      case VoiceIntentKind.gesture:
+        return m.slot<String>('gesture') == 'wave'
+            ? const VoiceCommand(VoiceCommandKind.wave, 'wave', Icons.waving_hand_rounded)
+            : const VoiceCommand(
+                VoiceCommandKind.reset, 'reset position', Icons.restart_alt_rounded);
+      case VoiceIntentKind.sleepWake:
+        return m.slot<String>('action') == 'wake'
+            ? const VoiceCommand(VoiceCommandKind.wake, 'wake up', Icons.visibility_rounded)
+            : const VoiceCommand(VoiceCommandKind.sleep, 'sleep', Icons.bedtime_rounded);
+      case VoiceIntentKind.snapshot:
+        return const VoiceCommand(
+            VoiceCommandKind.snapshot, 'snapshot', Icons.photo_camera_rounded);
+      case VoiceIntentKind.resume:
+        return const VoiceCommand(VoiceCommandKind.resume, 'resume', Icons.play_arrow_rounded);
+      default:
+        return null; // navigation / persona / check-in / patrol / etc. — not teleop
     }
   }
 

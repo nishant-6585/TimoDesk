@@ -21,6 +21,9 @@ import 'services/nav_points_api.dart';
 import 'services/nav_voice.dart';
 import 'services/persona_voice.dart';
 import 'services/checkin_voice.dart';
+import 'services/intent_registry.dart';
+import 'services/voice_command_catalog.dart';
+import 'services/robot_gestures.dart';
 import 'services/interaction_log.dart';
 import 'services/checkin_api.dart';
 import 'waving_hand_overlay.dart';
@@ -668,13 +671,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       if (utterance.isEmpty) return;
       debugPrint('VendorASR utterance: "$utterance"');
       InteractionLog.log('user_utterance_vendor_asr', utterance);
-      if (_handleStopCommand(utterance)) return;
-      if (_handleNavVoice(utterance)) return;
-      if (_handlePersonaVoice(utterance)) return;
-      if (_handleCheckinVoice(utterance)) {
-        InteractionLog.log('checkin_turn', utterance);
-        return;
-      }
+      if (_dispatchVoiceCommand(utterance)) return;
       if (_voiceActive) {
         _voiceAgent.sendUserText(utterance);
         setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
@@ -743,6 +740,99 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     if (heardWords.isEmpty) return 0;
     final hits = heardWords.where(ownWords.contains).length;
     return hits / heardWords.length;
+  }
+
+  // ── Intent dispatch (the single voice-command entry point) ──────────────────
+  // The spine catalog decides WHAT is a command and which are enabled for this
+  // deployment; this maps the matched kind to the action. Replaces the old
+  // _handleStop → _handleNav → _handlePersona → _handleCheckin if-chain (still
+  // used underneath for the four rich handlers). Returns true when it WAS a
+  // command, so the caller does NOT forward the utterance to the chat agent.
+  IntentRegistry get _registry =>
+      ref.read(intentRegistryProvider).valueOrNull ?? IntentRegistry.standard;
+
+  // Language name → ElevenLabs code, for the "speak in Hindi" intent.
+  static const Map<String, String> _langCodes = {
+    'english': 'en', 'hindi': 'hi', 'tamil': 'ta', 'telugu': 'te',
+    'kannada': 'kn', 'malayalam': 'ml', 'marathi': 'mr', 'bengali': 'bn',
+    'gujarati': 'gu', 'punjabi': 'pa', 'urdu': 'ur', 'spanish': 'es',
+    'french': 'fr', 'german': 'de', 'arabic': 'ar', 'chinese': 'zh', 'japanese': 'ja',
+  };
+
+  bool _dispatchVoiceCommand(String utterance) {
+    final points =
+        ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+    final m = _registry.match(utterance, IntentContext(navPoints: points));
+    if (m == null) return false;
+    switch (m.kind) {
+      case VoiceIntentKind.stop:
+        return _handleStopCommand(utterance);
+      case VoiceIntentKind.navigate:
+      case VoiceIntentKind.dock:
+        return _handleNavVoice(utterance);
+      case VoiceIntentKind.persona:
+        return _handlePersonaVoice(utterance);
+      case VoiceIntentKind.checkin:
+        final ok = _handleCheckinVoice(utterance);
+        if (ok) InteractionLog.log('checkin_turn', utterance);
+        return ok;
+      default:
+        return _handleExtendedIntent(m, utterance);
+    }
+  }
+
+  // Actions for the extended intents. Physical commands with no verified on-device
+  // bridge in this screen (patrol, drive, snapshot, volume) are RECOGNIZED but get
+  // a graceful spoken reply instead of a blind motor command or leaking to chat.
+  bool _handleExtendedIntent(IntentMatch m, String utterance) {
+    InteractionLog.log('intent', '${m.kind.name} ← "$utterance"');
+    _dropFirstAgentTurn = true; // ours — the agent must not also answer this turn
+    _audioBridge.stopPlayback();
+    switch (m.kind) {
+      case VoiceIntentKind.cancelNav:
+        ref.read(navPointsProvider.notifier).cancel();
+        _speakGreeting("Okay, I'll stay here.");
+        return true;
+      case VoiceIntentKind.gesture:
+        if (m.slot<String>('gesture') == 'wave') {
+          ref.read(armProvider.notifier).wave();
+          _speakGreeting('Hello there!');
+        } else {
+          RobotGestures.headCenter();
+          _speakGreeting('There — all reset.');
+        }
+        return true;
+      case VoiceIntentKind.sleepWake:
+        final wake = m.slot<String>('action') == 'wake';
+        setState(() => _face = _face.copyWith(
+            state: wake ? FaceStateKind.attentive : FaceStateKind.idle));
+        _speakGreeting(wake ? "I'm here!" : 'Okay, resting now.');
+        return true;
+      case VoiceIntentKind.language:
+        final code = _langCodes[m.slot<String>('language') ?? ''];
+        if (code != null) {
+          _speakGreeting('Switching languages.');
+          _voiceAgent.switchLanguage(code);
+        }
+        return true;
+      case VoiceIntentKind.help:
+        _speakGreeting('I can greet visitors, take you to people and places, '
+            'return to my charging dock, check you in for a meeting, and answer '
+            'questions about us. Just ask!');
+        return true;
+      case VoiceIntentKind.resume:
+        _speakGreeting('Sure.');
+        return true;
+      case VoiceIntentKind.escort:
+      case VoiceIntentKind.patrol:
+      case VoiceIntentKind.drive:
+      case VoiceIntentKind.snapshot:
+      case VoiceIntentKind.volume:
+        _speakGreeting("I'm not able to do that just yet, but it's on my list.");
+        return true;
+      default:
+        return false;
+    }
   }
 
   // ── Voice navigation ("go to <saved point>") ────────────────────────────────
@@ -1325,30 +1415,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
             break;
           }
         }
-        // "Stop" / "be quiet" / "that's enough" — the visitor wants Mikee to
-        // stop. Ends the session (mic off, stops speaking, back to attentive).
-        // Checked FIRST so it always wins over other intents.
-        if (e.text != null && _handleStopCommand(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Voice navigation: "go to <saved point>" spoken to Mikee. When the
-        // transcript is a nav command WE handle the reply + action and drop the
-        // agent's own answer to this turn (it doesn't know the saved points).
-        if (e.text != null && _handleNavVoice(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Persona ("change your name to Rocky" / "change your voice…") — ours:
-        // the agent can't rename itself or swap its own voice.
-        if (e.text != null && _handlePersonaVoice(e.text!)) {
-          _dropFirstAgentTurn = true;
-          break;
-        }
-        // Visitor check-in ("I'm here to see <host>") — ours end-to-end too:
-        // the agent doesn't know the staff directory or the /visit flow.
-        if (e.text != null && _handleCheckinVoice(e.text!)) {
-          InteractionLog.log('checkin_turn', e.text!);
+        // Voice command? (stop, navigation/dock, persona, check-in, and the
+        // catalog's extended intents). Recognized via the spine-driven registry;
+        // WE handle the reply + action and drop the agent's own answer to this
+        // turn (it doesn't know our saved points, staff directory, or /visit).
+        // Stop still wins first — it's priority 0 inside the registry.
+        if (e.text != null && _dispatchVoiceCommand(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }
