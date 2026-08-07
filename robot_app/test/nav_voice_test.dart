@@ -89,4 +89,31 @@ void main() {
       expect(r.heard, 'Priyanka'); // case preserved — spoken verbatim in the reply
     });
   });
+
+  group('NavVoice.topTies — same-first-name disambiguation', () {
+    final twoNishants = [_pt('Nishant Kumar'), _pt('Nishant Sharma'), _pt('Reception')];
+
+    test('"take me to Nishant" ties both Nishants', () {
+      final ties = NavVoice.topTies('take me to Nishant', twoNishants);
+      expect(ties.map((p) => p.name), containsAll(['Nishant Kumar', 'Nishant Sharma']));
+      expect(ties.length, 2);
+    });
+
+    test('the full name disambiguates → no tie', () {
+      expect(NavVoice.topTies('take me to Nishant Kumar', twoNishants), isEmpty);
+      // and it resolves to the right person
+      expect(NavVoice.match('take me to Nishant Kumar', twoNishants).point?.name,
+          'Nishant Kumar');
+    });
+
+    test('a unique name has no tie', () {
+      expect(NavVoice.topTies('take me to Reception', twoNishants), isEmpty);
+    });
+
+    test('heardPlace extracts the spoken place / null for non-nav', () {
+      expect(NavVoice.heardPlace("go to Nishant's desk"), "Nishant's desk");
+      expect(NavVoice.heardPlace('what is the weather'), isNull);
+      expect(NavVoice.heardPlace('go to sleep'), isNull); // reserved
+    });
+  });
 }
