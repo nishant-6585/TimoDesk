@@ -205,9 +205,15 @@ class IntentRegistry {
         ]),
         // 9 — capability help ("what can you do").
         _KeywordIntent('system.help', 9, VoiceIntentKind.help, const [
-          'what can you do', 'how can you help', 'what are your features',
-          'what do you do', 'help me with', 'tell me what you can do',
-          'what are you capable of',
+          // Broadened after live testing: "what ALL you can do" / "what is your
+          // capability" missed the old phrasings. Substrings, so "what all you
+          // can do" contains none of "what you can do" — cover the variants.
+          'what can you do', 'what all you can do', 'what all can you do',
+          'how can you help', 'what can you help', 'help me with',
+          'what are your features', 'list your features', 'what services',
+          'what do you do', 'tell me what you can do', 'tell me what all you can do',
+          'what are you capable of', 'your capabilities', 'what is your capability',
+          'what capabilities', 'what functions can you', 'what all functions',
         ]),
         // 10 — "take me to <saved point>" and dock (fuzzy, needs nav points).
         _NavIntent(),
