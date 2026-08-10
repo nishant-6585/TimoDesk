@@ -99,6 +99,14 @@ void main() {
       expect(m('switch to the front desk')?.kind, isNot(VoiceIntentKind.language));
     });
 
+    test('help matches broadened phrasings (from live testing)', () {
+      // These variants missed the old table and fell to the chat agent.
+      expect(m('tell me what all you can do')?.kind, VoiceIntentKind.help);
+      expect(m('what is your capability')?.kind, VoiceIntentKind.help);
+      expect(m('what functions can you perform')?.kind, VoiceIntentKind.help);
+      expect(m('what can you help me with')?.kind, VoiceIntentKind.help);
+    });
+
     test('snapshot, help, resume, cancel-nav, sleep/wake', () {
       expect(m('take a photo')?.kind, VoiceIntentKind.snapshot);
       expect(m('what can you do')?.kind, VoiceIntentKind.help);

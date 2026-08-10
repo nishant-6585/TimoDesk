@@ -248,7 +248,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _gesture(RobotGestures.chestAttention); // perk up to speak (once/turn)
         break;
       case VoiceEventKind.audioChunk:
-        break; // playback owned by AmbientFaceScreen
+      case VoiceEventKind.toolCall:
+        break; // playback + client tools are owned by AmbientFaceScreen
       case VoiceEventKind.sessionEnded:
       case VoiceEventKind.error:
         setState(() => _voiceActive = false);

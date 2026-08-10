@@ -976,6 +976,95 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _pendingNavTimeout = null;
   }
 
+  // ── ElevenLabs client tools (move 2) ────────────────────────────────────────
+  // The agent resolves varied phrasing / pronouns / multi-turn params (e.g.
+  // "take me to his desk" → navigate_to{destination:"David"}), then invokes a
+  // tool. We run the REAL on-device action and reply so the agent can narrate the
+  // outcome. Tool names + param keys must match the dashboard tool definitions.
+  Future<void> _handleToolCall(
+      String? tool, Map<String, dynamic>? params, String? callId) async {
+    if (callId == null) return;
+    final p = params ?? const <String, dynamic>{};
+    String s(List<String> keys) {
+      for (final k in keys) {
+        final v = p[k];
+        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+      }
+      return '';
+    }
+
+    InteractionLog.log('tool_call', '$tool ${p.toString()}');
+    try {
+      switch (tool) {
+        case 'navigate_to':
+          final dest = s(['destination', 'place', 'location', 'person', 'name']);
+          final points =
+              ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
+          final r = NavVoice.match('take me to $dest', points);
+          if (r.isDock) {
+            _voiceAgent.sendToolResult(callId, 'Returning to my charging dock.');
+            _dropFirstAgentTurn = true;
+            if (_voiceActive) _endVoice();
+            ref.read(navPointsProvider.notifier).goHome();
+          } else if (r.point != null) {
+            _voiceAgent.sendToolResult(callId, 'On my way to ${r.point!.name}.');
+            _navigateToPoint(r.point!, dest); // ends session; goTo speaks departure
+          } else {
+            _voiceAgent.sendToolResult(
+                callId, 'No saved location matches "$dest".', isError: true);
+          }
+          return;
+
+        case 'check_in':
+          final host = s(['host', 'person', 'name', 'staff']);
+          if (host.isEmpty) {
+            _voiceAgent.sendToolResult(callId, 'Who would you like to see?', isError: true);
+            return;
+          }
+          _voiceAgent.sendToolResult(callId, 'Checking you in to see $host.');
+          _beginCheckin(host);
+          return;
+
+        case 'raise_enquiry':
+        case 'place_order':
+          final kind = tool == 'place_order' ? LeadKind.order : LeadKind.enquiry;
+          final product = s(['product', 'item', 'model']);
+          if (product.isEmpty) {
+            _voiceAgent.sendToolResult(callId, 'Which product is this about?', isError: true);
+            return;
+          }
+          final name = s(['customer_name', 'name', 'visitor_name']);
+          final qtyRaw = p['quantity'];
+          final res = await XboomLeadApi().submit(
+            kind: kind,
+            name: name.isEmpty ? 'Voice visitor' : name,
+            phone: s(['phone', 'contact', 'mobile']),
+            product: product,
+            quantity: qtyRaw is num ? qtyRaw.toInt() : int.tryParse('$qtyRaw'),
+            notes: s(['notes', 'details']),
+          );
+          final label = kind == LeadKind.order ? 'order' : 'enquiry';
+          _voiceAgent.sendToolResult(
+            callId,
+            res.ok
+                ? 'Your $label for $product is logged'
+                    '${res.reference != null ? " (reference ${res.reference})" : ""}. '
+                    'Our team will be in touch.'
+                : "I couldn't log that just now — please try the front desk.",
+            isError: !res.ok,
+          );
+          return;
+
+        default:
+          _voiceAgent.sendToolResult(callId, 'Unrecognized request.', isError: true);
+      }
+    } catch (e) {
+      InteractionLog.log('tool_error', '$tool: $e');
+      _voiceAgent.sendToolResult(
+          callId, "Sorry, I couldn't do that just now.", isError: true);
+    }
+  }
+
   /// The "I can't take you there" reply — staff-aware: if the heard name is a
   /// known colleague whose desk simply isn't captured, say THAT specifically
   /// instead of "no such place".
@@ -1563,6 +1652,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Dropped after a barge-in, the auto first message, or while holding to talk.
         if (_dropFirstAgentTurn || _pushToTalk) break;
         if (e.audioChunk != null) _audioBridge.playChunk(e.audioChunk!);
+        break;
+      case VoiceEventKind.toolCall:
+        // The LLM resolved the visitor's intent (phrasing/pronouns/params) and
+        // invoked a client tool — run the REAL action locally and reply.
+        _handleToolCall(e.toolName, e.toolParams, e.toolCallId);
         break;
       case VoiceEventKind.sessionEnded:
         // Recovering from an unexpected drop → ignore this teardown; the scheduled

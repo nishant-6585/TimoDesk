@@ -13,6 +13,7 @@ enum VoiceEventKind {
   agentThinking, // STT done, LLM processing → face: thinking
   agentSpeaking, // TTS audio arriving → face: speaking
   audioChunk, // raw audio to play (Phase B) + amplitude for lip-sync
+  toolCall, // the agent invoked a client tool (navigate_to, check_in, …)
   sessionEnded, // conversation finished
   error,
 }
@@ -27,8 +28,20 @@ class VoiceEvent {
   // signature of an expired subscription / out of credits / disabled key). The UI
   // shows an alert so it's not mistaken for an app bug.
   final bool serviceUnavailable;
+  // Client-tool call (kind == toolCall): the LLM decided to invoke one of the
+  // agent's configured tools. The app runs it locally and returns a result via
+  // VoiceAgent.sendToolResult(toolCallId, …).
+  final String? toolName;
+  final Map<String, dynamic>? toolParams;
+  final String? toolCallId;
   const VoiceEvent(this.kind,
-      {this.text, this.audioChunk, this.amplitude, this.serviceUnavailable = false});
+      {this.text,
+      this.audioChunk,
+      this.amplitude,
+      this.serviceUnavailable = false,
+      this.toolName,
+      this.toolParams,
+      this.toolCallId});
 }
 
 /// Manages ONE ElevenLabs Conversational AI WebSocket session (#80, Phase A).
@@ -176,6 +189,20 @@ class VoiceAgent {
     ws.add(jsonEncode({'type': 'user_message', 'text': text.trim()}));
   }
 
+  /// Reply to a client_tool_call. [result] is the short outcome the agent speaks
+  /// / reasons over ("Heading to David's desk now."). Must be sent so the agent's
+  /// turn isn't left hanging on the tool.
+  void sendToolResult(String toolCallId, String result, {bool isError = false}) {
+    final ws = _channel;
+    if (ws == null) return;
+    ws.add(jsonEncode({
+      'type': 'client_tool_result',
+      'tool_call_id': toolCallId,
+      'result': result,
+      'is_error': isError,
+    }));
+  }
+
   void sendAudioChunk(Uint8List pcmBytes) {
     final ws = _channel;
     if (ws == null) return;
@@ -267,6 +294,23 @@ class VoiceAgent {
             VoiceEventKind.audioChunk,
             audioChunk: bytes,
             amplitude: _rms(bytes),
+          ));
+        }
+        return;
+
+      case 'client_tool_call':
+        // The agent invoked one of its configured client tools (navigate_to,
+        // check_in, raise_enquiry, place_order). Surface it so the app can run
+        // the real action locally and reply with sendToolResult(...). The LLM
+        // already resolved phrasing/pronouns into clean parameters.
+        final call = msg['client_tool_call'];
+        if (call is Map) {
+          final params = call['parameters'];
+          _emit(VoiceEvent(
+            VoiceEventKind.toolCall,
+            toolName: call['tool_name'] as String?,
+            toolCallId: call['tool_call_id'] as String?,
+            toolParams: params is Map ? params.cast<String, dynamic>() : const {},
           ));
         }
         return;
