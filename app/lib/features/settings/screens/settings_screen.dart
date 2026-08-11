@@ -29,6 +29,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _greetVisitor =
       TextEditingController(text: 'Hello! Welcome to xboom!');
 
+  // ElevenLabs credentials. Write-only — never fetched back from the robot, so
+  // these start blank; a blank field is not pushed (won't overwrite a saved one).
+  final _elevenApiKey = TextEditingController();
+  final _elevenAgentId = TextEditingController();
+  final _elevenVoiceId = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +48,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _robotName.dispose();
     _companyName.dispose();
     _greetVisitor.dispose();
+    _elevenApiKey.dispose();
+    _elevenAgentId.dispose();
+    _elevenVoiceId.dispose();
     super.dispose();
   }
 
@@ -61,6 +70,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
     _toast(Icons.check_circle, MikeeColors.success,
         'Sent to robot — applies immediately');
+  }
+
+  void _saveKeys() {
+    // Push only the fields the user filled in — blanks never overwrite a saved
+    // credential on the robot (the robot ignores empty values too).
+    final cfg = <String, dynamic>{};
+    if (_elevenApiKey.text.trim().isNotEmpty) {
+      cfg['elevenlabs_api_key'] = _elevenApiKey.text.trim();
+    }
+    if (_elevenAgentId.text.trim().isNotEmpty) {
+      cfg['elevenlabs_agent_id'] = _elevenAgentId.text.trim();
+    }
+    if (_elevenVoiceId.text.trim().isNotEmpty) {
+      cfg['elevenlabs_voice_id'] = _elevenVoiceId.text.trim();
+    }
+    if (cfg.isEmpty) {
+      _toast(Icons.info_outline, MikeeColors.warning,
+          'Nothing to push — fill a field first');
+      return;
+    }
+    _sendConfig(cfg);
+    // Clear the API key field after sending so the secret isn't left on screen.
+    _elevenApiKey.clear();
+    _toast(Icons.check_circle, MikeeColors.success,
+        'Keys pushed to robot — voice applies on next reply');
   }
 
   void _toast(IconData icon, Color color, String msg) {
@@ -150,6 +184,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ]),
             ),
             const SizedBox(height: 20),
+            // ── KEYS & VOICE — ElevenLabs credentials, pushed to the robot.
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('KEYS & VOICE',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.12,
+                        color: MikeeColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('ElevenLabs credentials — stored on the robot only, never '
+                    'shown back here. Leave a field blank to keep what\'s saved.',
+                    style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
+                const SizedBox(height: 14),
+                _IdField('ElevenLabs API key', _elevenApiKey, 'sk_… (enables the spoken voice)',
+                    obscure: true),
+                const SizedBox(height: 12),
+                _IdField('Agent ID', _elevenAgentId, 'agent_… (conversational AI)'),
+                const SizedBox(height: 12),
+                _IdField('Voice ID', _elevenVoiceId, 'e.g. 6AUOG2nbfr0yFEeI0784'),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    onPressed: _saveKeys,
+                    icon: const Icon(Icons.key, size: 16),
+                    label: Text('Push keys to robot',
+                        style: GoogleFonts.inter(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: MikeeColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10))),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
             _SettingCard('NETWORK', [
               _SettingField('Robot IP', _robotIp, (v) {
                 setState(() => _robotIp = v);
@@ -198,7 +278,8 @@ class _IdField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final String hint;
-  const _IdField(this.label, this.controller, this.hint);
+  final bool obscure;
+  const _IdField(this.label, this.controller, this.hint, {this.obscure = false});
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -208,6 +289,9 @@ class _IdField extends StatelessWidget {
       const SizedBox(height: 6),
       TextField(
         controller: controller,
+        obscureText: obscure,
+        enableSuggestions: !obscure,
+        autocorrect: !obscure,
         style: GoogleFonts.inter(fontSize: 14, color: MikeeColors.textPrimary),
         decoration: InputDecoration(
           hintText: hint,

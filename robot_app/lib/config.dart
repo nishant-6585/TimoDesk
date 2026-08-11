@@ -190,6 +190,20 @@ class RobotConfig {
       (await SharedPreferences.getInstance())
           .setBool(_kGateEnabled, attentionGateEnabled);
     }
+    // ElevenLabs credentials pushed from the admin app. Write-only: a blank
+    // field is ignored so pushing other settings never wipes a saved key.
+    if (cfg['elevenlabs_api_key'] is String &&
+        (cfg['elevenlabs_api_key'] as String).trim().isNotEmpty) {
+      await setElevenLabsApiKey(cfg['elevenlabs_api_key'] as String);
+    }
+    if (cfg['elevenlabs_agent_id'] is String &&
+        (cfg['elevenlabs_agent_id'] as String).trim().isNotEmpty) {
+      await setElevenLabsAgentId(cfg['elevenlabs_agent_id'] as String);
+    }
+    if (cfg['elevenlabs_voice_id'] is String &&
+        (cfg['elevenlabs_voice_id'] as String).trim().isNotEmpty) {
+      await setVoice(cfg['elevenlabs_voice_id'] as String, voicePresetName);
+    }
   }
 
   /// Switch the speaking voice (Settings preset or the "change your voice"
