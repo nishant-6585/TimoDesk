@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../../../core/constants.dart';
+import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../providers/settings_provider.dart';
@@ -29,11 +33,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _greetVisitor =
       TextEditingController(text: 'Hello! Welcome to xboom!');
 
-  // ElevenLabs credentials. Write-only — never fetched back from the robot, so
-  // these start blank; a blank field is not pushed (won't overwrite a saved one).
+  // ElevenLabs credentials. The API key is write-only (never fetched back — a
+  // blank field is not pushed, so it won't overwrite a saved one). Agent/Voice
+  // ids DO sync back from the robot; the key syncs only as a masked status.
   final _elevenApiKey = TextEditingController();
   final _elevenAgentId = TextEditingController();
   final _elevenVoiceId = TextEditingController();
+  String _elevenKeyStatus = 'Checking robot…'; // masked key state from the robot
 
   @override
   void initState() {
@@ -41,6 +47,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Seed from the shared settings provider so the field reflects (and edits)
     // the same robot IP the live camera view consumes.
     _robotIp = ref.read(settingsProvider).robotIp;
+    _loadRobotKeys();
+  }
+
+  /// Pull the robot's current (masked) ElevenLabs state from the spine so the
+  /// admin reflects what's actually on the robot — the robot→admin half of
+  /// two-way sync. Agent/Voice ids populate their fields; the API key shows a
+  /// masked "set ✓ · …last4" status only (the secret never leaves the robot).
+  Future<void> _loadRobotKeys() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$spineHttpBase/robot/config'))
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode != 200) return;
+      final eleven =
+          (jsonDecode(res.body) as Map<String, dynamic>)['eleven'];
+      if (eleven is! Map || !mounted) {
+        if (mounted) setState(() => _elevenKeyStatus = 'Robot not reporting yet');
+        return;
+      }
+      setState(() {
+        final agent = (eleven['eleven_agent_id'] ?? '').toString();
+        final voice = (eleven['eleven_voice_id'] ?? '').toString();
+        if (agent.isNotEmpty && _elevenAgentId.text.isEmpty) _elevenAgentId.text = agent;
+        if (voice.isNotEmpty && _elevenVoiceId.text.isEmpty) _elevenVoiceId.text = voice;
+        final isSet = eleven['eleven_api_key_set'] == true;
+        final hint = (eleven['eleven_api_key_hint'] ?? '').toString();
+        _elevenKeyStatus = isSet
+            ? 'On robot: set ✓${hint.isNotEmpty ? ' · …$hint' : ''}'
+            : 'On robot: not set';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _elevenKeyStatus = 'Robot unreachable');
+    }
   }
 
   @override
@@ -95,6 +134,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _elevenApiKey.clear();
     _toast(Icons.check_circle, MikeeColors.success,
         'Keys pushed to robot — voice applies on next reply');
+    // The robot applies + reports its masked state back; re-pull it so the
+    // status line confirms the new key's last-4.
+    setState(() => _elevenKeyStatus = 'Applying on robot…');
+    Future.delayed(const Duration(milliseconds: 1800), _loadRobotKeys);
   }
 
   void _toast(IconData icon, Color color, String msg) {
@@ -208,6 +251,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 14),
                 _IdField('ElevenLabs API key', _elevenApiKey, 'sk_… (enables the spoken voice)',
                     obscure: true),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Icon(
+                      _elevenKeyStatus.contains('set ✓')
+                          ? Icons.check_circle
+                          : Icons.info_outline,
+                      size: 13,
+                      color: _elevenKeyStatus.contains('set ✓')
+                          ? MikeeColors.success
+                          : MikeeColors.textMuted),
+                  const SizedBox(width: 6),
+                  Text(_elevenKeyStatus,
+                      style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary)),
+                  const Spacer(),
+                  InkWell(
+                    onTap: _loadRobotKeys,
+                    child: Row(children: [
+                      Icon(Icons.refresh, size: 13, color: MikeeColors.textMuted),
+                      const SizedBox(width: 3),
+                      Text('Refresh',
+                          style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
+                    ]),
+                  ),
+                ]),
                 const SizedBox(height: 12),
                 _IdField('Agent ID', _elevenAgentId, 'agent_… (conversational AI)'),
                 const SizedBox(height: 12),

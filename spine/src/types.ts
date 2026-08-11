@@ -126,7 +126,7 @@ export interface AdminMessage {
 
 // Spine WebSocket message (outbound to app)
 export interface SpineMessage {
-  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state' | 'config_update' | 'alarm';
+  type: 'authenticated' | 'ack' | 'error' | 'robot_status' | 'event' | 'stopped' | 'resumed' | 'pong' | 'position' | 'navi_state' | 'voice_control' | 'recording_state' | 'config_update' | 'config_state' | 'alarm';
   ok?: boolean;
   action?: string; // for voice_control — e.g. 'stop'; for alarm — 'start' | 'stop'
   waypoint?: string | null; // for alarm — where the intrusion was detected
