@@ -120,7 +120,22 @@ class SpineClient {
   void sendIntent(Map<String, dynamic> intent) =>
       _send({'type': 'intent', 'intent': intent});
 
-  void start() => _connect();
+  /// Report this robot's ElevenLabs credential state to the spine → admin
+  /// (robot→admin half of two-way key sync). Masked: the API key goes as
+  /// presence + last-4 only. No-op until authenticated.
+  void reportElevenConfig() {
+    if (!_authed) return;
+    sendIntent({
+      'intent': 'config_report',
+      'config': RobotConfig.elevenConfigReport(),
+    });
+  }
+
+  void start() {
+    // Push the current EL key state to the admin whenever it changes on-robot.
+    RobotConfig.elevenConfigRev.addListener(reportElevenConfig);
+    _connect();
+  }
 
   // ── Voice (#80) ─────────────────────────────────────────────────────────────
 
@@ -212,6 +227,7 @@ class SpineClient {
         case 'authenticated':
           _authed = true;
           if (!_connCtrl.isClosed) _connCtrl.add(true);
+          reportElevenConfig(); // sync current EL key state to admin on (re)connect
           return;
         case 'error':
           // Auth failed (bad/expired kiosk token). Socket will close → reconnect.
@@ -321,6 +337,7 @@ class SpineClient {
 
   Future<void> dispose() async {
     _disposed = true;
+    RobotConfig.elevenConfigRev.removeListener(reportElevenConfig);
     _reconnectTimer?.cancel();
     await _sub?.cancel();
     await _ws?.close();

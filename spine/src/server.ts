@@ -89,6 +89,12 @@ export function startServer(sdk: RobotSDK): Promise<void> {
     } = { active: false };
     let broadcastNaviState: () => void = () => {};
 
+    // Latest ElevenLabs credential state the robot has reported (masked — the
+    // API key is presence + last-4 only). Relayed to admin clients for the
+    // robot→admin half of two-way key sync; in-memory (re-sent by the robot on
+    // every reconnect, so a spine restart self-heals).
+    let latestRobotEleven: Record<string, unknown> = {};
+
     // Arrival watcher: while a navi is active, poll the live pose against the
     // target. Within ARRIVE_DIST_M we're "there"; we then wait for the heading
     // to align (or ARRIVE_ROT_WAIT_MS of hunting) and CANCEL the residual goal —
@@ -698,6 +704,8 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         res.end(JSON.stringify({
           robotIp: process.env.ROBOT_IP ?? null,
           cameraPort: 8080,
+          // Masked ElevenLabs state the robot last reported (two-way key sync).
+          eleven: latestRobotEleven,
         }));
         return;
       }
@@ -974,6 +982,19 @@ export function startServer(sdk: RobotSDK): Promise<void> {
               broadcastRobotEvent({ type: `voice_${vs}`, payload: { state: vs } });
             }
             ws.send(JSON.stringify({ type: 'ack', intent: 'voice_state', ok: true } as SpineMessage));
+            return;
+          }
+
+          // Robot→admin key sync: the robot reports its (masked) ElevenLabs
+          // credential state. Store it (for GET /robot/config) and re-broadcast
+          // as config_state so an open admin Settings screen updates live.
+          if (msg.type === 'intent' && (msg.intent as { intent?: string })?.intent === 'config_report') {
+            latestRobotEleven = (msg.intent as { config?: Record<string, unknown> }).config ?? {};
+            const cs = { type: 'config_state', config: latestRobotEleven } as SpineMessage;
+            wss.clients.forEach((c) => {
+              if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(cs));
+            });
+            ws.send(JSON.stringify({ type: 'ack', intent: 'config_report', ok: true } as SpineMessage));
             return;
           }
 

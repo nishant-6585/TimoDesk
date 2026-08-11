@@ -1,9 +1,29 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Editable, persisted robot config — surfaces the spine + camera base URLs that
 /// used to be hardcoded consts in enroll_screen.dart so the Settings tile can
 /// edit them. Loaded once at app start; readers use the static getters.
 class RobotConfig {
+  /// Bumped whenever an ElevenLabs credential changes (from the admin push OR
+  /// the robot's own Settings) so the SpineClient can report the new state back
+  /// to the admin — the robot→admin half of two-way key sync.
+  static final ValueNotifier<int> elevenConfigRev = ValueNotifier<int>(0);
+
+  /// Masked snapshot of the ElevenLabs credentials for admin sync. The API key
+  /// is NEVER sent in full — only presence + last-4 — so the secret stays on the
+  /// robot (mirrors the repo's MCP-token policy). Agent/voice ids sync in full.
+  static Map<String, dynamic> elevenConfigReport() {
+    final k = elevenLabsApiKey.trim();
+    return {
+      'eleven_api_key_set': k.isNotEmpty,
+      'eleven_api_key_hint': k.length > 4 ? k.substring(k.length - 4) : '',
+      'eleven_agent_id': elevenLabsAgentId,
+      'eleven_voice_id': elevenLabsVoiceId,
+      'voice_preset': voicePresetName,
+    };
+  }
+
   static const _kSpine = 'spine_base_url';
   static const _kCamera = 'camera_base_url';
   static const _kKiosk = 'kiosk_token';
@@ -190,6 +210,20 @@ class RobotConfig {
       (await SharedPreferences.getInstance())
           .setBool(_kGateEnabled, attentionGateEnabled);
     }
+    // ElevenLabs credentials pushed from the admin app. Write-only: a blank
+    // field is ignored so pushing other settings never wipes a saved key.
+    if (cfg['elevenlabs_api_key'] is String &&
+        (cfg['elevenlabs_api_key'] as String).trim().isNotEmpty) {
+      await setElevenLabsApiKey(cfg['elevenlabs_api_key'] as String);
+    }
+    if (cfg['elevenlabs_agent_id'] is String &&
+        (cfg['elevenlabs_agent_id'] as String).trim().isNotEmpty) {
+      await setElevenLabsAgentId(cfg['elevenlabs_agent_id'] as String);
+    }
+    if (cfg['elevenlabs_voice_id'] is String &&
+        (cfg['elevenlabs_voice_id'] as String).trim().isNotEmpty) {
+      await setVoice(cfg['elevenlabs_voice_id'] as String, voicePresetName);
+    }
   }
 
   /// Switch the speaking voice (Settings preset or the "change your voice"
@@ -201,6 +235,7 @@ class RobotConfig {
     final p = await SharedPreferences.getInstance();
     await p.setString(_kElevenVoiceId, elevenLabsVoiceId);
     await p.setString(_kVoicePresetName, voicePresetName);
+    elevenConfigRev.value++;
   }
 
   /// Persist the escort settings (Settings screen SAVE).
@@ -291,11 +326,13 @@ class RobotConfig {
   static Future<void> setElevenLabsApiKey(String v) async {
     elevenLabsApiKey = v.trim();
     (await SharedPreferences.getInstance()).setString(_kElevenKey, elevenLabsApiKey);
+    elevenConfigRev.value++; // → SpineClient reports masked state to admin
   }
 
   static Future<void> setElevenLabsAgentId(String v) async {
     elevenLabsAgentId = v.trim();
     (await SharedPreferences.getInstance()).setString(_kElevenAgent, elevenLabsAgentId);
+    elevenConfigRev.value++;
   }
 
   /// The token to send to spine. Falls back to the dev bypass token when no

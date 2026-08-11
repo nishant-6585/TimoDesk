@@ -33,16 +33,23 @@ class ElevenLabsTts {
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
 
   Future<bool> speak(String text) async {
+    // Read the key + voice LIVE from RobotConfig (not the values captured at
+    // construction) so a key pushed from the admin — or set on the robot's own
+    // Settings — takes effect on the very next utterance, no app restart. The
+    // constructor values remain a fallback for the first call before any push.
+    final liveKey = RobotConfig.elevenLabsApiKey.isNotEmpty
+        ? RobotConfig.elevenLabsApiKey
+        : apiKey;
     final liveVoiceId = RobotConfig.elevenLabsVoiceId.isNotEmpty
         ? RobotConfig.elevenLabsVoiceId
         : voiceId;
-    if (apiKey.isEmpty || liveVoiceId.isEmpty || text.trim().isEmpty) return false;
+    if (liveKey.isEmpty || liveVoiceId.isEmpty || text.trim().isEmpty) return false;
     try {
       final uri = Uri.parse(
         'https://api.elevenlabs.io/v1/text-to-speech/$liveVoiceId/stream?output_format=pcm_16000',
       );
       final req = await _client.postUrl(uri);
-      req.headers.set('xi-api-key', apiKey);
+      req.headers.set('xi-api-key', liveKey);
       req.headers.contentType = ContentType.json;
       req.add(utf8.encode(jsonEncode({
         'text': text,

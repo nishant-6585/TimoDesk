@@ -684,10 +684,34 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       InteractionLog.log('user_utterance_vendor_asr', utterance);
       if (_dispatchVoiceCommand(utterance)) return;
       if (_voiceActive) {
-        _voiceAgent.sendUserText(utterance);
-        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        // The vendor ASR is Chinese-locked and often emits Chinese (or other
+        // non-English) transcripts for English speech. Forwarding those to the
+        // ElevenLabs agent as user_message turns pollutes the conversation and
+        // flips its own ASR off the configured language — English "Nishant" then
+        // comes back transcribed as Hindi. Only forward text that matches the
+        // configured language so genuine barge-in still reaches the agent while
+        // the garbage is dropped (the agent already hears the live mic audio).
+        if (_forwardableToAgent(utterance)) {
+          _voiceAgent.sendUserText(utterance);
+          setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        } else {
+          debugPrint('VendorASR: dropping off-language "$utterance" — not forwarding to agent');
+        }
       }
     });
+  }
+
+  /// Whether a vendor-ASR transcript is in the configured spoken language and so
+  /// safe to inject into the ElevenLabs conversation. For English we require the
+  /// text to be predominantly Latin script — this rejects the Chinese/Devanagari
+  /// mis-transcriptions the vendor engine produces. Non-English configs are
+  /// trusted as-is (their scripts are expected to be non-Latin).
+  bool _forwardableToAgent(String text) {
+    if (RobotConfig.voiceLanguageCode != 'en') return true;
+    final letters = RegExp(r'\p{L}', unicode: true).allMatches(text).length;
+    if (letters == 0) return false;
+    final latin = RegExp(r'[A-Za-z]').allMatches(text).length;
+    return latin >= letters * 0.6;
   }
 
   // ── Barge-in gate ───────────────────────────────────────────────────────────
@@ -1236,9 +1260,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     final host = CheckinVoice.bestHost(hostHeard, staff);
     if (host == null) {
-      debugPrint('Checkin: no staff match for "$hostHeard"');
-      _speakGreeting("I couldn't find $hostHeard in our staff directory. "
-          'You can also check in at the front desk.');
+      // The on-device vendor ASR mangles Indian names badly (e.g. "Nishant" →
+      // "sound"), so a no-match here is usually a mishearing, not an unknown
+      // person. Rather than answer "I couldn't find <misheard>", stay silent and
+      // let the ElevenLabs agent's check_in tool handle it — its cloud ASR
+      // resolves names far better (it hears "Nishant" correctly, as proven by
+      // navigate_to). The turn is already consumed by _handleCheckinVoice, so the
+      // misheard vendor text is NOT forwarded to the agent to override its audio.
+      debugPrint('Checkin: no on-device match for "$hostHeard" — deferring to EL check_in tool');
       return;
     }
     debugPrint('Checkin: host "$hostHeard" → ${host.fullName} (${host.id})');
