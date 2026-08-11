@@ -684,10 +684,34 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       InteractionLog.log('user_utterance_vendor_asr', utterance);
       if (_dispatchVoiceCommand(utterance)) return;
       if (_voiceActive) {
-        _voiceAgent.sendUserText(utterance);
-        setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        // The vendor ASR is Chinese-locked and often emits Chinese (or other
+        // non-English) transcripts for English speech. Forwarding those to the
+        // ElevenLabs agent as user_message turns pollutes the conversation and
+        // flips its own ASR off the configured language — English "Nishant" then
+        // comes back transcribed as Hindi. Only forward text that matches the
+        // configured language so genuine barge-in still reaches the agent while
+        // the garbage is dropped (the agent already hears the live mic audio).
+        if (_forwardableToAgent(utterance)) {
+          _voiceAgent.sendUserText(utterance);
+          setState(() => _face = _face.copyWith(state: FaceStateKind.thinking));
+        } else {
+          debugPrint('VendorASR: dropping off-language "$utterance" — not forwarding to agent');
+        }
       }
     });
+  }
+
+  /// Whether a vendor-ASR transcript is in the configured spoken language and so
+  /// safe to inject into the ElevenLabs conversation. For English we require the
+  /// text to be predominantly Latin script — this rejects the Chinese/Devanagari
+  /// mis-transcriptions the vendor engine produces. Non-English configs are
+  /// trusted as-is (their scripts are expected to be non-Latin).
+  bool _forwardableToAgent(String text) {
+    if (RobotConfig.voiceLanguageCode != 'en') return true;
+    final letters = RegExp(r'\p{L}', unicode: true).allMatches(text).length;
+    if (letters == 0) return false;
+    final latin = RegExp(r'[A-Za-z]').allMatches(text).length;
+    return latin >= letters * 0.6;
   }
 
   // ── Barge-in gate ───────────────────────────────────────────────────────────
