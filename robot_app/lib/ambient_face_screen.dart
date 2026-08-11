@@ -1236,9 +1236,14 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     }
     final host = CheckinVoice.bestHost(hostHeard, staff);
     if (host == null) {
-      debugPrint('Checkin: no staff match for "$hostHeard"');
-      _speakGreeting("I couldn't find $hostHeard in our staff directory. "
-          'You can also check in at the front desk.');
+      // The on-device vendor ASR mangles Indian names badly (e.g. "Nishant" →
+      // "sound"), so a no-match here is usually a mishearing, not an unknown
+      // person. Rather than answer "I couldn't find <misheard>", stay silent and
+      // let the ElevenLabs agent's check_in tool handle it — its cloud ASR
+      // resolves names far better (it hears "Nishant" correctly, as proven by
+      // navigate_to). The turn is already consumed by _handleCheckinVoice, so the
+      // misheard vendor text is NOT forwarded to the agent to override its audio.
+      debugPrint('Checkin: no on-device match for "$hostHeard" — deferring to EL check_in tool');
       return;
     }
     debugPrint('Checkin: host "$hostHeard" → ${host.fullName} (${host.id})');
