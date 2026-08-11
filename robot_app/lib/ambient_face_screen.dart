@@ -801,6 +801,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       _resolvePendingNav(utterance);
       return true;
     }
+    // A check-in dialog in progress owns EVERY turn: the visitor's answer to
+    // "your name?" must feed _advanceCheckin and must NOT be re-matched as another
+    // intent (e.g. "…to Nishant" looking like navigate). This is what caused the
+    // collision where the name turn drove the robot to the desk instead.
+    if (_checkinStage != _CheckinStage.none) {
+      return _handleCheckinVoice(utterance);
+    }
     final points =
         ref.read(navPointsProvider).points.valueOrNull ?? const <NavPoint>[];
     final m = _registry.match(utterance, IntentContext(navPoints: points));
@@ -1008,6 +1015,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Future<void> _handleToolCall(
       String? tool, Map<String, dynamic>? params, String? callId) async {
     if (callId == null) return;
+    // While a check-in dialog is collecting the visitor's details, the agent
+    // must not also fire tools — it hears the same audio and would call
+    // navigate_to on "…to Nishant", hijacking the turn (the on-device dialog
+    // then times out without a name). Defer every tool until check-in finishes.
+    if (_checkinStage != _CheckinStage.none) {
+      _voiceAgent.sendToolResult(
+          callId, 'One moment — I am finishing checking the visitor in.',
+          isError: true);
+      return;
+    }
     final p = params ?? const <String, dynamic>{};
     String s(List<String> keys) {
       for (final k in keys) {
