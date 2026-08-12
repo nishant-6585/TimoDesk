@@ -1,5 +1,41 @@
 # Session Handoff
 
+> **🎙️ 2026-08-12 — Switchable voice engine (ElevenLabs ⇄ OpenAI Realtime) SHIPPED and working; clean hardware verification BLOCKED by unstable Wi-Fi. Feature = PR #37 (`feat/switchable-voice-provider`, 12 commits, both apps analyze-clean, NOT merged).**
+>
+> **What it is:** the conversational-voice engine is now pluggable behind a `VoiceProvider` interface and switchable from **both** the robot's own Settings AND the admin app (Settings → **Keys & Voice** → engine toggle) — one engine at a time, wired through the existing `set_config`/`config_report` two-way sync (masked key status, agent/voice ids). **Claude stays the knowledge brain for BOTH engines** (`ask_knowledge_base` → spine `/ask` RAG, so neither invents company facts). Files: `services/voice_provider.dart` (interface + moved VoiceEvent/VoiceEventKind, re-exported from `voice_agent.dart`), `voice_agent.dart` (ElevenLabs, now `implements VoiceProvider`), `openai_realtime_agent.dart` (NEW), `voice_provider_factory.dart`, `openai_tts.dart` + `robot_tts.dart` (announcements follow the selected engine too), `config.dart` (`voiceProvider`/`openaiApiKey`/`openaiVoice`/`openaiModel`), both settings screens.
+>
+> **OpenAI Realtime facts learned the hard way (all in the code now):**
+> - Model is **`gpt-realtime`** (GA). `gpt-4o-realtime-preview` is GONE (account only exposes `gpt-realtime*`). Admin-overridable via `openai_model` so a future rename needs no rebuild.
+> - Use the **GA protocol, NOT beta**: **omit** the `OpenAI-Beta: realtime=v1` header (with it the server closes **code 4000** "Realtime Beta API is no longer supported"); GA `session.update` schema = `session.type:'realtime'`, audio nested under `audio.input/output` with `{type:'audio/pcm', rate:24000}` format objects, VAD + whisper transcription under `audio.input`. Handle GA events (`response.output_audio.delta`, `response.output_audio_transcript.done`, `response.output_item.done` function_calls).
+> - Audio: OpenAI wire = **24 kHz**, robot mic/speaker = **16 kHz** → linear resample both ways (openai_realtime_agent.dart + openai_tts.dart).
+> - **Pin whisper transcription + instructions to the configured language** or OpenAI drifts to **Hindi**.
+>
+> ✅ **VERIFIED working when the link held:** OpenAI connects, transcribes English (incl. Indian staff names — its ASR beats EL's here), fires `navigate_to`/`check_in`, drives, and speaks (resampled voice sounded good). The engine switch, two-way sync, and admin toggle all work.
+>
+> **Robustness fixes deployed tonight (all in PR #37, all real bugs found via hardware logs):**
+> - **Greet on mic-tap** — speaks "Hello \<Name\>!" / "Hello! How can I help you?" immediately on manual open (was silent until the visitor spoke).
+> - **No mid-conversation drop** — root cause: the idle watchdog. The visitor spoke (`userSpeaking`) but idle only reset on a genuine *transcript*, which got muted/echo-flagged → hit the 15s idle close. Now `userSpeaking` (when the robot isn't itself speaking) resets idle.
+> - **Echo can't kill the session** — no hardware AEC → the robot's own speech is re-transcribed; it was (a) tripping the STOP command and (b) counting as "phantom" turns → 3 → auto-close. Both now gated on the echo guard, on **both** the ambient face AND the dashboard screen.
+> - **Turn-taking** — server_vad `silence_duration_ms` 500 → **1100** (+ threshold 0.6, 300 ms prefix) so it stops cutting visitors off mid-question.
+> - **Admin toggle sticks** — optimistic until the robot confirms (was bouncing back on a stale report).
+>
+> 🔴 **BLOCKER #1 — UNSTABLE Wi-Fi (fix FIRST).** Everything still "broken" is a network artifact, not the code: an app crash, DHCP churn (robot **.51→.7**, Mac **→.2** mid-session), OpenAI WebSocket drops (session dies), partial/garbled audio ("lips move, no sound"), vendor AIUI failing to reach its own server. logcat evidence: `WifiStaIfaceAidlImpl: getLinkLayerStats failed`, `mqtt connection lost`, `SocketTimeoutException`. **No app code survives a dropping connection.** OpenAI is MORE network-dependent than EL (live WS + an HTTP TTS call per utterance) and the device-TTS fallback is dead, so a hiccup = silence. **Do:** stabilize AP / move robot closer / check router; **reserve DHCP** for robot MAC `74:24:ca:9e:83:de` + the Mac.
+>
+> 🔴 **BLOCKER #2 — no hardware AEC (half-duplex).** The robot hears its own voice; tonight's echo fixes are software workarounds. Durable fix (and the real answer to the CEO's "OpenAI vs ElevenLabs" question) = **ask CSJBot for hardware echo cancellation** → then stream continuously (full-duplex) and drop the mute + all echo gymnastics.
+>
+> ⚠️ **ElevenLabs is OUT OF CREDITS** — Pro (500k chars/mo) at **150% used (750k, ~250k over); resets 2026-08-21.** So RIGHT NOW neither engine is reliable: EL = no credits, OpenAI = flaky network. Recharge EL (upgrade tier / usage-based billing) OR commit to OpenAI after the Wi-Fi is fixed. Keys on the robot are BOTH valid: EL `sk_…4252`, OpenAI `sk-…` (has `gpt-realtime`). Set both from admin → Keys & Voice; keys are write-only + masked.
+>
+> ⚠️ **Debugging is blind on this robot** — the `GazeDiag` face-detection log fires ~2×/sec at INFO and floods logcat, so `logcat -d` after the fact loses the conversation. Run a **live** `adb logcat -s flutter:I | grep -v GazeDiag` BEFORE the test. (Worth demoting GazeDiag to debug-only.)
+>
+> ✅ **5-MINUTE RETEST (once Wi-Fi is stable):**
+> 1. `scripts/find_robot.sh` (repoints spine/.env + robot's spine_base_url after IP churn) → `touch spine/src/index.ts` (tsx reload) → hot-restart admin. NOTE: set the robot's `spine_base_url` pref with the app **killed** (a running app clobbers the pref back).
+> 2. `bash scripts/robot_bringup.sh <robot-ip>` → expect `mic holder = com.xboom.robot.mini`, chassis DeadObject = 0.
+> 3. `curl -s localhost:4000/robot/config | python3 -m json.tool` → confirm `eleven.voice_provider`, `openai_api_key_set:true`, `openai_model:"gpt-realtime"`.
+> 4. Admin → Settings → Keys & Voice → pick the engine (OpenAI is ready; EL needs a recharge). Start a live capture: `adb -s <ip>:5555 logcat -s flutter:I | grep --line-buffered -viE "GazeDiag|audioChunk"`.
+> 5. **Tap mic** → expect an immediate "Hello…". **Do a 3-turn conversation with pauses** → expect it to STAY OPEN (no `sessionEnded` from idle/phantom), reply in **English**, and NOT cut you off. **"take me to Nishant"** → `tool_call navigate_to {Nishant}` → drives + speaks. Any `Could not connect` / `code 4000` / `reconnect` = **network**, not the code.
+>
+> **Also this session (separate, DONE):** Anvesh face false-recognition fixed — his 5 embeddings were junk (self-spread 0.810, colliding with 4 staff) → **deleted them** (staff record + desk kept). Full audit: 12/14 staff have sub-0.53 collisions (enrollment quality broadly poor; `feat/face-enrollment-quality` plan drafted, NOT built). Other PRs: **#36** (voice quota-savings: visitor-presence gate + shorter announcement lines — NOT merged), **#34 + #35 merged** (EL keys admin push + two-way sync; check-in multi-turn collision fix).
+
 > **📌 2026-08-06 — Kiosk lock-task fix (Android 14) HARDWARE-VERIFIED both directions; showroom lead chain bench-PASSED end-to-end.**
 > `fix/kiosk-lock-task-android14` (431aab1) verified on the robot (APK installed 16:58 device time — robot clock runs China CST, not IST; fresh process confirmed via ETIME vs device clock):
 > - **Maintenance** (`flutter.kiosk_allow_system_ui=true`): boots with `mLockTaskModeState=NONE`; `am start com.android.settings/.Settings` opens and fronts — the exact thing the old code blocked. Plugin log seen live: `Mikee.Kiosk: startKiosk owner=true allowSystemUi=true`.

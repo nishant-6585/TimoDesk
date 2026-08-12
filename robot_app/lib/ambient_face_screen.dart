@@ -10,7 +10,7 @@ import 'providers.dart';
 import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
-import 'services/elevenlabs_tts.dart';
+import 'services/robot_tts.dart';
 import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
@@ -32,6 +32,7 @@ import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
 import 'services/voice_agent.dart';
+import 'services/voice_provider_factory.dart';
 import 'services/audio_bridge.dart';
 import 'services/intrusion_siren.dart';
 import 'screens/language_selection_screen.dart';
@@ -115,7 +116,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _pendingVisitorTimer;
 
   // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
-  late final ElevenLabsTts _tts;
+  late final RobotTts _tts;
 
   // ── Voice visitor check-in ("I'm here to see <host>") ──────────────────────
   // Four-turn dialog (blueprint §07 visitor record): intent+host → name →
@@ -148,7 +149,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _escortArrivalCheck;
 
   // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
-  late final VoiceAgent _voiceAgent;
+  // The live voice engine (ElevenLabs or OpenAI Realtime) behind the shared
+  // VoiceProvider interface — swapped by _rebuildVoiceProvider on a config switch.
+  late VoiceProvider _voiceAgent;
+  String _voiceProviderName = RobotConfig.voiceProvider; // detect switches
   final AudioBridge _audioBridge = AudioBridge();
   late final IntrusionSiren _siren = IntrusionSiren(_audioBridge);
   StreamSubscription<VoiceEvent>? _voiceSub;
@@ -295,19 +299,16 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _gaze.start();
     _spine.start();
 
-    _tts = ElevenLabsTts(
-      apiKey: RobotConfig.elevenLabsApiKey,
-      voiceId: RobotConfig.elevenLabsVoiceId,
-      audio: _audioBridge,
-    );
+    _tts = RobotTts(audio: _audioBridge);
 
     // Voice (#80) — session is opened on demand (debug overlay / Phase B wake word).
-    _voiceAgent = VoiceAgent(
-      agentId: RobotConfig.elevenLabsAgentId,
-      apiKey: RobotConfig.elevenLabsApiKey,
-      languageCode: RobotConfig.voiceLanguageCode, // saved language → first session
-    );
+    // The engine (ElevenLabs / OpenAI Realtime) is chosen by RobotConfig and can
+    // be switched live from Settings or the admin app (see _rebuildVoiceProvider).
+    _voiceAgent = buildVoiceProvider();
     _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
+    // Rebuild the engine when the voice-provider setting flips (config push from
+    // admin or the robot's own Settings both bump elevenConfigRev).
+    RobotConfig.elevenConfigRev.addListener(_onVoiceConfigChanged);
     // Speaker amplitude (as it plays) → lip-sync + speaking/listening transition.
     _playbackSub = _audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
 
@@ -362,6 +363,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
+    RobotConfig.elevenConfigRev.removeListener(_onVoiceConfigChanged);
     _voiceSub?.cancel();
     _wakeSub?.cancel();
     _asrSub?.cancel();
@@ -1605,7 +1607,29 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
-  // ── #80 voice: ElevenLabs session drives the face state machine ─────────────
+  /// A voice-related config value changed. Only act on an actual engine SWITCH
+  /// (elevenConfigRev also bumps on key edits) — swap the live provider so the
+  /// next session uses the newly-selected engine.
+  void _onVoiceConfigChanged() {
+    if (RobotConfig.voiceProvider == _voiceProviderName) return;
+    _rebuildVoiceProvider();
+  }
+
+  /// Tear down the current voice engine and build the newly-selected one. Any
+  /// open session is ended first so we never run two engines at once.
+  void _rebuildVoiceProvider() {
+    _voiceProviderName = RobotConfig.voiceProvider;
+    debugPrint('Voice: switching engine → $_voiceProviderName');
+    InteractionLog.log('voice_provider_switch', _voiceProviderName);
+    if (_voiceActive) _endVoice();
+    _voiceSub?.cancel();
+    _voiceAgent.dispose();
+    _voiceAgent = buildVoiceProvider();
+    _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
+    if (mounted) setState(() {});
+  }
+
+  // ── #80 voice: the selected engine's session drives the face state machine ──
   void _onVoiceEvent(VoiceEvent e) {
     debugPrint('Voice: ${e.kind.name}'
         '${e.text != null && e.text!.isNotEmpty ? " [${e.text}]" : ""}');
@@ -1624,12 +1648,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _startIdleWatch(); // auto sessions: begin the inactivity countdown
         break;
       case VoiceEventKind.userSpeaking:
-        // EL's VAD fired "user started talking". This is NOT a reliable person
-        // signal — it also trips on ambient room noise and Mini's own echo — so
-        // it does NOT reset the idle timer (only real transcribed words do, in
-        // agentThinking below). We just barge-in: stop playback and show listening.
+        // The engine's VAD fired "user started talking". We barge-in: stop
+        // playback and show listening.
         _dropFirstAgentTurn = false; // allow the upcoming agent audio again
         _audioBridge.stopPlayback();
+        // Keep the session ALIVE on this — UNLESS the robot itself is speaking (or
+        // just did), in which case it's likely its own echo. Previously we never
+        // reset idle here, so a visitor who spoke but whose transcript got muted /
+        // echo-flagged still hit the 15s idle close mid-conversation. When the
+        // robot ISN'T speaking, VAD firing is a genuine "person engaging" signal.
+        final nowUs = DateTime.now().millisecondsSinceEpoch;
+        final echoUs = _face.state == FaceStateKind.speaking ||
+            (nowUs - _lastSpeakingMs) < _echoGuardMs;
+        if (!echoUs) _bumpActivity();
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
@@ -1654,10 +1685,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (hasWords && !likelyEcho) {
           _bumpActivity(); // genuine user speech → keep the session alive
           InteractionLog.log('user_utterance_el', e.text!);
+        } else if (hasWords && likelyEcho) {
+          // The robot's OWN speech echoing back (no hardware AEC). Expected while
+          // it talks — NOT evidence of an empty room, so it must NOT count toward
+          // the phantom auto-close. That mis-count was hanging up on the visitor
+          // mid-conversation (3 echo turns → session closed). The idle watchdog
+          // still closes a genuinely silent session, so this stays safe.
+          debugPrint('Voice: echo turn ignored (robot hearing itself) — not a phantom');
         } else {
+          // Empty "..." turn — the engine's VAD tripped on room noise with no
+          // words. THIS is a real phantom; too many in a row = answering the room.
           _phantomTurns++;
-          debugPrint('Voice: non-genuine agentThinking (echo/phantom #$_phantomTurns, '
-              'words=$hasWords echo=$likelyEcho) → not resetting idle');
+          debugPrint('Voice: empty phantom #$_phantomTurns → not resetting idle');
           if (_phantomTurns >= _maxPhantomTurns) {
             debugPrint('Voice: $_maxPhantomTurns phantom turns, no real user → auto-closing');
             _dropFirstAgentTurn = true;
@@ -1670,7 +1709,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // WE handle the reply + action and drop the agent's own answer to this
         // turn (it doesn't know our saved points, staff directory, or /visit).
         // Stop still wins first — it's priority 0 inside the registry.
-        if (e.text != null && _dispatchVoiceCommand(e.text!)) {
+        // CRITICAL: never dispatch a command from an ECHO transcript — without
+        // hardware AEC the robot's OWN audible speech (greeting/announcement) is
+        // re-transcribed here, and "…bye"/"stop"-like echoes were tripping the
+        // STOP command and killing the session mid-conversation. Genuine barge-in
+        // still works via the vendor-ASR path (_onVendorAsr → _isGenuineBargeIn).
+        if (e.text != null && !likelyEcho && _dispatchVoiceCommand(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }
@@ -1798,10 +1842,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // prompt interprets the STAFF_RECOGNIZED: prefix. Freshness-guarded so a stale
     // name from an earlier visit doesn't leak into a much later manual session.
     final recognized = _pendingGreetName?.trim();
-    if (recognized != null &&
+    final hasRecognized = recognized != null &&
         recognized.isNotEmpty &&
-        DateTime.now().millisecondsSinceEpoch - _pendingGreetAtMs < 120000) {
+        DateTime.now().millisecondsSinceEpoch - _pendingGreetAtMs < 120000;
+    if (hasRecognized) {
       _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $recognized');
+    }
+    // Manual mic-tap (or wake word): greet immediately so the visitor gets an
+    // instant "Hello" / "Hello <Name>" instead of silence until they speak first.
+    // Speak it via TTS and DROP the agent's own first turn so it doesn't greet on
+    // top. (Auto sessions are already greeted by the face-detection flow.)
+    if (!auto && !reconnect) {
+      _dropFirstAgentTurn = true;
+      _speakGreeting(hasRecognized ? 'Hello $recognized!' : 'Hello! How can I help you?');
     }
     _voiceAgent.startSession();
     // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI

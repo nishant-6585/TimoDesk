@@ -5,44 +5,12 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../config.dart';
+import 'voice_provider.dart';
 
-/// Voice pipeline events surfaced to the face state machine (#80).
-enum VoiceEventKind {
-  sessionStarted, // connected + ready
-  userSpeaking, // user audio detected → face: listening
-  agentThinking, // STT done, LLM processing → face: thinking
-  agentSpeaking, // TTS audio arriving → face: speaking
-  audioChunk, // raw audio to play (Phase B) + amplitude for lip-sync
-  toolCall, // the agent invoked a client tool (navigate_to, check_in, …)
-  sessionEnded, // conversation finished
-  error,
-}
-
-class VoiceEvent {
-  final VoiceEventKind kind;
-  final String? text; // agent response text (for logging)
-  final Uint8List? audioChunk; // raw PCM chunk for playback (Phase B)
-  final double? amplitude; // 0..1 energy of the chunk (drives mouthOpen)
-  // True on an error/sessionEnded that looks like ElevenLabs being unavailable —
-  // a failed connect or the server dropping us right after connecting (the
-  // signature of an expired subscription / out of credits / disabled key). The UI
-  // shows an alert so it's not mistaken for an app bug.
-  final bool serviceUnavailable;
-  // Client-tool call (kind == toolCall): the LLM decided to invoke one of the
-  // agent's configured tools. The app runs it locally and returns a result via
-  // VoiceAgent.sendToolResult(toolCallId, …).
-  final String? toolName;
-  final Map<String, dynamic>? toolParams;
-  final String? toolCallId;
-  const VoiceEvent(this.kind,
-      {this.text,
-      this.audioChunk,
-      this.amplitude,
-      this.serviceUnavailable = false,
-      this.toolName,
-      this.toolParams,
-      this.toolCallId});
-}
+// Re-export the shared voice types so the many `import 'voice_agent.dart'`
+// call-sites (ambient face, dashboard, settings, spine_client) keep compiling
+// unchanged now that VoiceEvent/VoiceEventKind live in voice_provider.dart.
+export 'voice_provider.dart' show VoiceEvent, VoiceEventKind, VoiceProvider;
 
 /// Manages ONE ElevenLabs Conversational AI WebSocket session (#80, Phase A).
 ///
@@ -52,9 +20,12 @@ class VoiceEvent {
 ///
 /// Uses dart:io WebSocket (no new dependency — same as SpineClient). The
 /// `xi-api-key` header is supported by WebSocket.connect on Android.
-class VoiceAgent {
+class VoiceAgent implements VoiceProvider {
   VoiceAgent({required this.agentId, required this.apiKey, String languageCode = 'en'})
       : _languageCode = languageCode;
+
+  @override
+  String get name => 'ElevenLabs';
 
   final String agentId;
   final String apiKey;

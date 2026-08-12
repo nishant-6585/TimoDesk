@@ -38,6 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _escortLost;
   late final TextEditingController _robotName;
   late final TextEditingController _pin;
+  late final TextEditingController _openaiKey;
+  String _voiceProvider = RobotConfig.voiceProvider; // 'elevenlabs' | 'openai'
   String _voicePreset = RobotConfig.voicePresetName;
   bool _gateEnabled = RobotConfig.attentionGateEnabled;
   bool _allowSystemUi = RobotConfig.kioskAllowSystemUi;
@@ -56,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _pin = TextEditingController(text: RobotConfig.dashboardPin);
     _elevenKey = TextEditingController(text: RobotConfig.elevenLabsApiKey);
     _elevenAgent = TextEditingController(text: RobotConfig.elevenLabsAgentId);
+    _openaiKey = TextEditingController(text: RobotConfig.openaiApiKey);
     _company = TextEditingController(text: RobotConfig.companyName);
     _greetStaff = TextEditingController(text: RobotConfig.greetStaffTemplate);
     _greetVisitor = TextEditingController(text: RobotConfig.greetVisitorTemplate);
@@ -79,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _kiosk.dispose();
     _pin.dispose();
     _elevenKey.dispose();
+    _openaiKey.dispose();
     _elevenAgent.dispose();
     _company.dispose();
     _greetStaff.dispose();
@@ -101,6 +105,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await RobotConfig.setAutoOpenMic(_autoOpenMic);
     await RobotConfig.setElevenLabsApiKey(_elevenKey.text);
     await RobotConfig.setElevenLabsAgentId(_elevenAgent.text);
+    await RobotConfig.setOpenaiApiKey(_openaiKey.text);
+    await RobotConfig.setVoiceProvider(_voiceProvider);
     await RobotConfig.updateGreetingConfig(
       company: _company.text,
       staffTemplate: _greetStaff.text,
@@ -263,9 +269,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 setState(() => _voicePreset = v ?? _voicePreset),
           ),
           const SizedBox(height: 28),
-          const Text('VOICE (#80 — ElevenLabs)',
+          const Text('VOICE ENGINE (#80)',
               style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
           const SizedBox(height: 12),
+          ToggleButtons(
+            isSelected: [_voiceProvider == 'elevenlabs', _voiceProvider == 'openai'],
+            onPressed: (i) => setState(
+                () => _voiceProvider = i == 1 ? 'openai' : 'elevenlabs'),
+            borderRadius: BorderRadius.circular(10),
+            selectedColor: Colors.white,
+            fillColor: _orange,
+            color: Colors.white70,
+            constraints: const BoxConstraints(minHeight: 40, minWidth: 150),
+            children: const [Text('ElevenLabs'), Text('OpenAI Realtime')],
+          ),
+          const SizedBox(height: 6),
+          const Text('One engine handles the conversation + commands at a time.',
+              style: TextStyle(color: Colors.white38, fontSize: 12)),
+          const SizedBox(height: 20),
           TextField(
             controller: _elevenKey,
             obscureText: true,
@@ -277,6 +298,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _elevenAgent,
             style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
             decoration: _dec('ElevenLabs Agent ID', 'Conversational AI agent id'),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _openaiKey,
+            obscureText: true,
+            style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
+            decoration: _dec('OpenAI API key', 'sk-… for OpenAI Realtime'),
           ),
           const SizedBox(height: 12),
           Row(children: [

@@ -19,7 +19,7 @@ const _muted = Color(0xFF9A9A9A);
 class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({super.key, required this.voiceAgent});
 
-  final VoiceAgent voiceAgent;
+  final VoiceProvider voiceAgent;
 
   @override
   State<LanguageSelectionScreen> createState() => _LanguageSelectionScreenState();
@@ -198,7 +198,7 @@ class LanguageButton extends StatelessWidget {
     this.large = false,
   });
 
-  final VoiceAgent voiceAgent;
+  final VoiceProvider voiceAgent;
   final VoidCallback? onReturned;
   final bool dark; // darker chrome for the dashboard top bar
   final bool large; // bigger, more discoverable variant (ambient face screen)
