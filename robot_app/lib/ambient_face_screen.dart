@@ -1694,7 +1694,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // WE handle the reply + action and drop the agent's own answer to this
         // turn (it doesn't know our saved points, staff directory, or /visit).
         // Stop still wins first — it's priority 0 inside the registry.
-        if (e.text != null && _dispatchVoiceCommand(e.text!)) {
+        // CRITICAL: never dispatch a command from an ECHO transcript — without
+        // hardware AEC the robot's OWN audible speech (greeting/announcement) is
+        // re-transcribed here, and "…bye"/"stop"-like echoes were tripping the
+        // STOP command and killing the session mid-conversation. Genuine barge-in
+        // still works via the vendor-ASR path (_onVendorAsr → _isGenuineBargeIn).
+        if (e.text != null && !likelyEcho && _dispatchVoiceCommand(e.text!)) {
           _dropFirstAgentTurn = true;
           break;
         }
