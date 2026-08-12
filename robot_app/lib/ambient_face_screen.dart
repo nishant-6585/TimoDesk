@@ -186,6 +186,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   // talks (his answer time must not eat the visitor's reply window) but does not
   // reset, so a talk-to-noise loop still closes once the gaps between turns add up.
   int _silenceAccumMs = 0;
+  // Accumulated ms with no visitor face while a session is open — closes the
+  // session once the visitor has left (see _startIdleWatch), so the agent stops
+  // spending ElevenLabs characters on an empty room.
+  int _noFaceAccumMs = 0;
+  static const int _voiceNoFaceCloseMs = 4000; // + the 3s presence-hold ≈ 7s after they leave
   // Consecutive agent turns triggered with NO real user words (empty "..." VAD
   // trips on noise, or echo). 3 in a row = Mini is answering the room, not a
   // person → close. Reset to 0 by any genuine user words.
@@ -1138,7 +1143,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     InteractionLog.log('nav_no_match', 'nothing matches "$heard"');
     _speakGreeting(known.isEmpty
         ? "I don't have any saved locations yet."
-        : "I couldn't find a place called $heard. I can take you to: $list.");
+        : "No place called $heard. I can take you to: $list.");
   }
 
   // ── Stop command ("stop", "be quiet", "that's enough", "goodbye"…) ─────────
@@ -1295,8 +1300,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _checkinCompany = null;
     _checkinStage = _CheckinStage.name;
     _armCheckinTimeout();
-    _speakGreeting('Sure — I will let ${host.fullName} know. '
-        'May I have your name, please?');
+    _speakGreeting('I will let ${host.fullName} know. Your name, please?');
   }
 
   /// One answered turn: record it and either ask the next question or submit.
@@ -1408,11 +1412,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (!mounted) return;
         if (_present) {
           InteractionLog.log('meet_staff_present', name);
-          _speakGreeting("Here we are — this is $name's desk.");
+          _speakGreeting("Here's $name's desk.");
         } else {
           InteractionLog.log('meet_staff_absent', name);
-          _speakGreeting("This is $name's desk, but it looks like "
-              "they've stepped away for now.");
+          _speakGreeting("This is $name's desk, but they've stepped away.");
         }
       });
       return; // meet-staff arrival owns this event; skip the escort follower check
@@ -1492,7 +1495,22 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // The visitor is physically holding the button — that IS activity, even
         // in silence; don't let the countdown close the session under their finger.
         _silenceAccumMs = 0;
+        _noFaceAccumMs = 0;
         return;
+      }
+      // VISITOR-PRESENCE GATE (ElevenLabs quota): once the visitor has walked away
+      // (no face for a few seconds — _present already carries a 3s debounce hold),
+      // close the session instead of letting the agent answer an empty room for
+      // the full 15s silence window. Cuts characters spent on phantom turns.
+      if (!_present) {
+        _noFaceAccumMs += 1000;
+        if (_noFaceAccumMs >= _voiceNoFaceCloseMs) {
+          debugPrint('IdleWatch: visitor gone (${_voiceNoFaceCloseMs ~/ 1000}s no face) → closing');
+          _endVoice();
+          return;
+        }
+      } else {
+        _noFaceAccumMs = 0;
       }
       final speaking = _face.state == FaceStateKind.speaking ||
           _face.state == FaceStateKind.thinking;
@@ -1521,6 +1539,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   void _bumpActivity() {
     _silenceAccumMs = 0;
     _phantomTurns = 0;
+    _noFaceAccumMs = 0;
   }
 
   void _stopIdleWatch() {

@@ -206,7 +206,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     if (_announcedDeparture == name) return;
     _announcedDeparture = name;
     InteractionLog.log('departure', '$name (source: $source)');
-    _speakArrival('Okay, follow me to $name.');
+    _speakArrival('Follow me to $name.');
     if (source == 'robot') _startEscortTimer();
   }
 
@@ -215,12 +215,9 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   // just stop dead in silence — the visitor has to know it's deliberate.
   // (Candidates for RobotConfig settings later; the lost line reuses the
   // ambient screen's configurable phrasing style but is mid-route specific.)
-  static const _checkPhrase =
-      'One moment — just making sure you are still with me.';
-  static const _resumePhrase = 'Great, there you are. This way.';
-  static const _lostPhrase =
-      'It seems we got separated. I will wait right here — '
-      'please find me if you still need me.';
+  static const _checkPhrase = 'One moment — checking you are with me.';
+  static const _resumePhrase = 'Great — this way.';
+  static const _lostPhrase = 'We got separated. I will wait right here.';
 
   /// Speak the escort lifecycle so the visitor understands each pause.
   void _onEscortEvent(Map<String, dynamic> e) {
@@ -309,7 +306,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   String _arrivalPhrase(String name, String? custom) {
     final text = custom?.trim();
     if (text != null && text.isNotEmpty) return text;
-    return "We have arrived at $name.";
+    return "We're at $name.";
   }
 
   /// Handle a navigation lifecycle event from the native chassis plugin.
@@ -353,12 +350,12 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   /// booted from. Arrival is announced by the same naviEvents path as goTo.
   Future<bool> goHome() async {
     InteractionLog.log('go_home', 'returning to charging dock');
-    _speakArrival('Okay, I am returning to my charging station.');
+    _speakArrival('Returning to my dock.');
     try {
       await _ensureChassis();
       final ok = await _ref.read(chassisProvider.notifier).goHome();
       if (!ok) {
-        _speakArrival("Sorry, I couldn't start heading to the dock right now.");
+        _speakArrival("Sorry, I can't head to the dock now.");
       }
       return ok;
     } catch (e) {

@@ -169,9 +169,9 @@ class RobotConfig {
   // Mid-route reassurance cadence (0 = off) + phrase; and what to say after
   // arrival when nobody appears in front of the camera ({name} = the point).
   static int escortReassureSeconds = 12;
-  static String escortReassureText = 'This way — please stay with me.';
+  static String escortReassureText = 'Stay with me.';
   static String escortLostText =
-      'It looks like we got separated. I am at {name} if you still need me.';
+      'We got separated. I am at {name} if you need me.';
 
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
