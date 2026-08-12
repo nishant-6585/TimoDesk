@@ -1842,10 +1842,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // prompt interprets the STAFF_RECOGNIZED: prefix. Freshness-guarded so a stale
     // name from an earlier visit doesn't leak into a much later manual session.
     final recognized = _pendingGreetName?.trim();
-    if (recognized != null &&
+    final hasRecognized = recognized != null &&
         recognized.isNotEmpty &&
-        DateTime.now().millisecondsSinceEpoch - _pendingGreetAtMs < 120000) {
+        DateTime.now().millisecondsSinceEpoch - _pendingGreetAtMs < 120000;
+    if (hasRecognized) {
       _voiceAgent.injectGreeting('STAFF_RECOGNIZED: $recognized');
+    }
+    // Manual mic-tap (or wake word): greet immediately so the visitor gets an
+    // instant "Hello" / "Hello <Name>" instead of silence until they speak first.
+    // Speak it via TTS and DROP the agent's own first turn so it doesn't greet on
+    // top. (Auto sessions are already greeted by the face-detection flow.)
+    if (!auto && !reconnect) {
+      _dropFirstAgentTurn = true;
+      _speakGreeting(hasRecognized ? 'Hello $recognized!' : 'Hello! How can I help you?');
     }
     _voiceAgent.startSession();
     // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI
