@@ -44,6 +44,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // Voice engine switch (ElevenLabs ↔ OpenAI Realtime) + OpenAI key (write-only).
   final _openaiApiKey = TextEditingController();
   String _voiceProvider = 'elevenlabs'; // reflects the robot's current engine
+  String? _pendingProvider; // engine the user just picked, awaiting robot confirm
   String _openaiKeyStatus = '';
 
   @override
@@ -81,9 +82,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _elevenKeyStatus = isSet
             ? 'On robot: set ✓${hint.isNotEmpty ? ' · …$hint' : ''}'
             : 'On robot: not set';
-        // Voice engine + OpenAI state.
+        // Voice engine + OpenAI state. If the user JUST picked an engine, keep
+        // that optimistic selection until the robot's report actually confirms it
+        // (a stale report — e.g. robot momentarily offline — must not bounce the
+        // toggle back). Adopt the report only when nothing's pending or it matches.
         final prov = (eleven['voice_provider'] ?? '').toString();
-        if (prov == 'openai' || prov == 'elevenlabs') _voiceProvider = prov;
+        if (prov == 'openai' || prov == 'elevenlabs') {
+          if (_pendingProvider == null || prov == _pendingProvider) {
+            _voiceProvider = prov;
+            _pendingProvider = null;
+          }
+        }
         final oSet = eleven['openai_api_key_set'] == true;
         final oHint = (eleven['openai_api_key_hint'] ?? '').toString();
         _openaiKeyStatus = oSet
@@ -161,12 +170,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// Flip the live voice engine on the robot immediately (the robot rebuilds its
   /// provider on the next session). One engine runs at a time.
   void _switchProvider(String provider) {
-    if (provider == _voiceProvider) return;
-    setState(() => _voiceProvider = provider);
+    if (provider == _voiceProvider && _pendingProvider == null) return;
+    setState(() {
+      _voiceProvider = provider; // optimistic — sticks until robot confirms
+      _pendingProvider = provider;
+    });
     _sendConfig({'voice_provider': provider});
     _toast(Icons.check_circle, MikeeColors.success,
-        'Voice engine → ${provider == 'openai' ? 'OpenAI Realtime' : 'ElevenLabs'}');
-    Future.delayed(const Duration(milliseconds: 1500), _loadRobotKeys);
+        'Voice engine → ${provider == 'openai' ? 'OpenAI Realtime' : 'ElevenLabs'} '
+        '(applies on next session)');
+    // Give the round-trip room (robot applies → reports → spine stores) before
+    // confirming; the optimistic value holds until then.
+    Future.delayed(const Duration(milliseconds: 3000), _loadRobotKeys);
   }
 
   void _toast(IconData icon, Color color, String msg) {
