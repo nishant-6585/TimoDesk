@@ -109,6 +109,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   bool _gestureInProgress = false;
   int _lastSwayMs = 0; // throttle speaking sway to ~once / 300ms
   int _lastNodMs = 0; //  throttle acknowledging nod to ~once / 2.5s
+  int _lastSpeakingMs = 0; // last time the robot spoke → echo guard for commands
+  static const int _echoGuardMs = 2500;
 
   // Speaks action phrases in the agent's real voice (same as the face screen),
   // streamed through the shared speaker; falls back to on-device TTS.
@@ -240,10 +242,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       case VoiceEventKind.agentThinking:
         _setKind(FaceStateKind.thinking);
         _gesture(RobotGestures.headTilt); // curious "thinking" tilt
-        final t = e.text; // ElevenLabs user transcript → catalog voice commands
-        if (t != null && t.trim().isNotEmpty) _dispatchVoiceCommand(t);
+        final t = e.text; // user transcript → catalog voice commands
+        // Echo guard: without hardware AEC the robot's OWN speech is re-transcribed
+        // here; dispatching it was tripping STOP and dropping the session. Only
+        // dispatch when the robot isn't (just) speaking.
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final likelyEcho = _face.state == FaceStateKind.speaking ||
+            (now - _lastSpeakingMs) < _echoGuardMs;
+        if (t != null && t.trim().isNotEmpty && !likelyEcho) _dispatchVoiceCommand(t);
         break;
       case VoiceEventKind.agentSpeaking:
+        _lastSpeakingMs = DateTime.now().millisecondsSinceEpoch;
         _setKind(FaceStateKind.speaking);
         _gesture(RobotGestures.chestAttention); // perk up to speak (once/turn)
         break;
