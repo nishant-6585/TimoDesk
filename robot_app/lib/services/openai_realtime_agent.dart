@@ -114,10 +114,15 @@ class OpenAiRealtimeAgent implements VoiceProvider {
           'audio': {
             'input': {
               'format': {'type': 'audio/pcm', 'rate': _wireRate},
+              // Turn-taking: wait until the visitor is genuinely done before the
+              // agent replies. 500 ms cut people off mid-question (natural pauses
+              // are longer); 1100 ms + a higher threshold + onset padding makes it
+              // patient and less trigger-happy on room noise / the robot's echo.
               'turn_detection': {
                 'type': 'server_vad',
-                'threshold': 0.5,
-                'silence_duration_ms': 500,
+                'threshold': 0.6,
+                'prefix_padding_ms': 300,
+                'silence_duration_ms': 1100,
               },
               // Pin transcription to the configured language so accented English
               // isn't mis-detected as Hindi (the same drift we fixed on EL).
