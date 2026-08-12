@@ -10,7 +10,7 @@ import 'providers.dart';
 import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
-import 'services/elevenlabs_tts.dart';
+import 'services/robot_tts.dart';
 import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
@@ -116,7 +116,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _pendingVisitorTimer;
 
   // One-shot TTS for greeting phrases (ElevenLabs voice, falls back to built-in).
-  late final ElevenLabsTts _tts;
+  late final RobotTts _tts;
 
   // ── Voice visitor check-in ("I'm here to see <host>") ──────────────────────
   // Four-turn dialog (blueprint §07 visitor record): intent+host → name →
@@ -299,11 +299,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _gaze.start();
     _spine.start();
 
-    _tts = ElevenLabsTts(
-      apiKey: RobotConfig.elevenLabsApiKey,
-      voiceId: RobotConfig.elevenLabsVoiceId,
-      audio: _audioBridge,
-    );
+    _tts = RobotTts(audio: _audioBridge);
 
     // Voice (#80) — session is opened on demand (debug overlay / Phase B wake word).
     // The engine (ElevenLabs / OpenAI Realtime) is chosen by RobotConfig and can

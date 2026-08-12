@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
 import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
-import 'services/elevenlabs_tts.dart'; // arrival speech (Mini's real voice)
+import 'services/robot_tts.dart'; // arrival speech (selected engine's voice)
 import 'services/interaction_log.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_points_cache.dart';
@@ -109,11 +109,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   final Ref _ref;
   final NavPointsApi _api = NavPointsApi();
   final AudioBridge _audio = AudioBridge();
-  late final ElevenLabsTts _voice = ElevenLabsTts(
-    apiKey: RobotConfig.elevenLabsApiKey,
-    voiceId: RobotConfig.elevenLabsVoiceId,
-    audio: _audio,
-  );
+  late final RobotTts _voice = RobotTts(audio: _audio);
   StreamSubscription<NaviEvent>? _naviSub;
   StreamSubscription<Map<String, dynamic>>? _naviStateSub;
   StreamSubscription<Map<String, dynamic>>? _escortEventSub;
