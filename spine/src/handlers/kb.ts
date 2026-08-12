@@ -321,6 +321,20 @@ export async function handleKbStatus(
  * KB; `authoritative:false` (a local miss) frees the agent to fall back to its
  * own KB, then a human. Fail-closed: without the env secret it refuses every call.
  */
+/** Max characters of a visitor question echoed into the spine log. */
+export const LOG_QUESTION_MAX = 80;
+
+/**
+ * Flatten a visitor question to one short single-line fragment for the log:
+ * enough to recognise which turn it was, not a transcript. Exported for tests.
+ * Console only — never persisted. Transcripts live on the /voice/log path,
+ * which is PII-scrubbed and purged after 7 days (DPDP).
+ */
+export function elevenLabsLogQuestion(question: string): string {
+  const flat = question.replace(/\s+/g, ' ').trim();
+  return flat.length <= LOG_QUESTION_MAX ? flat : `${flat.slice(0, LOG_QUESTION_MAX)}…`;
+}
+
 export async function handleElevenLabsAsk(
   req: IncomingMessage,
   res: ServerResponse,
@@ -344,6 +358,7 @@ export async function handleElevenLabsAsk(
   const question = typeof body.question === 'string' ? body.question.trim() : '';
   if (!question) return json(res, 400, { ok: false, reason: 'question is required' });
 
+  const startedAt = Date.now();
   try {
     const result = await askQuestion(supabase, question);
     // A live visitor is standing at reception being told a human will come —
@@ -352,6 +367,20 @@ export async function handleElevenLabsAsk(
       void notifyHandoff(question, `no knowledge-base match (similarity ${result.similarity ?? 'none'})`);
       void logEvent('handoff_requested', { question, similarity: result.similarity, via: 'elevenlabs' });
     }
+    // Success line — the ONLY signal that the agent actually called this tool
+    // rather than answering from its own hosted KB. A live voice turn that
+    // produces no line here never reached us, so the `authoritative` contract
+    // below never got a say. Logs `authoritative` too: that flag is what the
+    // agent's dashboard prompt keys off, so it's the field to check when a
+    // spoken answer disagrees with the local KB.
+    console.log(
+      `[elevenlabs/ask] answered in ${Date.now() - startedAt}ms — ` +
+        `source=${result.source} authoritative=${isAuthoritative(result.source)}` +
+        (result.provider ? ` provider=${result.provider}` : '') +
+        ` similarity=${result.similarity?.toFixed(3) ?? 'none'}` +
+        ` chunks=${result.chunks.length}` +
+        ` q="${elevenLabsLogQuestion(question)}"`
+    );
     // Flat shape — ElevenLabs feeds the tool result straight to the agent.
     // `authoritative` tells the agent to PREFER our local KB over its own hosted
     // documents when they overlap: true = the spine grounded an answer (local KB,
@@ -366,7 +395,7 @@ export async function handleElevenLabsAsk(
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    console.error('[elevenlabs/ask] failed:', reason);
+    console.error(`[elevenlabs/ask] failed after ${Date.now() - startedAt}ms:`, reason);
     // The brain is down and a visitor is mid-conversation — this is the case
     // that most needs a human, so page one before answering.
     void notifyHandoff(question, `knowledge base unreachable: ${reason}`);
