@@ -1678,10 +1678,18 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         if (hasWords && !likelyEcho) {
           _bumpActivity(); // genuine user speech → keep the session alive
           InteractionLog.log('user_utterance_el', e.text!);
+        } else if (hasWords && likelyEcho) {
+          // The robot's OWN speech echoing back (no hardware AEC). Expected while
+          // it talks — NOT evidence of an empty room, so it must NOT count toward
+          // the phantom auto-close. That mis-count was hanging up on the visitor
+          // mid-conversation (3 echo turns → session closed). The idle watchdog
+          // still closes a genuinely silent session, so this stays safe.
+          debugPrint('Voice: echo turn ignored (robot hearing itself) — not a phantom');
         } else {
+          // Empty "..." turn — the engine's VAD tripped on room noise with no
+          // words. THIS is a real phantom; too many in a row = answering the room.
           _phantomTurns++;
-          debugPrint('Voice: non-genuine agentThinking (echo/phantom #$_phantomTurns, '
-              'words=$hasWords echo=$likelyEcho) → not resetting idle');
+          debugPrint('Voice: empty phantom #$_phantomTurns → not resetting idle');
           if (_phantomTurns >= _maxPhantomTurns) {
             debugPrint('Voice: $_maxPhantomTurns phantom turns, no real user → auto-closing');
             _dropFirstAgentTurn = true;
