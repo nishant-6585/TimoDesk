@@ -32,6 +32,7 @@ import 'face_rig.dart';
 import 'gaze_tracker.dart';
 import 'services/spine_client.dart';
 import 'services/voice_agent.dart';
+import 'services/voice_provider_factory.dart';
 import 'services/audio_bridge.dart';
 import 'services/intrusion_siren.dart';
 import 'screens/language_selection_screen.dart';
@@ -148,7 +149,10 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   Timer? _escortArrivalCheck;
 
   // Voice (#80) — ElevenLabs Conversational AI session + audio bridge.
-  late final VoiceAgent _voiceAgent;
+  // The live voice engine (ElevenLabs or OpenAI Realtime) behind the shared
+  // VoiceProvider interface — swapped by _rebuildVoiceProvider on a config switch.
+  late VoiceProvider _voiceAgent;
+  String _voiceProviderName = RobotConfig.voiceProvider; // detect switches
   final AudioBridge _audioBridge = AudioBridge();
   late final IntrusionSiren _siren = IntrusionSiren(_audioBridge);
   StreamSubscription<VoiceEvent>? _voiceSub;
@@ -302,12 +306,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     );
 
     // Voice (#80) — session is opened on demand (debug overlay / Phase B wake word).
-    _voiceAgent = VoiceAgent(
-      agentId: RobotConfig.elevenLabsAgentId,
-      apiKey: RobotConfig.elevenLabsApiKey,
-      languageCode: RobotConfig.voiceLanguageCode, // saved language → first session
-    );
+    // The engine (ElevenLabs / OpenAI Realtime) is chosen by RobotConfig and can
+    // be switched live from Settings or the admin app (see _rebuildVoiceProvider).
+    _voiceAgent = buildVoiceProvider();
     _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
+    // Rebuild the engine when the voice-provider setting flips (config push from
+    // admin or the robot's own Settings both bump elevenConfigRev).
+    RobotConfig.elevenConfigRev.addListener(_onVoiceConfigChanged);
     // Speaker amplitude (as it plays) → lip-sync + speaking/listening transition.
     _playbackSub = _audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
 
@@ -362,6 +367,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     _reconnectTimer?.cancel();
     _autoListenFallback?.cancel();
     _idleWatch?.cancel();
+    RobotConfig.elevenConfigRev.removeListener(_onVoiceConfigChanged);
     _voiceSub?.cancel();
     _wakeSub?.cancel();
     _asrSub?.cancel();
@@ -1605,7 +1611,29 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
-  // ── #80 voice: ElevenLabs session drives the face state machine ─────────────
+  /// A voice-related config value changed. Only act on an actual engine SWITCH
+  /// (elevenConfigRev also bumps on key edits) — swap the live provider so the
+  /// next session uses the newly-selected engine.
+  void _onVoiceConfigChanged() {
+    if (RobotConfig.voiceProvider == _voiceProviderName) return;
+    _rebuildVoiceProvider();
+  }
+
+  /// Tear down the current voice engine and build the newly-selected one. Any
+  /// open session is ended first so we never run two engines at once.
+  void _rebuildVoiceProvider() {
+    _voiceProviderName = RobotConfig.voiceProvider;
+    debugPrint('Voice: switching engine → $_voiceProviderName');
+    InteractionLog.log('voice_provider_switch', _voiceProviderName);
+    if (_voiceActive) _endVoice();
+    _voiceSub?.cancel();
+    _voiceAgent.dispose();
+    _voiceAgent = buildVoiceProvider();
+    _voiceSub = _voiceAgent.events.listen(_onVoiceEvent);
+    if (mounted) setState(() {});
+  }
+
+  // ── #80 voice: the selected engine's session drives the face state machine ──
   void _onVoiceEvent(VoiceEvent e) {
     debugPrint('Voice: ${e.kind.name}'
         '${e.text != null && e.text!.isNotEmpty ? " [${e.text}]" : ""}');

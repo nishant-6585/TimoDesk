@@ -61,7 +61,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
     required this.onStartTalk,
   });
 
-  final VoiceAgent voiceAgent;
+  final VoiceProvider voiceAgent;
   final AudioBridge audioBridge;
   // Starts a manual voice session using the ambient screen's full mic pipeline
   // (mic capture + half-duplex gate + playback), which the ambient screen owns

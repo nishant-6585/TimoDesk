@@ -41,6 +41,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _elevenVoiceId = TextEditingController();
   String _elevenKeyStatus = 'Checking robot…'; // masked key state from the robot
 
+  // Voice engine switch (ElevenLabs ↔ OpenAI Realtime) + OpenAI key (write-only).
+  final _openaiApiKey = TextEditingController();
+  String _voiceProvider = 'elevenlabs'; // reflects the robot's current engine
+  String _openaiKeyStatus = '';
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +81,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _elevenKeyStatus = isSet
             ? 'On robot: set ✓${hint.isNotEmpty ? ' · …$hint' : ''}'
             : 'On robot: not set';
+        // Voice engine + OpenAI state.
+        final prov = (eleven['voice_provider'] ?? '').toString();
+        if (prov == 'openai' || prov == 'elevenlabs') _voiceProvider = prov;
+        final oSet = eleven['openai_api_key_set'] == true;
+        final oHint = (eleven['openai_api_key_hint'] ?? '').toString();
+        _openaiKeyStatus = oSet
+            ? 'On robot: set ✓${oHint.isNotEmpty ? ' · …$oHint' : ''}'
+            : 'On robot: not set';
       });
     } catch (_) {
       if (mounted) setState(() => _elevenKeyStatus = 'Robot unreachable');
@@ -90,6 +103,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _elevenApiKey.dispose();
     _elevenAgentId.dispose();
     _elevenVoiceId.dispose();
+    _openaiApiKey.dispose();
     super.dispose();
   }
 
@@ -124,20 +138,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (_elevenVoiceId.text.trim().isNotEmpty) {
       cfg['elevenlabs_voice_id'] = _elevenVoiceId.text.trim();
     }
+    if (_openaiApiKey.text.trim().isNotEmpty) {
+      cfg['openai_api_key'] = _openaiApiKey.text.trim();
+    }
     if (cfg.isEmpty) {
       _toast(Icons.info_outline, MikeeColors.warning,
           'Nothing to push — fill a field first');
       return;
     }
     _sendConfig(cfg);
-    // Clear the API key field after sending so the secret isn't left on screen.
+    // Clear the API keys after sending so the secrets aren't left on screen.
     _elevenApiKey.clear();
+    _openaiApiKey.clear();
     _toast(Icons.check_circle, MikeeColors.success,
         'Keys pushed to robot — voice applies on next reply');
     // The robot applies + reports its masked state back; re-pull it so the
     // status line confirms the new key's last-4.
     setState(() => _elevenKeyStatus = 'Applying on robot…');
     Future.delayed(const Duration(milliseconds: 1800), _loadRobotKeys);
+  }
+
+  /// Flip the live voice engine on the robot immediately (the robot rebuilds its
+  /// provider on the next session). One engine runs at a time.
+  void _switchProvider(String provider) {
+    if (provider == _voiceProvider) return;
+    setState(() => _voiceProvider = provider);
+    _sendConfig({'voice_provider': provider});
+    _toast(Icons.check_circle, MikeeColors.success,
+        'Voice engine → ${provider == 'openai' ? 'OpenAI Realtime' : 'ElevenLabs'}');
+    Future.delayed(const Duration(milliseconds: 1500), _loadRobotKeys);
   }
 
   void _toast(IconData icon, Color color, String msg) {
@@ -245,10 +274,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         letterSpacing: 0.12,
                         color: MikeeColors.textSecondary)),
                 const SizedBox(height: 4),
-                Text('ElevenLabs credentials — stored on the robot only, never '
-                    'shown back here. Leave a field blank to keep what\'s saved.',
+                Text('Credentials are stored on the robot only, never shown back '
+                    'here. Leave a field blank to keep what\'s saved.',
                     style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
                 const SizedBox(height: 14),
+                // Voice engine switch — one runs at a time; flips immediately.
+                Text('Voice engine',
+                    style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  _EngineChip('ElevenLabs', _voiceProvider == 'elevenlabs',
+                      () => _switchProvider('elevenlabs')),
+                  const SizedBox(width: 8),
+                  _EngineChip('OpenAI Realtime', _voiceProvider == 'openai',
+                      () => _switchProvider('openai')),
+                ]),
+                const SizedBox(height: 16),
                 _IdField('ElevenLabs API key', _elevenApiKey, 'sk_… (enables the spoken voice)',
                     obscure: true),
                 const SizedBox(height: 6),
@@ -279,6 +320,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _IdField('Agent ID', _elevenAgentId, 'agent_… (conversational AI)'),
                 const SizedBox(height: 12),
                 _IdField('Voice ID', _elevenVoiceId, 'e.g. 6AUOG2nbfr0yFEeI0784'),
+                const SizedBox(height: 16),
+                _IdField('OpenAI API key', _openaiApiKey, 'sk-… (for OpenAI Realtime)',
+                    obscure: true),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Icon(
+                      _openaiKeyStatus.contains('set ✓')
+                          ? Icons.check_circle
+                          : Icons.info_outline,
+                      size: 13,
+                      color: _openaiKeyStatus.contains('set ✓')
+                          ? MikeeColors.success
+                          : MikeeColors.textMuted),
+                  const SizedBox(width: 6),
+                  Text(_openaiKeyStatus.isEmpty ? 'OpenAI key' : _openaiKeyStatus,
+                      style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textSecondary)),
+                ]),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -379,6 +437,47 @@ class _IdField extends StatelessWidget {
         ),
       ),
     ]);
+  }
+}
+
+/// A segmented selector chip for the voice-engine switch.
+class _EngineChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _EngineChip(this.label, this.active, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? MikeeColors.primary : MikeeColors.inset,
+              border: Border.all(
+                  color: active ? MikeeColors.primary : MikeeColors.border),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              if (active) ...[
+                const Icon(Icons.check, size: 14, color: Colors.white),
+                const SizedBox(width: 6),
+              ],
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: active ? Colors.white : MikeeColors.textSecondary)),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }
 

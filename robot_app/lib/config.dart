@@ -15,12 +15,18 @@ class RobotConfig {
   /// robot (mirrors the repo's MCP-token policy). Agent/voice ids sync in full.
   static Map<String, dynamic> elevenConfigReport() {
     final k = elevenLabsApiKey.trim();
+    final ok = openaiApiKey.trim();
     return {
       'eleven_api_key_set': k.isNotEmpty,
       'eleven_api_key_hint': k.length > 4 ? k.substring(k.length - 4) : '',
       'eleven_agent_id': elevenLabsAgentId,
       'eleven_voice_id': elevenLabsVoiceId,
       'voice_preset': voicePresetName,
+      // Voice-engine switch + OpenAI state (key masked, like the EL key).
+      'voice_provider': voiceProvider,
+      'openai_api_key_set': ok.isNotEmpty,
+      'openai_api_key_hint': ok.length > 4 ? ok.substring(ok.length - 4) : '',
+      'openai_voice': openaiVoice,
     };
   }
 
@@ -34,6 +40,9 @@ class RobotConfig {
   static const _kRobotName = 'robot_name';
   static const _kElevenVoiceId = 'elevenlabs_voice_id';
   static const _kVoicePresetName = 'voice_preset_name';
+  static const _kVoiceProvider = 'voice_provider'; // 'elevenlabs' | 'openai'
+  static const _kOpenaiKey = 'openai_api_key';
+  static const _kOpenaiVoice = 'openai_voice';
   static const _kCompanyName = 'company_name';
   static const _kGreetStaff = 'greet_staff_template';
   static const _kGreetVisitor = 'greet_visitor_template';
@@ -99,6 +108,21 @@ class RobotConfig {
   static const String defaultElevenLabsVoiceId = '6AUOG2nbfr0yFEeI0784';
   static String elevenLabsVoiceId = defaultElevenLabsVoiceId;
   static String voicePresetName = 'Default';
+
+  // ── Voice engine selection (switchable: ElevenLabs ↔ OpenAI Realtime) ──────
+  // Which conversational-voice engine handles the live conversation + commands.
+  // Switchable from the robot's own Settings OR the admin app (set_config →
+  // applyRemoteConfig). Only one runs at a time. See services/voice_provider.dart.
+  static const String voiceProviderElevenLabs = 'elevenlabs';
+  static const String voiceProviderOpenAi = 'openai';
+  static String voiceProvider = voiceProviderElevenLabs;
+
+  // OpenAI Realtime credentials. Key is a secret (never committed) — set at build
+  // time (--dart-define=OPENAI_API_KEY=sk-...) or per-device in Settings / admin.
+  static const String defaultOpenaiApiKey = String.fromEnvironment('OPENAI_API_KEY');
+  static String openaiApiKey = defaultOpenaiApiKey;
+  // OpenAI Realtime voice (alloy / echo / shimmer / ash / ballad / coral / sage / verse).
+  static String openaiVoice = 'alloy';
 
   // ── Robot identity ─────────────────────────────────────────────────────────
   // The robot's NAME — editable in Settings and by voice ("change your name to
@@ -170,6 +194,9 @@ class RobotConfig {
     robotName = p.getString(_kRobotName) ?? defaultRobotName;
     elevenLabsVoiceId = p.getString(_kElevenVoiceId) ?? defaultElevenLabsVoiceId;
     voicePresetName = p.getString(_kVoicePresetName) ?? 'Default';
+    voiceProvider = p.getString(_kVoiceProvider) ?? voiceProviderElevenLabs;
+    openaiApiKey = p.getString(_kOpenaiKey) ?? defaultOpenaiApiKey;
+    openaiVoice = p.getString(_kOpenaiVoice) ?? 'alloy';
   }
 
   /// Rename the robot (Settings field or the "change your name to X" voice
@@ -223,6 +250,21 @@ class RobotConfig {
     if (cfg['elevenlabs_voice_id'] is String &&
         (cfg['elevenlabs_voice_id'] as String).trim().isNotEmpty) {
       await setVoice(cfg['elevenlabs_voice_id'] as String, voicePresetName);
+    }
+    // Voice-engine switch + OpenAI creds pushed from the admin. voice_provider is
+    // applied even if blankable-guarded elsewhere; the key is write-only (blank
+    // never overwrites a saved key).
+    if (cfg['voice_provider'] is String &&
+        (cfg['voice_provider'] as String).trim().isNotEmpty) {
+      await setVoiceProvider(cfg['voice_provider'] as String);
+    }
+    if (cfg['openai_api_key'] is String &&
+        (cfg['openai_api_key'] as String).trim().isNotEmpty) {
+      await setOpenaiApiKey(cfg['openai_api_key'] as String);
+    }
+    if (cfg['openai_voice'] is String &&
+        (cfg['openai_voice'] as String).trim().isNotEmpty) {
+      await setOpenaiVoice(cfg['openai_voice'] as String);
     }
   }
 
@@ -327,6 +369,27 @@ class RobotConfig {
     elevenLabsApiKey = v.trim();
     (await SharedPreferences.getInstance()).setString(_kElevenKey, elevenLabsApiKey);
     elevenConfigRev.value++; // → SpineClient reports masked state to admin
+  }
+
+  /// Switch the live voice engine ('elevenlabs' | 'openai'). Unknown values fall
+  /// back to ElevenLabs. Persisted + reported to the admin (two-way sync).
+  static Future<void> setVoiceProvider(String v) async {
+    final p = v.trim().toLowerCase();
+    voiceProvider = p == voiceProviderOpenAi ? voiceProviderOpenAi : voiceProviderElevenLabs;
+    (await SharedPreferences.getInstance()).setString(_kVoiceProvider, voiceProvider);
+    elevenConfigRev.value++;
+  }
+
+  static Future<void> setOpenaiApiKey(String v) async {
+    openaiApiKey = v.trim();
+    (await SharedPreferences.getInstance()).setString(_kOpenaiKey, openaiApiKey);
+    elevenConfigRev.value++;
+  }
+
+  static Future<void> setOpenaiVoice(String v) async {
+    openaiVoice = v.trim().isEmpty ? 'alloy' : v.trim();
+    (await SharedPreferences.getInstance()).setString(_kOpenaiVoice, openaiVoice);
+    elevenConfigRev.value++;
   }
 
   static Future<void> setElevenLabsAgentId(String v) async {
