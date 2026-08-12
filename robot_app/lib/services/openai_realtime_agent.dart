@@ -93,29 +93,38 @@ class OpenAiRealtimeAgent implements VoiceProvider {
     try {
       final ws = await WebSocket.connect(
         'wss://api.openai.com/v1/realtime?model=$model',
+        // GA Realtime API — NO 'OpenAI-Beta: realtime=v1' header (that selects the
+        // retired beta API and the server closes with code 4000).
         headers: {
           'Authorization': 'Bearer $apiKey',
-          'OpenAI-Beta': 'realtime=v1',
         },
       ).timeout(const Duration(seconds: 8));
       _channel = ws;
       _connectedAtMs = DateTime.now().millisecondsSinceEpoch;
 
-      // Configure the session: our instructions + tools, pcm16 both ways, and
-      // server-side VAD so the model responds when the visitor stops talking.
+      // Configure the session (GA schema): instructions + tools, 24 kHz pcm both
+      // ways nested under audio.input/output, server-side VAD so the model
+      // responds when the visitor stops talking, and whisper transcription so we
+      // get the user's text for on-device command matching + logging.
       ws.add(jsonEncode({
         'type': 'session.update',
         'session': {
-          'modalities': ['audio', 'text'],
+          'type': 'realtime',
           'instructions': _instructions(),
-          'voice': voice,
-          'input_audio_format': 'pcm16',
-          'output_audio_format': 'pcm16',
-          'input_audio_transcription': {'model': 'whisper-1'},
-          'turn_detection': {
-            'type': 'server_vad',
-            'threshold': 0.5,
-            'silence_duration_ms': 500,
+          'audio': {
+            'input': {
+              'format': {'type': 'audio/pcm', 'rate': _wireRate},
+              'turn_detection': {
+                'type': 'server_vad',
+                'threshold': 0.5,
+                'silence_duration_ms': 500,
+              },
+              'transcription': {'model': 'whisper-1'},
+            },
+            'output': {
+              'format': {'type': 'audio/pcm', 'rate': _wireRate},
+              'voice': voice,
+            },
           },
           'tools': _tools,
           'tool_choice': 'auto',
@@ -234,7 +243,9 @@ class OpenAiRealtimeAgent implements VoiceProvider {
         _emit(VoiceEvent(VoiceEventKind.agentThinking, text: userText));
         return;
 
+      // GA renamed audio events with an `output_` prefix; accept both.
       case 'response.audio.delta':
+      case 'response.output_audio.delta':
         final b64 = msg['delta'];
         if (b64 is String && b64.isNotEmpty) {
           final down = _resamplePcm16(base64Decode(b64), _wireRate, _deviceRate);
@@ -248,6 +259,7 @@ class OpenAiRealtimeAgent implements VoiceProvider {
         return;
 
       case 'response.audio_transcript.done':
+      case 'response.output_audio_transcript.done':
         final t = msg['transcript'];
         if (t is String && t.isNotEmpty) {
           _transcript.add({'role': 'assistant', 'text': t, 'ts': _nowIso()});
@@ -256,6 +268,19 @@ class OpenAiRealtimeAgent implements VoiceProvider {
 
       case 'response.function_call_arguments.done':
         _onFunctionCall(msg);
+        return;
+
+      case 'response.output_item.done':
+        // GA delivers a completed function call as an output item; map it to the
+        // same handler shape (name / call_id / arguments) if that's what it is.
+        final item = msg['item'];
+        if (item is Map && item['type'] == 'function_call') {
+          _onFunctionCall({
+            'name': item['name'],
+            'call_id': item['call_id'],
+            'arguments': item['arguments'],
+          });
+        }
         return;
 
       case 'error':
