@@ -1648,12 +1648,19 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         _startIdleWatch(); // auto sessions: begin the inactivity countdown
         break;
       case VoiceEventKind.userSpeaking:
-        // EL's VAD fired "user started talking". This is NOT a reliable person
-        // signal — it also trips on ambient room noise and Mini's own echo — so
-        // it does NOT reset the idle timer (only real transcribed words do, in
-        // agentThinking below). We just barge-in: stop playback and show listening.
+        // The engine's VAD fired "user started talking". We barge-in: stop
+        // playback and show listening.
         _dropFirstAgentTurn = false; // allow the upcoming agent audio again
         _audioBridge.stopPlayback();
+        // Keep the session ALIVE on this — UNLESS the robot itself is speaking (or
+        // just did), in which case it's likely its own echo. Previously we never
+        // reset idle here, so a visitor who spoke but whose transcript got muted /
+        // echo-flagged still hit the 15s idle close mid-conversation. When the
+        // robot ISN'T speaking, VAD firing is a genuine "person engaging" signal.
+        final nowUs = DateTime.now().millisecondsSinceEpoch;
+        final echoUs = _face.state == FaceStateKind.speaking ||
+            (nowUs - _lastSpeakingMs) < _echoGuardMs;
+        if (!echoUs) _bumpActivity();
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
