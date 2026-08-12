@@ -119,7 +119,9 @@ class OpenAiRealtimeAgent implements VoiceProvider {
                 'threshold': 0.5,
                 'silence_duration_ms': 500,
               },
-              'transcription': {'model': 'whisper-1'},
+              // Pin transcription to the configured language so accented English
+              // isn't mis-detected as Hindi (the same drift we fixed on EL).
+              'transcription': {'model': 'whisper-1', 'language': _languageCode},
             },
             'output': {
               'format': {'type': 'audio/pcm', 'rate': _wireRate},
@@ -379,11 +381,21 @@ class OpenAiRealtimeAgent implements VoiceProvider {
   // ── Instructions + tools ─────────────────────────────────────────────────────
   // Kept in sync with docs/elevenlabs_agent_tools.md so both engines behave the
   // same. (Follow-up: source these from the spine so there's one definition.)
+  static const Map<String, String> _langNames = {
+    'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu',
+    'kn': 'Kannada', 'ml': 'Malayalam', 'mr': 'Marathi', 'bn': 'Bengali',
+    'gu': 'Gujarati', 'pa': 'Punjabi', 'ur': 'Urdu', 'es': 'Spanish',
+    'fr': 'French', 'de': 'German', 'ar': 'Arabic', 'zh': 'Chinese', 'ja': 'Japanese',
+  };
+
   String _instructions() {
     final n = RobotConfig.robotName;
-    final langLine = _languageCode == 'en'
-        ? ''
-        : '\nAlways speak in the language with code "$_languageCode".';
+    final langName = _langNames[_languageCode] ?? 'English';
+    // Force the configured language on EVERY reply — OpenAI Realtime otherwise
+    // free-runs and drifts (it was answering in Hindi with English selected).
+    final langLine =
+        '\n\nLANGUAGE: You MUST speak ONLY in $langName. Even if the visitor '
+        'speaks another language, always reply in $langName. Never switch languages.';
     return '''
 You are $n, the reception robot at xboom Utilities in India. You are warm, curious, and concise — your words are heard aloud, so speak in short, natural sentences.
 
