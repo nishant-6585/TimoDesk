@@ -27,7 +27,7 @@ class OpenAiRealtimeAgent implements VoiceProvider {
     required this.apiKey,
     required this.voice,
     String languageCode = 'en',
-    this.model = 'gpt-4o-realtime-preview',
+    this.model = 'gpt-realtime',
   }) : _languageCode = languageCode;
 
   final String apiKey;

@@ -11,6 +11,7 @@ VoiceProvider buildVoiceProvider() {
     return OpenAiRealtimeAgent(
       apiKey: RobotConfig.openaiApiKey,
       voice: RobotConfig.openaiVoice,
+      model: RobotConfig.openaiModel,
       languageCode: RobotConfig.voiceLanguageCode,
     );
   }

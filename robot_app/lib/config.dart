@@ -27,6 +27,7 @@ class RobotConfig {
       'openai_api_key_set': ok.isNotEmpty,
       'openai_api_key_hint': ok.length > 4 ? ok.substring(ok.length - 4) : '',
       'openai_voice': openaiVoice,
+      'openai_model': openaiModel,
     };
   }
 
@@ -43,6 +44,7 @@ class RobotConfig {
   static const _kVoiceProvider = 'voice_provider'; // 'elevenlabs' | 'openai'
   static const _kOpenaiKey = 'openai_api_key';
   static const _kOpenaiVoice = 'openai_voice';
+  static const _kOpenaiModel = 'openai_model';
   static const _kCompanyName = 'company_name';
   static const _kGreetStaff = 'greet_staff_template';
   static const _kGreetVisitor = 'greet_visitor_template';
@@ -123,6 +125,10 @@ class RobotConfig {
   static String openaiApiKey = defaultOpenaiApiKey;
   // OpenAI Realtime voice (alloy / echo / shimmer / ash / ballad / coral / sage / verse).
   static String openaiVoice = 'alloy';
+  // OpenAI Realtime model. GA name is 'gpt-realtime' (the old 'gpt-4o-realtime-
+  // preview' is gone). Overridable via admin push so a future rename needs no
+  // rebuild — the WS connects to wss://api.openai.com/v1/realtime?model=<this>.
+  static String openaiModel = 'gpt-realtime';
 
   // ── Robot identity ─────────────────────────────────────────────────────────
   // The robot's NAME — editable in Settings and by voice ("change your name to
@@ -197,6 +203,7 @@ class RobotConfig {
     voiceProvider = p.getString(_kVoiceProvider) ?? voiceProviderElevenLabs;
     openaiApiKey = p.getString(_kOpenaiKey) ?? defaultOpenaiApiKey;
     openaiVoice = p.getString(_kOpenaiVoice) ?? 'alloy';
+    openaiModel = p.getString(_kOpenaiModel) ?? 'gpt-realtime';
   }
 
   /// Rename the robot (Settings field or the "change your name to X" voice
@@ -265,6 +272,10 @@ class RobotConfig {
     if (cfg['openai_voice'] is String &&
         (cfg['openai_voice'] as String).trim().isNotEmpty) {
       await setOpenaiVoice(cfg['openai_voice'] as String);
+    }
+    if (cfg['openai_model'] is String &&
+        (cfg['openai_model'] as String).trim().isNotEmpty) {
+      await setOpenaiModel(cfg['openai_model'] as String);
     }
   }
 
@@ -389,6 +400,12 @@ class RobotConfig {
   static Future<void> setOpenaiVoice(String v) async {
     openaiVoice = v.trim().isEmpty ? 'alloy' : v.trim();
     (await SharedPreferences.getInstance()).setString(_kOpenaiVoice, openaiVoice);
+    elevenConfigRev.value++;
+  }
+
+  static Future<void> setOpenaiModel(String v) async {
+    openaiModel = v.trim().isEmpty ? 'gpt-realtime' : v.trim();
+    (await SharedPreferences.getInstance()).setString(_kOpenaiModel, openaiModel);
     elevenConfigRev.value++;
   }
 
