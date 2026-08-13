@@ -25,6 +25,7 @@ export interface FaceEmbeddingResult {
   facesFound?: number; // For error: how many faces detected (expect exactly 1)
   error?: string;
   thumbnail?: Buffer; // Square JPEG crop of the face — UI display only, never used for matching
+  faceBox?: { x: number; y: number; width: number; height: number }; // Detected face box in source pixels (quality gates)
 }
 
 // Display thumbnail config — square crop with margin, kept small for fast list loads.
@@ -118,10 +119,12 @@ export async function extractEmbedding(imageBuffer: Buffer): Promise<FaceEmbeddi
       );
     }
 
+    const box = detections[0].detection.box;
     return {
       ok: true,
       embedding,
       thumbnail,
+      faceBox: { x: box.x, y: box.y, width: box.width, height: box.height },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

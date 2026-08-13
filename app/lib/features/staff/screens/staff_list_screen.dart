@@ -109,22 +109,15 @@ class _StaffCard extends ConsumerWidget {
                   style: GoogleFonts.inter(fontSize: 12, color: MikeeColors.textSecondary),
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: member.embeddingCount > 0
-                        ? MikeeColors.success.withOpacity(0.12)
-                        : Colors.orange.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
+                Wrap(spacing: 6, runSpacing: 4, children: [
+                  _chip(
                     '${member.embeddingCount} face${member.embeddingCount == 1 ? '' : 's'} enrolled',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: member.embeddingCount > 0 ? MikeeColors.success : Colors.orange,
-                    ),
+                    member.embeddingCount > 0 ? MikeeColors.success : Colors.orange,
                   ),
-                ),
+                  if (member.fromEntra) _chip('Entra ID', Colors.lightBlueAccent),
+                  if (_photoStatusLabel(member) != null)
+                    _chip(_photoStatusLabel(member)!, _photoStatusColor(member)),
+                ]),
               ],
             ),
           ),
@@ -141,6 +134,52 @@ class _StaffCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Widget _chip(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(text, style: GoogleFonts.inter(fontSize: 11, color: color)),
+      );
+
+  /// Actionable directory-photo state (null = nothing to flag). Tells the
+  /// admin exactly who needs an on-robot top-up enrollment and why.
+  String? _photoStatusLabel(StaffMember m) {
+    if (!m.fromEntra) return null;
+    switch (m.entraPhotoStatus) {
+      case 'none':
+        return 'No directory photo';
+      case 'no_consent':
+        return 'No photo consent';
+      case 'rejected_quality':
+        return 'Photo too small/no face';
+      case 'rejected_multi_face':
+        return 'Photo has multiple faces';
+      case 'collision':
+        return 'Photo collides — enroll on robot';
+      case 'error':
+        return 'Photo sync error';
+      case 'purged':
+        return 'Photo embedding purged';
+      default:
+        return null; // 'ok' or not yet synced — nothing to flag
+    }
+  }
+
+  Color _photoStatusColor(StaffMember m) {
+    switch (m.entraPhotoStatus) {
+      case 'collision':
+      case 'error':
+        return Colors.redAccent;
+      case 'no_consent':
+      case 'purged':
+        return MikeeColors.textSecondary;
+      default:
+        return Colors.orange;
+    }
   }
 
   void _openEdit(BuildContext context, WidgetRef ref) {

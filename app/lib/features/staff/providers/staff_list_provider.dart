@@ -23,6 +23,9 @@ class StaffMember {
   final double? deskY;
   final double? deskZ;
   final double? deskRotation;
+  // Entra ID directory sync (migrations 016/019). entraId null = manually enrolled.
+  final String? entraId;
+  final String? entraPhotoStatus;
 
   StaffMember({
     required this.id,
@@ -37,9 +40,12 @@ class StaffMember {
     this.deskY,
     this.deskZ,
     this.deskRotation,
+    this.entraId,
+    this.entraPhotoStatus,
   });
 
   bool get hasDesk => deskX != null && deskY != null;
+  bool get fromEntra => entraId != null && entraId!.isNotEmpty;
 
   factory StaffMember.fromJson(Map<String, dynamic> j) => StaffMember(
         id: j['id'] as String,
@@ -54,6 +60,8 @@ class StaffMember {
         deskY: (j['desk_y'] as num?)?.toDouble(),
         deskZ: (j['desk_z'] as num?)?.toDouble(),
         deskRotation: (j['desk_rotation'] as num?)?.toDouble(),
+        entraId: j['entra_id'] as String?,
+        entraPhotoStatus: j['entra_photo_status'] as String?,
       );
 }
 

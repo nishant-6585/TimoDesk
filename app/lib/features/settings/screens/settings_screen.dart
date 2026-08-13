@@ -9,6 +9,7 @@ import '../../../core/spine_base.dart';
 import '../../../core/theme.dart';
 import '../../../services/spine/spine_provider.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/entra_integration_card.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -404,6 +405,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _sendConfig({'default_speed': n});
               },
             ),
+            const SizedBox(height: 20),
+            // ── INTEGRATIONS — Microsoft Entra ID directory + photo sync.
+            const EntraIntegrationCard(),
             const SizedBox(height: 20),
             _AccountCard(),
           ]),

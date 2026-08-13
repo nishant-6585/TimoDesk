@@ -1,17 +1,19 @@
 /**
- * POST /entra/sync — run the Microsoft Entra ID (Azure AD) → staff sync.
+ * Entra ID (Azure AD) HTTP endpoints.
  *
- * Trigger manually (admin app button later, curl/cron today). Same auth model
- * as the other endpoints. 503 with a clear reason when the Entra app
- * registration env isn't configured. Returns the sync summary so the caller
- * sees exactly what changed.
+ *   POST /entra/sync    — run the full sync now (users → photos → offboard purge).
+ *   GET  /entra/status  — config + last/next run for the admin Integrations UI.
+ *
+ * Same auth model as the other endpoints. 503 with a clear reason when the
+ * Entra app registration env isn't configured. The sync returns its summary so
+ * the caller sees exactly what changed.
  */
 
 import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
-import { entraConfigured, syncEntraStaff } from '../services/entra';
+import { entraConfigured, runEntraSync, getEntraStatus } from '../services/entra';
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -34,7 +36,7 @@ export async function handleEntraSync(
   }
 
   try {
-    const summary = await syncEntraStaff(supabase);
+    const summary = await runEntraSync(supabase);
     await logEvent('entra_sync', { actor: auth.userId, ...summary });
     return json(res, 200, { ok: true, ...summary });
   } catch (err) {
@@ -42,4 +44,13 @@ export async function handleEntraSync(
     console.error('[entra/sync] failed:', reason);
     return json(res, 500, { ok: false, reason });
   }
+}
+
+export async function handleEntraStatus(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  return json(res, 200, { ok: true, ...getEntraStatus() });
 }

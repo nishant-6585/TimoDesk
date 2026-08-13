@@ -43,7 +43,8 @@ import {
   handleKbDelete,
   handleElevenLabsAsk,
 } from './handlers/kb';
-import { handleEntraSync } from './handlers/entra';
+import { handleEntraSync, handleEntraStatus } from './handlers/entra';
+import { entraConfigured, entraSyncIntervalMinutes, markNextEntraRun, runEntraSync } from './services/entra';
 import { handleMcpPlugins } from './handlers/mcp-plugins';
 import { getMcpPluginRegistry } from './services/mcp-plugins';
 import { handleKbProviders } from './handlers/kb-providers';
@@ -864,6 +865,11 @@ export function startServer(sdk: RobotSDK): Promise<void> {
         return;
       }
 
+      if (url === '/entra/status' && req.method === 'GET') {
+        await handleEntraStatus(req, res);
+        return;
+      }
+
       const staffMatch = url.match(/^\/staff\/([^/]+)$/);
       if (staffMatch) {
         const staffId = decodeURIComponent(staffMatch[1]);
@@ -1254,6 +1260,36 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       });
     } else {
       console.log('[Spine] Face recognizer disabled — Supabase not configured.');
+    }
+
+    // Scheduled Entra ID sync (users → photos → offboard purge). Interval from
+    // ENTRA_SYNC_INTERVAL_MIN (default 6 h, 0 = manual-only via POST /entra/sync).
+    // First run is delayed a little so boot isn't serialized behind Graph.
+    if (supabase && entraConfigured()) {
+      const intervalMin = entraSyncIntervalMinutes();
+      if (intervalMin > 0) {
+        const intervalMs = intervalMin * 60 * 1000;
+        const firstDelayMs = 30 * 1000;
+        const runScheduled = async () => {
+          try {
+            const summary = await runEntraSync(supabase);
+            await logEvent('entra_sync', { actor: 'scheduler', ...summary });
+            console.log(
+              `[Spine] Entra sync (${summary.mode}): ${summary.fetched} users, ` +
+                `${summary.photos ? summary.photos.embedded : 0} photos embedded`
+            );
+          } catch (err) {
+            console.error('[Spine] Scheduled Entra sync failed:', err instanceof Error ? err.message : err);
+          }
+          markNextEntraRun(new Date(Date.now() + intervalMs));
+        };
+        setTimeout(runScheduled, firstDelayMs).unref();
+        setInterval(runScheduled, intervalMs).unref();
+        markNextEntraRun(new Date(Date.now() + firstDelayMs));
+        console.log(`[Spine] Entra sync scheduled every ${intervalMin} min (first run in 30 s)`);
+      } else {
+        console.log('[Spine] Entra sync: manual-only (ENTRA_SYNC_INTERVAL_MIN=0)');
+      }
     }
 
     // Sensor/obstacle awareness (Phase 1A): each SensorEvent updates the cached

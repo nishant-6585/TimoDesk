@@ -8,7 +8,15 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { syncEntraStaff, entraConfigured, GraphUser } from '../src/services/entra';
+import {
+  syncEntraStaff,
+  entraConfigured,
+  GraphUser,
+  fetchDeltaChanges,
+  fetchGroupMemberIds,
+  purgeOffboardedEmbeddings,
+  runEntraSync,
+} from '../src/services/entra';
 
 const ENV_KEYS = ['ENTRA_TENANT_ID', 'ENTRA_CLIENT_ID', 'ENTRA_CLIENT_SECRET'] as const;
 const savedEnv: Record<string, string | undefined> = {};
@@ -148,7 +156,7 @@ describe('syncEntraStaff', () => {
     expect(inserts).toHaveLength(0);
   });
 
-  it('deactivates synced staff missing from Graph, leaves manual rows alone', async () => {
+  it('deactivates synced staff missing from Graph (offboard clock set), leaves manual rows alone', async () => {
     const departed = {
       id: 's1', full_name: 'Bob Gone', role: null, phone: null,
       notify_channel: null, active: true, entra_id: 'g-old',
@@ -160,7 +168,21 @@ describe('syncEntraStaff', () => {
     const { client, updates } = makeSupabase([departed, manual]);
     const summary = await syncEntraStaff(client, { fetchImpl: makeFetch([{ value: [] }]) });
     expect(summary).toMatchObject({ deactivated: 1 });
-    expect(updates).toEqual([{ id: 's1', patch: { active: false } }]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].id).toBe('s1');
+    expect(updates[0].patch).toMatchObject({ active: false });
+    expect(updates[0].patch.entra_deactivated_at).toBeTruthy(); // offboard purge clock
+  });
+
+  it('clears the offboard clock when a disabled account is re-enabled', async () => {
+    const disabled = {
+      id: 's1', full_name: 'Alice Kumar', role: 'Sales Lead', phone: '+919800000001',
+      notify_channel: 'email:alice@xboom.in', active: false, entra_id: 'g1',
+      entra_deactivated_at: '2026-08-01T00:00:00Z',
+    };
+    const { client, updates } = makeSupabase([disabled]);
+    await syncEntraStaff(client, { fetchImpl: makeFetch([{ value: [user({})] }]) });
+    expect(updates[0].patch).toMatchObject({ active: true, entra_deactivated_at: null });
   });
 
   it('follows @odata.nextLink pagination', async () => {
@@ -172,5 +194,222 @@ describe('syncEntraStaff', () => {
     const summary = await syncEntraStaff(client, { fetchImpl });
     expect(summary).toMatchObject({ fetched: 2, created: 2 });
     expect(inserts.map(i => i.entra_id).sort()).toEqual(['g1', 'g2']);
+  });
+});
+
+describe('fetchDeltaChanges', () => {
+  const respond = (map: Record<string, unknown>, statuses: Record<string, number> = {}) =>
+    (async (url: string) => {
+      if (statuses[url]) return { ok: false, status: statuses[url], json: async () => ({}), text: async () => '' };
+      const payload = map[url];
+      if (payload === undefined) throw new Error(`unexpected fetch: ${url}`);
+      return ok(payload);
+    }) as unknown as typeof fetch;
+
+  it('splits changed vs @removed ids and returns the new deltaLink', async () => {
+    const fetchImpl = respond({
+      'dl-old': {
+        value: [{ id: 'g1' }, { id: 'g2', '@removed': { reason: 'deleted' } }],
+        '@odata.nextLink': 'dl-old-p2',
+      },
+      'dl-old-p2': { value: [{ id: 'g3' }], '@odata.deltaLink': 'dl-new' },
+    });
+    const r = await fetchDeltaChanges('tok', 'dl-old', { fetchImpl });
+    expect(r).toEqual({ changedIds: ['g1', 'g3'], removedIds: ['g2'], deltaLink: 'dl-new' });
+  });
+
+  it("returns 'resync' on 410 Gone (expired delta token)", async () => {
+    const fetchImpl = respond({}, { 'dl-old': 410 });
+    expect(await fetchDeltaChanges('tok', 'dl-old', { fetchImpl })).toBe('resync');
+  });
+});
+
+describe('fetchGroupMemberIds', () => {
+  it('collects user ids across pages', async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url.includes('/groups/grp-1/transitiveMembers/microsoft.graph.user')) {
+        return ok({ value: [{ id: 'g1' }, { id: 'g2' }], '@odata.nextLink': 'members-p2' });
+      }
+      if (url === 'members-p2') return ok({ value: [{ id: 'g3' }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+    const ids = await fetchGroupMemberIds('tok', 'grp-1', { fetchImpl });
+    expect([...ids].sort()).toEqual(['g1', 'g2', 'g3']);
+  });
+
+  it('throws on a Graph error (consent stays fail-closed upstream)', async () => {
+    const fetchImpl = (async () => ({ ok: false, status: 403, text: async () => 'denied' })) as unknown as typeof fetch;
+    await expect(fetchGroupMemberIds('tok', 'grp-1', { fetchImpl })).rejects.toThrow(/403/);
+  });
+});
+
+describe('purgeOffboardedEmbeddings', () => {
+  function makePurgeDb(staffRows: any[], entraEmbeddingCounts: Record<string, number>) {
+    const deletes: string[] = [];
+    const updates: Array<{ id: string; patch: any }> = [];
+    const client: any = {
+      from(table: string) {
+        if (table === 'staff') {
+          return {
+            select: () => Promise.resolve({ data: staffRows, error: null }),
+            update: (patch: any) => ({
+              eq: (_c: string, id: string) => {
+                updates.push({ id, patch });
+                return Promise.resolve({ error: null });
+              },
+            }),
+          };
+        }
+        if (table === 'staff_face_embedding') {
+          return {
+            select: (_cols: string, _opts: any) => ({
+              eq: (_c: string, id: string) => ({
+                like: () => Promise.resolve({ count: entraEmbeddingCounts[id] ?? 0 }),
+              }),
+            }),
+            delete: () => ({
+              eq: (_c: string, id: string) => ({
+                like: () => {
+                  deletes.push(id);
+                  return Promise.resolve({ error: null });
+                },
+              }),
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      },
+    };
+    return { client, deletes, updates };
+  }
+
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
+
+  it('purges entra-photo embeddings of staff deactivated past the window, audit-logged', async () => {
+    const rows = [
+      { id: 's1', full_name: 'Gone Long Ago', active: false, entra_id: 'g1', entra_deactivated_at: daysAgo(45) },
+      { id: 's2', full_name: 'Recently Gone', active: false, entra_id: 'g2', entra_deactivated_at: daysAgo(5) },
+      { id: 's3', full_name: 'Manual Inactive', active: false, entra_id: null, entra_deactivated_at: null },
+      { id: 's4', full_name: 'Still Here', active: true, entra_id: 'g4', entra_deactivated_at: null },
+    ];
+    const { client, deletes, updates } = makePurgeDb(rows, { s1: 2 });
+    const events: any[] = [];
+    const logStub = (async (type: string, payload?: any) => { events.push({ type, payload }); }) as any;
+
+    const summary = await purgeOffboardedEmbeddings(client, 30, logStub);
+    expect(summary).toEqual({ staff_purged: 1, embeddings_deleted: 2 });
+    expect(deletes).toEqual(['s1']);
+    expect(updates[0]).toMatchObject({ id: 's1', patch: { entra_photo_status: 'purged', entra_photo_etag: null } });
+    expect(events[0]).toMatchObject({ type: 'entra_offboard_purge', payload: { staff_id: 's1', embeddings_deleted: 2 } });
+  });
+
+  it('is a no-op for already-purged staff (zero entra-photo embeddings)', async () => {
+    const rows = [
+      { id: 's1', full_name: 'Gone Long Ago', active: false, entra_id: 'g1', entra_deactivated_at: daysAgo(45) },
+    ];
+    const { client, deletes } = makePurgeDb(rows, { s1: 0 });
+    const summary = await purgeOffboardedEmbeddings(client, 30, (async () => {}) as any);
+    expect(summary).toEqual({ staff_purged: 0, embeddings_deleted: 0 });
+    expect(deletes).toHaveLength(0);
+  });
+});
+
+describe('runEntraSync', () => {
+  const EXTRA_ENV = ['ENTRA_CONSENT_GROUP_ID', 'ENTRA_PHOTO_CONSENT_MODE', 'ENTRA_OFFBOARD_PURGE_DAYS'] as const;
+  const savedExtra: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of EXTRA_ENV) {
+      savedExtra[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    for (const k of EXTRA_ENV) {
+      if (savedExtra[k] === undefined) delete process.env[k];
+      else process.env[k] = savedExtra[k];
+    }
+  });
+
+  /** Multi-table mock: staff + entra_sync_state (+ empty embeddings for the purge pass). */
+  function makeRunDb(staffRows: any[], deltaState: string | null) {
+    const inserts: any[] = [];
+    const updates: Array<{ id: string; patch: any }> = [];
+    const stateUpserts: any[] = [];
+    const client: any = {
+      from(table: string) {
+        if (table === 'staff') {
+          return {
+            select: () => Promise.resolve({ data: staffRows, error: null }),
+            insert: (row: any) => { inserts.push(row); return Promise.resolve({ error: null }); },
+            update: (patch: any) => ({
+              eq: (_c: string, id: string) => { updates.push({ id, patch }); return Promise.resolve({ error: null }); },
+            }),
+          };
+        }
+        if (table === 'entra_sync_state') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () => Promise.resolve({ data: deltaState ? { value: deltaState } : null, error: null }),
+              }),
+            }),
+            upsert: (row: any) => { stateUpserts.push(row); return Promise.resolve({ error: null }); },
+          };
+        }
+        if (table === 'staff_face_embedding') {
+          return {
+            select: (_cols: string, opts?: any) =>
+              opts?.count
+                ? { eq: () => ({ like: () => Promise.resolve({ count: 0 }) }) }
+                : Promise.resolve({ data: [], error: null }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      },
+    };
+    return { client, inserts, updates, stateUpserts };
+  }
+
+  it('full mode: enumerates users, mints a deltaLink, skips photos without a consent group', async () => {
+    const { client, inserts, stateUpserts } = makeRunDb([], null);
+    const fetchImpl = (async (url: string) => {
+      if (url.includes('login.microsoftonline.com')) return ok({ access_token: 'tok' });
+      if (url.includes('$deltaToken=latest')) return ok({ '@odata.deltaLink': 'dl-1' });
+      if (url.includes('/users?$select')) return ok({ value: [user({})] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const summary = await runEntraSync(client, { fetchImpl, logEventImpl: (async () => {}) as any });
+    expect(summary).toMatchObject({ mode: 'full', fetched: 1, created: 1, removed: 0, photos: null });
+    expect(summary.photos_skipped_reason).toMatch(/ENTRA_CONSENT_GROUP_ID/);
+    expect(inserts).toHaveLength(1);
+    expect(stateUpserts[0]).toMatchObject({ key: 'users_delta', value: 'dl-1' });
+  });
+
+  it('delta mode: re-fetches changed users in full, deactivates @removed, stores the new deltaLink', async () => {
+    const staffRows = [
+      { id: 's1', full_name: 'Alice Kumar', role: 'Sales Lead', phone: '+919800000001',
+        notify_channel: 'email:alice@xboom.in', active: true, entra_id: 'g1' },
+      { id: 's2', full_name: 'Bob Gone', role: null, phone: null,
+        notify_channel: null, active: true, entra_id: 'g2' },
+    ];
+    const { client, updates, stateUpserts } = makeRunDb(staffRows, 'dl-old');
+    const fetchImpl = (async (url: string) => {
+      if (url.includes('login.microsoftonline.com')) return ok({ access_token: 'tok' });
+      if (url === 'dl-old') {
+        return ok({
+          value: [{ id: 'g1' }, { id: 'g2', '@removed': { reason: 'deleted' } }],
+          '@odata.deltaLink': 'dl-new',
+        });
+      }
+      if (url.includes('/users/g1?$select')) return ok(user({ jobTitle: 'Head of Sales' }));
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const summary = await runEntraSync(client, { fetchImpl, logEventImpl: (async () => {}) as any });
+    expect(summary).toMatchObject({ mode: 'delta', updated: 1, deactivated: 1, removed: 1 });
+    expect(updates.find(u => u.id === 's1')?.patch).toMatchObject({ role: 'Head of Sales' });
+    expect(updates.find(u => u.id === 's2')?.patch).toMatchObject({ active: false });
+    expect(stateUpserts[0]).toMatchObject({ key: 'users_delta', value: 'dl-new' });
   });
 });

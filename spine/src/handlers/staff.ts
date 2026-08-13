@@ -43,7 +43,7 @@ export async function handleListStaff(
 
   const { data: staff, error } = await supabase
     .from('staff')
-    .select('id, full_name, phone, person_type, role, active, created_at, photo_path, desk_x, desk_y, desk_z, desk_rotation, desk_captured_at')
+    .select('id, full_name, phone, person_type, role, active, created_at, photo_path, desk_x, desk_y, desk_z, desk_rotation, desk_captured_at, entra_id, entra_photo_status, entra_synced_at')
     .order('created_at', { ascending: true });
   if (error) return json(res, 500, { ok: false, reason: error.message });
 

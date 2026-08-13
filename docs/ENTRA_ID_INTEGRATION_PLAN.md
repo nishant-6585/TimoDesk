@@ -6,8 +6,9 @@
 > recognition, the directory unlocks several other reception features (host notification,
 > presence, calendar-aware greeting, auto-offboarding).
 >
-> **Status:** PLAN — researched 2026-08-13, nothing here is built except the Phase-0
-> groundwork that already shipped (see "What already exists").
+> **Status:** Phases 1–3 BUILT 2026-08-13 (same branch — see HANDOFF.md for the
+> verification state and go-live steps). Phase 0 is the customer-side handshake
+> (§1) and Phase 4 remains the un-built upsell menu (§3).
 
 ---
 
