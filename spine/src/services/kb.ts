@@ -47,7 +47,7 @@ export async function searchKb(
  */
 export async function upsertChunk(
   supabase: SupabaseClient,
-  chunk: { topic?: string; content: string; is_faq?: boolean; source?: string }
+  chunk: { topic?: string; content: string; is_faq?: boolean; source?: string; source_id?: string }
 ): Promise<void> {
   const embedding = await embedText(chunk.content, 'document');
   const { error } = await supabase.from('kb_chunk').insert({
@@ -56,6 +56,9 @@ export async function upsertChunk(
     embedding: toVectorLiteral(embedding),
     is_faq: chunk.is_faq ?? false,
     source: chunk.source ?? 'manual',
+    // Links the chunk to its managed kb_source (URL/crawl) so a re-sync can
+    // delete-by-source_id cleanly. Null for manually-typed text + staff chunks.
+    source_id: chunk.source_id ?? null,
   });
   if (error) throw new Error(`kb upsert failed: ${error.message}`);
 }

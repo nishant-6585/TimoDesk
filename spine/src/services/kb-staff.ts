@@ -144,7 +144,7 @@ export async function upsertStaffKb(
 }
 
 /** Retry a Voyage-backed ingest twice on rate-limit/transient errors. */
-async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   const delays = [0, 21_000, 21_000]; // free tier: 3 req/min → ~20s spacing
   let lastErr: unknown;
   for (const delay of delays) {

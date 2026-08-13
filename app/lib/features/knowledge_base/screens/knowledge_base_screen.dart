@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../providers/kb_provider.dart';
 import '../widgets/kb_add_dialogs.dart';
+import '../widgets/kb_auto_sync_section.dart';
 import '../widgets/kb_sources_section.dart';
 
 /// Knowledge Base management — the content Mini's voice answers from.
@@ -227,6 +228,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
                 : Column(children: [for (final c in chunks) _chunkCard(c)]),
           ),
           const KbSourcesSection(),
+          const KbAutoSyncSection(),
           const SizedBox(height: 230), // clear the taller FAB stack
         ],
       ),

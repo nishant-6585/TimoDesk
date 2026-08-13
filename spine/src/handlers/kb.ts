@@ -19,10 +19,20 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../auth/middleware';
 import { logEvent } from '../supabase/events';
-import { ingestText, ingestUrl } from '../services/kb-ingest';
+import { ingestText } from '../services/kb-ingest';
 import { syncStaffToKb } from '../services/kb-staff';
 import { ingestFile } from '../services/kb-file';
 import { crawlJobs } from '../services/kb-crawl';
+import {
+  listSources,
+  recordSource,
+  syncSource,
+  getSource,
+  updateSourceSync,
+  deleteSource,
+  deleteSourceChunks,
+  recordSyncOutcome,
+} from '../services/kb-sources';
 import { askQuestion, isAuthoritative } from '../services/rag';
 import { notifyHandoff } from '../services/notify';
 
@@ -116,10 +126,15 @@ export async function handleKbIngestUrl(
   if (!url) return json(res, 400, { ok: false, reason: 'url is required' });
 
   try {
-    const result = await ingestUrl(supabase, {
+    // Register the URL as a managed source and sync THROUGH it (delete-then-
+    // reingest) so re-adding the same page replaces its chunks instead of
+    // duplicating, and it becomes eligible for auto-sync.
+    const source = await recordSource(supabase, {
+      kind: 'url',
       url,
       topic: typeof body.topic === 'string' ? body.topic : undefined,
     });
+    const result = await syncSource(supabase, source);
     await logEvent('kb_ingested', { actor: auth.userId, kind: 'url', url, chunks: result.chunks });
     return json(res, 200, { ok: true, chunks: result.chunks, source: url });
   } catch (err) {
@@ -187,11 +202,26 @@ export async function handleKbCrawlStart(
   if (!url) return json(res, 400, { ok: false, reason: 'url is required' });
 
   try {
-    const job = crawlJobs.start(supabase, {
+    // Register the crawl as a managed source, clear its previous chunks (a
+    // re-crawl replaces), and tag every page with source_id so a later re-sync
+    // stays clean. The crawl runs in the background; stamp the source on finish.
+    const source = await recordSource(supabase, {
+      kind: 'crawl',
       url,
-      max_pages: typeof body.max_pages === 'number' ? body.max_pages : undefined,
       topic: typeof body.topic === 'string' ? body.topic : undefined,
+      max_pages: typeof body.max_pages === 'number' ? body.max_pages : undefined,
     });
+    await deleteSourceChunks(supabase, source.id);
+    const job = crawlJobs.start(
+      supabase,
+      {
+        url,
+        max_pages: typeof body.max_pages === 'number' ? body.max_pages : undefined,
+        topic: typeof body.topic === 'string' ? body.topic : undefined,
+        source_id: source.id,
+      },
+      { onFinish: ({ chunks, ok }) => recordSyncOutcome(supabase, source.id, { chunks, ok }) }
+    );
     await logEvent('kb_crawl_started', { actor: auth.userId, url, max_pages: job.max_pages, job_id: job.id });
     return json(res, 202, { ok: true, job });
   } catch (err) {
@@ -221,6 +251,87 @@ export async function handleKbCrawlGet(
   const job = crawlJobs.get(jobId);
   if (!job) return json(res, 404, { ok: false, reason: 'crawl job not found' });
   return json(res, 200, { ok: true, job });
+}
+
+/** GET /kb/sources — managed URL/crawl sources with their sync state. */
+export async function handleKbSourcesList(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  try {
+    return json(res, 200, { ok: true, sources: await listSources(supabase) });
+  } catch (err) {
+    return json(res, 500, { ok: false, reason: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/** PATCH /kb/sources/{id} — { auto_sync?, sync_interval_hours? }. */
+export async function handleKbSourcePatch(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient,
+  id: string
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  let body: { auto_sync?: unknown; sync_interval_hours?: unknown };
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { ok: false, reason: 'Invalid JSON body' });
+  }
+  try {
+    await updateSourceSync(supabase, id, {
+      auto_sync: typeof body.auto_sync === 'boolean' ? body.auto_sync : undefined,
+      sync_interval_hours:
+        typeof body.sync_interval_hours === 'number' ? body.sync_interval_hours : undefined,
+    });
+    return json(res, 200, { ok: true });
+  } catch (err) {
+    return json(res, 500, { ok: false, reason: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/** POST /kb/sources/{id}/sync — re-sync one source now (delete + re-ingest). */
+export async function handleKbSourceSync(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient,
+  id: string
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  try {
+    const source = await getSource(supabase, id);
+    if (!source) return json(res, 404, { ok: false, reason: 'source not found' });
+    const result = await syncSource(supabase, source);
+    await logEvent('kb_ingested', { actor: auth.userId, kind: `sync:${source.kind}`, url: source.url, chunks: result.chunks });
+    return json(res, 200, { ok: true, chunks: result.chunks });
+  } catch (err) {
+    return json(res, 500, { ok: false, reason: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/** DELETE /kb/sources/{id} — drop a source (its chunks cascade). */
+export async function handleKbSourceDelete(
+  req: IncomingMessage,
+  res: ServerResponse,
+  supabase: SupabaseClient,
+  id: string
+): Promise<void> {
+  const auth = await authorizeRequest(req);
+  if (!auth.ok) return json(res, auth.status, { ok: false, reason: auth.reason });
+  try {
+    const count = await deleteSource(supabase, id);
+    if (!count) return json(res, 404, { ok: false, reason: 'source not found' });
+    await logEvent('kb_chunk_deleted', { actor: auth.userId, source_id: id });
+    return json(res, 200, { ok: true });
+  } catch (err) {
+    return json(res, 500, { ok: false, reason: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /** GET /kb/chunks — list the knowledge base (no embeddings in the payload). */

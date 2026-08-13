@@ -289,6 +289,93 @@ Future<void> kbSourceRemove(String name) async {
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'remove source failed');
 }
 
+/// A managed KB content source (a web page or a website crawl) that can be
+/// refreshed on demand or auto-synced periodically. Distinct from [KbSource]
+/// above, which is an external federated KB provider.
+class KbSyncSource {
+  final String id;
+  final String kind; // 'url' | 'crawl'
+  final String url;
+  final String? topic;
+  final int? maxPages;
+  final bool autoSync;
+  final int syncIntervalHours;
+  final String? lastSyncedAt;
+  final String? lastStatus; // 'ok' | 'error' | null
+  final int chunkCount;
+
+  KbSyncSource({
+    required this.id,
+    required this.kind,
+    required this.url,
+    this.topic,
+    this.maxPages,
+    required this.autoSync,
+    required this.syncIntervalHours,
+    this.lastSyncedAt,
+    this.lastStatus,
+    required this.chunkCount,
+  });
+
+  factory KbSyncSource.fromJson(Map<String, dynamic> j) => KbSyncSource(
+        id: j['id'].toString(),
+        kind: (j['kind'] ?? 'url') as String,
+        url: (j['url'] ?? '') as String,
+        topic: j['topic'] as String?,
+        maxPages: (j['max_pages'] as num?)?.toInt(),
+        autoSync: (j['auto_sync'] ?? false) as bool,
+        syncIntervalHours: (j['sync_interval_hours'] ?? 24) as int,
+        lastSyncedAt: j['last_synced_at'] as String?,
+        lastStatus: j['last_status'] as String?,
+        chunkCount: (j['chunk_count'] ?? 0) as int,
+      );
+}
+
+final kbSyncSourcesProvider =
+    FutureProvider.autoDispose<List<KbSyncSource>>((ref) async {
+  final res = await http
+      .get(Uri.parse('$_spineBase/kb/sources'), headers: _headers)
+      .timeout(const Duration(seconds: 10));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'sources failed');
+  return (data['sources'] as List)
+      .map((e) => KbSyncSource.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+/// Toggle auto-sync / change the interval for a managed source.
+Future<void> kbSourceSetSync(String id, {bool? autoSync, int? intervalHours}) async {
+  final res = await http
+      .patch(Uri.parse('$_spineBase/kb/sources/$id'),
+          headers: _headers,
+          body: jsonEncode({
+            if (autoSync != null) 'auto_sync': autoSync,
+            if (intervalHours != null) 'sync_interval_hours': intervalHours,
+          }))
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'update failed');
+}
+
+/// Re-sync a managed source now (delete its chunks + re-ingest). Slow for crawls.
+Future<int> kbSourceSyncNow(String id) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/sources/$id/sync'), headers: _headers)
+      .timeout(const Duration(seconds: 120));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'sync failed');
+  return (data['chunks'] ?? 0) as int;
+}
+
+/// Remove a managed source (its chunks cascade-delete on the spine).
+Future<void> kbSyncSourceDelete(String id) async {
+  final res = await http
+      .delete(Uri.parse('$_spineBase/kb/sources/$id'), headers: _headers)
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'remove failed');
+}
+
 Future<void> kbDeleteChunk(String id) async {
   final res = await http
       .delete(Uri.parse('$_spineBase/kb/chunks/$id'), headers: _headers)
