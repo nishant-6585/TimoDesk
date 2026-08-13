@@ -345,7 +345,7 @@ export async function handleKbList(
 
   const { data, error } = await supabase
     .from('kb_chunk')
-    .select('id, topic, content, is_faq, source, updated_at')
+    .select('id, topic, content, is_faq, source, source_id, updated_at')
     .order('updated_at', { ascending: false });
   if (error) return json(res, 500, { ok: false, reason: error.message });
   return json(res, 200, { ok: true, chunks: data ?? [] });

@@ -20,6 +20,7 @@ class KbChunk {
   final String content;
   final bool isFaq;
   final String? source;
+  final String? sourceId; // → kb_source (a managed url/crawl); null for manual/legacy
   final String? updatedAt;
 
   KbChunk({
@@ -28,8 +29,16 @@ class KbChunk {
     required this.content,
     required this.isFaq,
     this.source,
+    this.sourceId,
     this.updatedAt,
   });
+
+  /// True when [source] looks like a web address (used to split web-page
+  /// entries from hand-typed knowledge in the library view).
+  bool get sourceIsUrl {
+    final s = source;
+    return s != null && (s.startsWith('http://') || s.startsWith('https://'));
+  }
 
   factory KbChunk.fromJson(Map<String, dynamic> j) => KbChunk(
         id: j['id'].toString(),
@@ -37,6 +46,7 @@ class KbChunk {
         content: (j['content'] ?? '') as String,
         isFaq: (j['is_faq'] ?? false) as bool,
         source: j['source'] as String?,
+        sourceId: j['source_id']?.toString(),
         updatedAt: j['updated_at'] as String?,
       );
 }
@@ -382,6 +392,38 @@ Future<void> kbDeleteChunk(String id) async {
       .timeout(const Duration(seconds: 15));
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'delete failed');
+}
+
+/// Delete every chunk in [ids], one call each (used to remove a legacy web-page
+/// group that isn't a managed source). Best-effort: collects failures and
+/// throws once at the end so partial success is still applied.
+Future<void> kbDeleteChunks(List<String> ids) async {
+  final failures = <String>[];
+  for (final id in ids) {
+    try {
+      await kbDeleteChunk(id);
+    } catch (_) {
+      failures.add(id);
+    }
+  }
+  if (failures.isNotEmpty) {
+    throw Exception('${failures.length} of ${ids.length} entries could not be deleted');
+  }
+}
+
+/// Edit a hand-typed knowledge entry. There is no in-place chunk update on the
+/// spine (content must be re-embedded), so we ingest the new text first, then
+/// delete the old chunk — no gap where the entry is missing. Long text may
+/// re-split into multiple chunks. Returns the new chunk count.
+Future<int> kbUpdateManualEntry(
+  String oldId,
+  String text, {
+  String? topic,
+  bool isFaq = false,
+}) async {
+  final chunks = await kbIngestText(text, topic: topic, isFaq: isFaq);
+  await kbDeleteChunk(oldId);
+  return chunks;
 }
 
 /// Ask the grounded brain (same pipeline the robot's voice uses).
