@@ -70,6 +70,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
     if (result == true) {
       ref.invalidate(kbChunksProvider);
       ref.invalidate(kbStatusProvider);
+      ref.invalidate(kbSyncSourcesProvider); // a URL ingest records a managed source
     }
   }
 
@@ -143,6 +144,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
             onPressed: () {
               ref.invalidate(kbChunksProvider);
               ref.invalidate(kbStatusProvider);
+              ref.invalidate(kbSyncSourcesProvider);
             },
           ),
         ],
@@ -204,6 +206,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
           KbCrawlJobsStrip(onJobFinished: () {
             ref.invalidate(kbChunksProvider);
             ref.invalidate(kbStatusProvider);
+            ref.invalidate(kbSyncSourcesProvider); // crawl finished → source now recorded
           }),
           const SizedBox(height: 24),
           Text('KNOWLEDGE ENTRIES',
