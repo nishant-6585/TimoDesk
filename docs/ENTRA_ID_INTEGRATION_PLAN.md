@@ -81,7 +81,7 @@ long-term product play — defer it.
 ## 2. What already exists (don't rebuild)
 
 - `spine/src/services/entra.ts` — client-credentials token + paginated `/users` fetch +
-  `syncEntraStaff()`: match by `staff.entra_id` (migration 016), one-time adopt-by-name of
+  `syncEntraStaff()`: match by `staff.entra_id` (migration 021, ex-016), one-time adopt-by-name of
   manual enrollments, create as `person_type 'Employee'`, update name/role/phone, fill
   `notify_channel = email:<mail>` only when empty, `active` follows `accountEnabled`,
   vanished users deactivated (never deleted — DPDP erasure stays a human action).

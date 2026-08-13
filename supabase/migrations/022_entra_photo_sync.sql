@@ -1,6 +1,7 @@
--- 019: Entra ID photo → face-embedding sync (Phases 1-2 of the Entra plan).
+-- 022 (renumbered from unapplied 019): Entra ID photo → face-embedding sync
+-- (Phases 1-2 of the Entra plan).
 --
--- The directory sync (016) mirrors users; this adds what the PHOTO pipeline
+-- The directory sync (021) mirrors users; this adds what the PHOTO pipeline
 -- needs:
 --
 --   • staff.entra_photo_etag     — Graph @odata.mediaEtag of the last photo we

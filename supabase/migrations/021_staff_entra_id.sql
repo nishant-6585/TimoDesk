@@ -1,4 +1,5 @@
--- 016: Microsoft Entra ID (Azure AD) directory sync support.
+-- 021 (renumbered from 016 — version collided with 016_kb_hnsw_index):
+-- Microsoft Entra ID (Azure AD) directory sync support.
 --
 -- staff.entra_id anchors a staff row to its Graph user (users/{id}) so the
 -- sync is idempotent: match by entra_id first, adopt-by-name once, and

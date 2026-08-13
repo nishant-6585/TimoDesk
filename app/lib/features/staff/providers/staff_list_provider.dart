@@ -23,7 +23,7 @@ class StaffMember {
   final double? deskY;
   final double? deskZ;
   final double? deskRotation;
-  // Entra ID directory sync (migrations 016/019). entraId null = manually enrolled.
+  // Entra ID directory sync (migrations 021/022). entraId null = manually enrolled.
   final String? entraId;
   final String? entraPhotoStatus;
 

@@ -5,7 +5,7 @@
  * registration with Application permission `User.Read.All`, admin-consented)
  * and mirrors them into the `staff` table:
  *
- *   • match by staff.entra_id (migration 016); first run adopts existing rows
+ *   • match by staff.entra_id (migration 021); first run adopts existing rows
  *     by case-insensitive full_name so manual enrollments gain an entra_id
  *     instead of duplicating;
  *   • create missing users (person_type 'Employee');
@@ -17,7 +17,7 @@
  *     (entra_id NULL) are never deactivated by the sync.
  *
  * On top of the one-shot user mirror, `runEntraSync` orchestrates the full
- * recurring sync (migration 019):
+ * recurring sync (migration 022):
  *
  *   • incremental /users/delta with the deltaLink persisted in
  *     entra_sync_state (410 Gone → transparent full resync);
@@ -376,7 +376,7 @@ async function readSyncState(supabase: SupabaseClient, key: string): Promise<str
     .eq('key', key)
     .maybeSingle();
   if (error) {
-    // Missing table (migration 019 not applied) must not break the sync — it
+    // Missing table (migration 022 not applied) must not break the sync — it
     // just stays full-enumeration until the migration lands.
     console.warn(`[Entra] sync-state read failed (falling back to full sync): ${error.message}`);
     return null;

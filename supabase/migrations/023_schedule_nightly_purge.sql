@@ -1,5 +1,6 @@
 -- =============================================================================
--- 017 — Schedule the DPDP nightly purge (pg_cron)
+-- 023 — Schedule the DPDP nightly purge (pg_cron) (renumbered from 017 —
+-- version collided with 017_tighten_rls; idempotent, re-running is safe)
 -- =============================================================================
 --
 -- Migration 005 created purge_expired_data() but left its SCHEDULE as a comment,
