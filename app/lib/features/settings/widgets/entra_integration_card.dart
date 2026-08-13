@@ -11,7 +11,7 @@ import '../providers/entra_provider.dart';
 /// never reach this app. Offers "Sync now" and shows the last run's summary so
 /// the front-desk admin can see what the directory import did.
 class EntraIntegrationCard extends ConsumerStatefulWidget {
-  const EntraIntegrationCard({Key? key}) : super(key: key);
+  const EntraIntegrationCard({super.key});
 
   @override
   ConsumerState<EntraIntegrationCard> createState() => _EntraIntegrationCardState();
@@ -28,11 +28,15 @@ class _EntraIntegrationCardState extends ConsumerState<EntraIntegrationCard> {
       ref.invalidate(staffListProvider); // synced staff show up immediately
       if (!mounted) return;
       final photos = s['photos'] as Map<String, dynamic>?;
+      // Read counters defensively: the summary is built server-side, and a
+      // missing key here would throw inside the success path and surface a
+      // completed sync as "Entra sync failed".
+      int n(String k) => (photos?[k] as num?)?.toInt() ?? 0;
       final line = photos == null
           ? '${s['fetched']} users (${s['mode']}) — photo import off'
-          : '${s['fetched']} users (${s['mode']}) · ${photos['embedded']} photos embedded, '
-              '${photos['rejected_quality'] + photos['rejected_multi_face']} rejected, '
-              '${photos['collisions']} collisions';
+          : '${s['fetched']} users (${s['mode']}) · ${n('embedded')} photos embedded, '
+              '${n('rejected_quality') + n('rejected_multi_face')} rejected, '
+              '${n('collisions')} collisions';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Entra sync done: $line')));
     } catch (e) {
@@ -69,7 +73,7 @@ class _EntraIntegrationCardState extends ConsumerState<EntraIntegrationCard> {
           InkWell(
             onTap: () => ref.invalidate(entraStatusProvider),
             child: Row(children: [
-              Icon(Icons.refresh, size: 13, color: MikeeColors.textMuted),
+              const Icon(Icons.refresh, size: 13, color: MikeeColors.textMuted),
               const SizedBox(width: 3),
               Text('Refresh',
                   style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),

@@ -64,7 +64,7 @@ class EntraStatus {
   /// Days until the recorded client-secret expiry; null when unknown.
   int? get secretDaysLeft {
     final exp = DateTime.tryParse(secretExpires ?? '');
-    return exp == null ? null : exp.difference(DateTime.now()).inDays;
+    return exp?.difference(DateTime.now()).inDays;
   }
 }
 
