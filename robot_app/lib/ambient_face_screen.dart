@@ -11,6 +11,7 @@ import 'app_widgets.dart';
 import 'config.dart';
 import 'face_painter.dart';
 import 'services/robot_tts.dart';
+import 'services/voice_arbiter.dart';
 import 'services/person_detect.dart';
 import 'services/face_recognition.dart';
 import 'models/voice_language.dart';
@@ -158,6 +159,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
   StreamSubscription<VoiceEvent>? _voiceSub;
   StreamSubscription<String>? _wakeSub;
   StreamSubscription<String>? _asrSub;
+
+  // Conversational PHYSICAL head gestures during a voice session — mirrors the
+  // dashboard so the robot nods / tilts / sways with the conversation on the MAIN
+  // FACE SCREEN too (it used to stay dead-still here while the dashboard moved).
+  bool _gestureBusy = false; // one multi-step gesture at a time (they'd fight)
+  int _lastSwayMs = 0; // throttle speaking sway to ~once / 300ms
+  int _lastNodMs = 0; //  throttle the acknowledging nod to ~once / 2.5s
   Timer? _asrFinalTimer;
   String _asrUtterance = '';
   StreamSubscription<double>? _playbackSub; // speaker amplitude → lip-sync
@@ -548,7 +556,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // no spine identity to wait for, so greet immediately.
     if (_spine.isConnected) {
       _pendingVisitorTimer?.cancel();
-      _pendingVisitorTimer = Timer(const Duration(milliseconds: 1500), () {
+      // Give the spine's identity verdict enough time to WIN the race: a
+      // recognised staff member's faceDetected(name) frame can land well after
+      // the first 'unknown' frame (recognition needs a few 500ms cadence ticks
+      // to gain confidence). 1500 ms was too short → staff heard the generic
+      // "Hello" and their name never spoke (only on a later mic tap). A longer
+      // window means a recognised face gets ONLY "Hello <Name>".
+      _pendingVisitorTimer = Timer(const Duration(milliseconds: 3000), () {
         if (!mounted || _greeted || _voiceActive) return;
         _greetOnApproach();
       });
@@ -1626,6 +1640,21 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     setState(() => _face = _face.copyWith(state: k));
   }
 
+  // Run a multi-step physical head gesture, skipping if one is already in flight
+  // (so nod / tilt / sway don't fight each other) or no session is live.
+  // Best-effort; silent off-device / when the SDK is busy.
+  Future<void> _gesture(Future<void> Function() g) async {
+    if (!_voiceActive || _gestureBusy) return;
+    _gestureBusy = true;
+    try {
+      await g();
+    } catch (_) {
+      // off-device or SDK busy — ignore
+    } finally {
+      _gestureBusy = false;
+    }
+  }
+
   /// A voice-related config value changed. Only act on an actual engine SWITCH
   /// (elevenConfigRev also bumps on key edits) — swap the live provider so the
   /// next session uses the newly-selected engine.
@@ -1658,7 +1687,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // Also clear any stale playback (e.g. a reply cut off by a language
         // switch reconnect) so we don't talk over the new session.
         _suppressTeardown = false; // a new session is live — clear any pending recovery
-        _audioBridge.stopPlayback();
+        VoiceArbiter.agentActive = true; // the conversation now owns the speaker
+        _audioBridge.stopPlayback(); // silence any in-flight announcement/escort TTS
         _audioBridge.startSpeechEngine(); // session-gated mic engine (startIsr)
         setState(() {
           _voiceActive = true;
@@ -1680,6 +1710,11 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         final echoUs = _face.state == FaceStateKind.speaking ||
             (nowUs - _lastSpeakingMs) < _echoGuardMs;
         if (!echoUs) _bumpActivity();
+        // Acknowledging nod while the visitor talks (throttled ~2.5s).
+        if (!echoUs && nowUs - _lastNodMs > 2500) {
+          _lastNodMs = nowUs;
+          _gesture(RobotGestures.headNod);
+        }
         setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
         break;
       case VoiceEventKind.agentThinking:
@@ -1687,6 +1722,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // NOTE: in this ElevenLabs integration the USER's speech surfaces here
         // (with the transcript), not as userSpeaking — so this is our reliable
         // "a real person engaged" signal. Mark the conversation started + keep alive.
+        _gesture(RobotGestures.headTilt); // curious "thinking" tilt (physical head)
         _dropFirstAgentTurn = false; // real reply coming → play it
         _reconnectAttempts = 0; // a real turn landed → refresh the retry budget
         // Reset the idle timer ONLY on GENUINE user words — a non-empty transcript
@@ -1751,6 +1787,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         // NOTE: deliberately NOT bumping activity here — Mini's OWN speech must not
         // keep the session alive, or an agent that keeps talking with no visitor
         // never returns to idle (obs 1). Only USER input resets the idle timer.
+        _gesture(RobotGestures.chestAttention); // perk up to speak (physical head)
         setState(() => _face = _face.copyWith(state: FaceStateKind.speaking));
         break;
       case VoiceEventKind.audioChunk:
@@ -1775,6 +1812,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
           _suppressTeardown = false;
           return;
         }
+        VoiceArbiter.agentActive = false; // speaker freed → announcements may resume
+        RobotGestures.headCenter(); // conversation over → recenter the physical head
         _audioBridge.stopSpeechEngine(); // session over → stop the mic engine
         _intentionalClose = false;
         _reconnectAttempts = 0;
@@ -1817,6 +1856,8 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
         }
         // Out of retries (or a deliberate close) → give up cleanly.
         _suppressTeardown = false;
+        VoiceArbiter.agentActive = false; // failed/closed → free the speaker
+        RobotGestures.headCenter(); // recenter the physical head on close
         _stopIdleWatch();
         _autoSession = false;
         _audioBridge.stopMic();
@@ -1873,7 +1914,13 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
     // top. (Auto sessions are already greeted by the face-detection flow.)
     if (!auto && !reconnect) {
       _dropFirstAgentTurn = true;
-      _speakGreeting(hasRecognized ? 'Hello $recognized!' : 'Hello! How can I help you?');
+      // But do NOT greet again if this visit was already greeted (e.g. the face
+      // was recognised and "Hello <Name>" already played) — a second hello on the
+      // mic tap is the double-greeting the visitor complained about.
+      if (!_greeted) {
+        _greeted = true;
+        _speakGreeting(hasRecognized ? 'Hello $recognized!' : 'Hello! How can I help you?');
+      }
     }
     _voiceAgent.startSession();
     // Capture mic → pipe PCM chunks to the agent AND meter the level so the UI
@@ -2013,6 +2060,7 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       // it on drain. Bumping on every drain also reset the counter on PHANTOM
       // turns (Mini answering room noise), so the session never auto-closed.
       debugPrint('Playback: drained → listening');
+      RobotGestures.headCenter(); // Mini finished talking → recenter the head
       setState(() => _face = _face.copyWith(state: FaceStateKind.listening, mouthOpen: 0));
     } else if (level < _speechFloor) {
       // Near-silent straggler chunk (trailing/padding audio that lands after the
@@ -2026,6 +2074,12 @@ class _AmbientFaceScreenState extends ConsumerState<AmbientFaceScreen>
       // idle timer (obs 1). The watchdog's mid-utterance guard prevents cutting him
       // off mid-reply; only USER speech keeps the session alive.
       final mouth = (level * 3.5).clamp(0.04, 1.0);
+      // Sway the PHYSICAL head with the voice, throttled so we don't flood the SDK
+      // (mirrors the dashboard) — this is what was missing on the face screen.
+      if (!_gestureBusy && _lastSpeakingMs - _lastSwayMs > 300) {
+        _lastSwayMs = _lastSpeakingMs;
+        _gesture(() => RobotGestures.headSway(mouth));
+      }
       setState(() =>
           _face = _face.copyWith(state: FaceStateKind.speaking, mouthOpen: mouth));
     }

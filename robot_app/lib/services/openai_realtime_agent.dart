@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -88,6 +89,7 @@ class OpenAiRealtimeAgent implements VoiceProvider {
       return;
     }
     _transcript.clear();
+    _handledCalls.clear();
     _speaking = false;
     _connectedAtMs = 0;
     try {
@@ -165,10 +167,23 @@ class OpenAiRealtimeAgent implements VoiceProvider {
     final ws = _channel;
     if (ws == null || pcmBytes.isEmpty) return;
     final up = _resamplePcm16(pcmBytes, _deviceRate, _wireRate);
-    ws.add(jsonEncode({
+    _send(ws, {
       'type': 'input_audio_buffer.append',
       'audio': base64Encode(up),
-    }));
+    });
+  }
+
+  /// Send one JSON frame, tolerating a socket that closed underneath us. A tool
+  /// result (or a late audio chunk) can land AFTER navigation tore the session
+  /// down — `ws.add` on a closing socket throws "Bad state: StreamSink is
+  /// closed". Swallow it instead of crashing the caller.
+  void _send(WebSocket? ws, Map<String, dynamic> frame) {
+    if (ws == null) return;
+    try {
+      ws.add(jsonEncode(frame));
+    } catch (e) {
+      debugPrint('OpenAiRealtime: dropped frame on closed socket ($e)');
+    }
   }
 
   @override
@@ -180,7 +195,7 @@ class OpenAiRealtimeAgent implements VoiceProvider {
   void _sendUserItem(String text, {required bool respond}) {
     final ws = _channel;
     if (ws == null) return;
-    ws.add(jsonEncode({
+    _send(ws, {
       'type': 'conversation.item.create',
       'item': {
         'type': 'message',
@@ -189,8 +204,8 @@ class OpenAiRealtimeAgent implements VoiceProvider {
           {'type': 'input_text', 'text': text}
         ],
       },
-    }));
-    if (respond) ws.add(jsonEncode({'type': 'response.create'}));
+    });
+    if (respond) _send(ws, {'type': 'response.create'});
   }
 
   @override
@@ -199,15 +214,15 @@ class OpenAiRealtimeAgent implements VoiceProvider {
     if (ws == null) return;
     // OpenAI carries the outcome back as a function_call_output item keyed by the
     // call_id, then a fresh response so the agent speaks the result.
-    ws.add(jsonEncode({
+    _send(ws, {
       'type': 'conversation.item.create',
       'item': {
         'type': 'function_call_output',
         'call_id': toolCallId,
         'output': isError ? 'ERROR: $result' : result,
       },
-    }));
-    ws.add(jsonEncode({'type': 'response.create'}));
+    });
+    _send(ws, {'type': 'response.create'});
   }
 
   @override
@@ -301,10 +316,18 @@ class OpenAiRealtimeAgent implements VoiceProvider {
     }
   }
 
+  // call_ids already dispatched this session. GA delivers a completed function
+  // call as BOTH `response.function_call_arguments.done` AND
+  // `response.output_item.done`, so without this every tool ran TWICE — two navi
+  // dispatches, and worse, two place_order / raise_enquiry (a double order). Only
+  // the first event per call_id is acted on.
+  final Set<String> _handledCalls = {};
+
   void _onFunctionCall(Map<String, dynamic> msg) {
     final tool = msg['name'] as String?;
     final callId = msg['call_id'] as String?;
     if (tool == null || callId == null) return;
+    if (!_handledCalls.add(callId)) return; // duplicate delivery of the same call
     Map<String, dynamic> args = const {};
     final raw = msg['arguments'];
     if (raw is String && raw.trim().isNotEmpty) {

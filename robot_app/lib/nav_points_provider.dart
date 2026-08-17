@@ -8,6 +8,7 @@ import 'config.dart';
 import 'providers.dart'; // chassisProvider (native getPosition/naviTo/cancelNavi)
 import 'services/audio_bridge.dart'; // arrival speech fallback (device TTS)
 import 'services/robot_tts.dart'; // arrival speech (selected engine's voice)
+import 'services/voice_arbiter.dart'; // single-speaker gate (agent vs announcements)
 import 'services/interaction_log.dart';
 import 'services/nav_points_api.dart';
 import 'services/nav_points_cache.dart';
@@ -147,6 +148,7 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
   // spine round-trip so the visitor hears a response immediately) and the
   // navi_state broadcast (admin-initiated navs, or our own echoed back).
   String? _announcedDeparture;
+  bool _stallAnnounced = false; // spoke the "trouble moving" line once per nav
 
   /// Speak an arrival announcement through Mini's real voice (ElevenLabs →
   /// proven speaker path). The device-TTS fallback exists because ElevenLabs
@@ -182,9 +184,21 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
         _stopEscortTimer();
         return;
       }
-      if (++repeats > 6) {
+      // One voice at a time: if a conversation agent is holding the speaker, skip
+      // this reassurance tick (don't talk over the live conversation, and don't
+      // burn a repeat — resume reassuring once the conversation frees the speaker).
+      if (VoiceArbiter.agentActive) {
+        debugPrint('escort: agent owns speaker — skipping reassurance tick');
+        return;
+      }
+      if (++repeats > 3) {
+        // Arrival was never confirmed after a few reassurances. On this unit the
+        // base can fail to translate (hardware) so the robot is stationary while
+        // it chants "please stay with me" — stop and hand off HONESTLY instead of
+        // repeating for a minute-plus.
         debugPrint('escort: reassurance capped after $repeats repeats');
         InteractionLog.log('escort_reassure_capped', state.navigatingTo!.name);
+        _speakArrival('You can head over — I will be right here.');
         _stopEscortTimer();
         return;
       }
@@ -252,10 +266,23 @@ class NavPointsNotifier extends StateNotifier<NavPointsState> {
     } else if (state.escort != null) {
       state = state.copyWith(clearEscort: true);
     }
+    // STALL: the spine says the goal is active but the robot isn't translating
+    // (e.g. the base motor fault). Stop chanting "follow me" at a robot that
+    // isn't moving — say it ONCE, honestly, and let the spine's watchdog clear
+    // the goal. (Without this the escort reassurance loops for minutes.)
+    if (m['stalled'] == true && m['active'] == true) {
+      _stopEscortTimer();
+      if (!_stallAnnounced) {
+        _stallAnnounced = true;
+        _speakArrival("Sorry — I'm having trouble moving right now. Please bear with me.");
+      }
+      return;
+    }
     if (m['active'] != true) {
       _stopEscortTimer();
       _cancelNavStaleWatch();
       _announcedDeparture = null; // nav over → next one announces again
+      _stallAnnounced = false; // reset for the next navigation
       if (m['arrived'] == true) {
         // Spine's arrival watcher confirmed the robot reached the point.
         final name =

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../config.dart';
 import 'voice_provider.dart';
 
@@ -157,7 +159,18 @@ class VoiceAgent implements VoiceProvider {
   void sendUserText(String text) {
     final ws = _channel;
     if (ws == null || text.trim().isEmpty) return;
-    ws.add(jsonEncode({'type': 'user_message', 'text': text.trim()}));
+    _safeAdd(ws, jsonEncode({'type': 'user_message', 'text': text.trim()}));
+  }
+
+  /// Send a frame, tolerating a socket that closed underneath us (a tool result
+  /// can land after the session was torn down → "Bad state: StreamSink is
+  /// closed"). Never throws.
+  void _safeAdd(WebSocket ws, String data) {
+    try {
+      ws.add(data);
+    } catch (e) {
+      debugPrint('VoiceAgent: dropped frame on closed socket ($e)');
+    }
   }
 
   /// Reply to a client_tool_call. [result] is the short outcome the agent speaks
@@ -166,7 +179,7 @@ class VoiceAgent implements VoiceProvider {
   void sendToolResult(String toolCallId, String result, {bool isError = false}) {
     final ws = _channel;
     if (ws == null) return;
-    ws.add(jsonEncode({
+    _safeAdd(ws, jsonEncode({
       'type': 'client_tool_result',
       'tool_call_id': toolCallId,
       'result': result,
@@ -177,7 +190,7 @@ class VoiceAgent implements VoiceProvider {
   void sendAudioChunk(Uint8List pcmBytes) {
     final ws = _channel;
     if (ws == null) return;
-    ws.add(jsonEncode({'user_audio_chunk': base64Encode(pcmBytes)}));
+    _safeAdd(ws, jsonEncode({'user_audio_chunk': base64Encode(pcmBytes)}));
   }
 
   Future<void> endSession() async {
