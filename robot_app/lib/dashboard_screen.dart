@@ -13,7 +13,7 @@ import 'face_painter.dart'; // FaceState, FaceStateKind, FacePainter
 import 'face_rig.dart'; // FaceRig
 import 'services/voice_agent.dart';
 import 'services/audio_bridge.dart';
-import 'services/elevenlabs_tts.dart';
+import 'services/robot_tts.dart';
 import 'services/robot_gestures.dart';
 import 'services/voice_command_handler.dart';
 import 'services/intent_registry.dart';
@@ -113,8 +113,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   static const int _echoGuardMs = 2500;
 
   // Speaks action phrases in the agent's real voice (same as the face screen),
-  // streamed through the shared speaker; falls back to on-device TTS.
-  late final ElevenLabsTts _tts;
+  // streamed through the shared speaker; falls back to on-device TTS. Uses
+  // RobotTts so it follows the SELECTED engine (ElevenLabs / OpenAI) — a
+  // hardcoded ElevenLabs here made the dashboard talk in the wrong voice while
+  // the conversation ran on OpenAI (two voices at once).
+  late final RobotTts _tts;
 
   // Action state
   _Act? _activeAct; // tile currently lit
@@ -151,11 +154,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _voiceSub = widget.voiceAgent.events.listen(_onVoiceEvent);
     _playbackSub = widget.audioBridge.playbackLevelStream.listen(_onPlaybackLevel);
     _asrSub = widget.audioBridge.asrTextStream.listen(_onUserSpeechGesture);
-    _tts = ElevenLabsTts(
-      apiKey: RobotConfig.elevenLabsApiKey,
-      voiceId: RobotConfig.elevenLabsVoiceId,
-      audio: widget.audioBridge,
-    );
+    _tts = RobotTts(audio: widget.audioBridge);
     // Intro: open in greeting, settle to attentive after ~2.8s (§6).
     _intro = Timer(const Duration(milliseconds: 2800), () {
       if (mounted && !_resting && _activeAct == null) _setKind(FaceStateKind.attentive);

@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'config.dart';
 import 'services/audio_bridge.dart';
-import 'services/elevenlabs_tts.dart';
+import 'services/robot_tts.dart';
 import 'services/thinking_filler.dart';
 
 /// Voice Q&A — kiosk front-end for the spine's grounded brain (`POST /ask`).
@@ -31,11 +31,9 @@ class _VoiceQaScreenState extends State<VoiceQaScreen> {
 
   final _controller = TextEditingController();
   final _audio = AudioBridge();
-  late final ElevenLabsTts _tts = ElevenLabsTts(
-    apiKey: RobotConfig.elevenLabsApiKey,
-    voiceId: RobotConfig.elevenLabsVoiceId,
-    audio: _audio,
-  );
+  // RobotTts follows the selected engine (ElevenLabs / OpenAI) so the QA voice
+  // matches the rest of the robot instead of always ElevenLabs.
+  late final RobotTts _tts = RobotTts(audio: _audio);
 
   bool _busy = false;
   String? _question;
