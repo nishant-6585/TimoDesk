@@ -105,7 +105,7 @@ export function htmlToText(html: string): string {
 export interface IngestDeps {
   upsert?: (
     supabase: SupabaseClient,
-    chunk: { topic?: string; content: string; is_faq?: boolean; source?: string }
+    chunk: { topic?: string; content: string; is_faq?: boolean; source?: string; source_id?: string }
   ) => Promise<void>;
   fetchPage?: (url: string) => Promise<string>;
 }
@@ -120,7 +120,7 @@ export interface IngestResult {
  */
 export async function ingestText(
   supabase: SupabaseClient,
-  input: { text: string; topic?: string; is_faq?: boolean; source?: string },
+  input: { text: string; topic?: string; is_faq?: boolean; source?: string; source_id?: string },
   deps: IngestDeps = {}
 ): Promise<IngestResult> {
   const upsert = deps.upsert ?? upsertChunk;
@@ -131,6 +131,7 @@ export async function ingestText(
       content,
       is_faq: input.is_faq ?? false,
       source: input.source ?? 'manual',
+      source_id: input.source_id,
     });
   }
   return { chunks: chunks.length };
@@ -156,7 +157,7 @@ async function defaultFetchPage(url: string): Promise<string> {
  */
 export async function ingestUrl(
   supabase: SupabaseClient,
-  input: { url: string; topic?: string },
+  input: { url: string; topic?: string; source_id?: string },
   deps: IngestDeps = {}
 ): Promise<IngestResult> {
   const parsed = new URL(input.url); // throws on garbage
@@ -169,7 +170,7 @@ export async function ingestUrl(
   if (text.length < 40) throw new Error('page produced no usable text (JS-rendered site? paste as text instead)');
   return ingestText(
     supabase,
-    { text, topic: input.topic, source: input.url },
+    { text, topic: input.topic, source: input.url, source_id: input.source_id },
     deps
   );
 }

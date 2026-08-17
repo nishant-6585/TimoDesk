@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../providers/kb_provider.dart';
 import '../widgets/kb_add_dialogs.dart';
+import '../widgets/kb_library_section.dart';
 import '../widgets/kb_sources_section.dart';
 
 /// Knowledge Base management — the content Mini's voice answers from.
@@ -69,6 +70,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
     if (result == true) {
       ref.invalidate(kbChunksProvider);
       ref.invalidate(kbStatusProvider);
+      ref.invalidate(kbSyncSourcesProvider); // a URL ingest records a managed source
     }
   }
 
@@ -91,43 +93,8 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
     if (started == true) ref.invalidate(kbCrawlJobsProvider);
   }
 
-  Future<void> _delete(KbChunk c) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: MikeeColors.cardTop,
-        title: const Text('Delete this entry?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          c.content.length > 160 ? '${c.content.substring(0, 160)}…' : c.content,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: MikeeColors.error)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await kbDeleteChunk(c.id);
-      ref.invalidate(kbChunksProvider);
-      ref.invalidate(kbStatusProvider);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final chunksAsync = ref.watch(kbChunksProvider);
     final statusAsync = ref.watch(kbStatusProvider);
 
     return Scaffold(
@@ -142,6 +109,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
             onPressed: () {
               ref.invalidate(kbChunksProvider);
               ref.invalidate(kbStatusProvider);
+              ref.invalidate(kbSyncSourcesProvider);
             },
           ),
         ],
@@ -203,29 +171,23 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
           KbCrawlJobsStrip(onJobFinished: () {
             ref.invalidate(kbChunksProvider);
             ref.invalidate(kbStatusProvider);
+            ref.invalidate(kbSyncSourcesProvider); // crawl finished → source now recorded
           }),
           const SizedBox(height: 24),
-          Text('KNOWLEDGE ENTRIES',
+          Text('KNOWLEDGE LIBRARY',
               style: TextStyle(
                   color: Colors.white.withOpacity(0.5),
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2)),
           const SizedBox(height: 12),
-          chunksAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(40),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (e, _) => Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text('Failed to load: $e',
-                  style: const TextStyle(color: Colors.white54)),
-            ),
-            data: (chunks) => chunks.isEmpty
-                ? _emptyState()
-                : Column(children: [for (final c in chunks) _chunkCard(c)]),
-          ),
+          // Grouped-by-type library (crawls / web pages / manual / documents) —
+          // carries per-source sync + auto-sync controls and per-entry edit/delete.
+          KbLibrarySection(onChanged: () {
+            ref.invalidate(kbChunksProvider);
+            ref.invalidate(kbStatusProvider);
+          }),
+          const SizedBox(height: 24),
           const KbSourcesSection(),
           const SizedBox(height: 230), // clear the taller FAB stack
         ],
@@ -404,83 +366,6 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
     );
   }
 
-  Widget _emptyState() {
-    return Container(
-      padding: const EdgeInsets.all(36),
-      alignment: Alignment.center,
-      child: Column(children: [
-        const Icon(Icons.menu_book, color: Colors.white24, size: 44),
-        const SizedBox(height: 12),
-        const Text('The knowledge base is empty.',
-            style: TextStyle(color: Colors.white54, fontSize: 15)),
-        const SizedBox(height: 6),
-        Text(
-          'Add company facts, FAQs, or a web page — Mini will answer '
-          'visitors from this content only.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
-        ),
-      ]),
-    );
-  }
-
-  Widget _chunkCard(KbChunk c) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: MikeeColors.cardTop,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: MikeeColors.borderFaint),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              if (c.isFaq)
-                Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: MikeeColors.success.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: const Text('FAQ',
-                      style:
-                          TextStyle(color: MikeeColors.success, fontSize: 10)),
-                ),
-              if (c.topic != null && c.topic!.isNotEmpty)
-                Text(c.topic!,
-                    style: const TextStyle(
-                        color: MikeeColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-            ]),
-            if (c.isFaq || (c.topic?.isNotEmpty ?? false))
-              const SizedBox(height: 6),
-            Text(c.content,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 13, height: 1.4)),
-            if (c.source != null && c.source!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(c.source!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white30, fontSize: 11)),
-            ],
-          ]),
-        ),
-        IconButton(
-          tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
-          onPressed: () => _delete(c),
-        ),
-      ]),
-    );
-  }
 }
 
 class _AddTextDialog extends StatefulWidget {

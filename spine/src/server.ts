@@ -41,8 +41,13 @@ import {
   handleKbList,
   handleKbStatus,
   handleKbDelete,
+  handleKbSourcesList,
+  handleKbSourcePatch,
+  handleKbSourceSync,
+  handleKbSourceDelete,
   handleElevenLabsAsk,
 } from './handlers/kb';
+import { runDueSyncs } from './services/kb-sources';
 import { handleEntraSync } from './handlers/entra';
 import { handleMcpPlugins } from './handlers/mcp-plugins';
 import { getMcpPluginRegistry } from './services/mcp-plugins';
@@ -566,6 +571,32 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       }, 60_000);
     }
 
+    // KB auto-sync: periodically re-crawl/re-ingest managed sources whose
+    // interval has elapsed. Env-gated like AUTO_DOCK_BATTERY (KB_AUTOSYNC unset =
+    // off). One source at a time (Voyage free-tier rate limit) — see
+    // services/kb-sources.ts. We poll every 30 min; each source's own
+    // sync_interval_hours decides whether it's actually due.
+    if (process.env.KB_AUTOSYNC && supabase) {
+      const kbSupabase = supabase; // narrowed non-null for the closures below
+      const KB_AUTOSYNC_CHECK_MS = 30 * 60_000;
+      const runKbAutoSync = async () => {
+        try {
+          const r = await runDueSyncs(kbSupabase);
+          if (r.due > 0) {
+            console.log(
+              `[KB] auto-sync: ${r.synced}/${r.due} sources refreshed` +
+                (r.failed ? `, ${r.failed} failed` : '')
+            );
+          }
+        } catch (err) {
+          console.error('[KB] auto-sync tick failed:', err instanceof Error ? err.message : String(err));
+        }
+      };
+      setInterval(() => void runKbAutoSync(), KB_AUTOSYNC_CHECK_MS);
+      void runKbAutoSync(); // evaluate on boot, don't wait 30 min
+      console.log('[KB] auto-sync enabled (KB_AUTOSYNC set)');
+    }
+
     // ── Video recording (spine-side, ffmpeg over the MJPEG stream) ─────────────
     // The ffmpeg process lives here, so a recording KEEPS RUNNING no matter what
     // the admin UI navigates to. Recording state is broadcast to all clients so
@@ -836,6 +867,25 @@ export function startServer(sdk: RobotSDK): Promise<void> {
       const crawlMatch = url.match(/^\/kb\/crawl\/([^/]+)$/);
       if (crawlMatch && req.method === 'GET') {
         await handleKbCrawlGet(req, res, decodeURIComponent(crawlMatch[1]));
+        return;
+      }
+      // Managed KB sources (URL/crawl) + auto-sync. `/sync` matched before {id}.
+      if (url === '/kb/sources' && req.method === 'GET') {
+        await handleKbSourcesList(req, res, supabase);
+        return;
+      }
+      const sourceSyncMatch = url.match(/^\/kb\/sources\/([^/]+)\/sync$/);
+      if (sourceSyncMatch && req.method === 'POST') {
+        await handleKbSourceSync(req, res, supabase, decodeURIComponent(sourceSyncMatch[1]));
+        return;
+      }
+      const sourceMatch = url.match(/^\/kb\/sources\/([^/]+)$/);
+      if (sourceMatch && req.method === 'PATCH') {
+        await handleKbSourcePatch(req, res, supabase, decodeURIComponent(sourceMatch[1]));
+        return;
+      }
+      if (sourceMatch && req.method === 'DELETE') {
+        await handleKbSourceDelete(req, res, supabase, decodeURIComponent(sourceMatch[1]));
         return;
       }
       if (url === '/kb/chunks' && req.method === 'GET') {

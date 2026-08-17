@@ -20,6 +20,7 @@ class KbChunk {
   final String content;
   final bool isFaq;
   final String? source;
+  final String? sourceId; // → kb_source (a managed url/crawl); null for manual/legacy
   final String? updatedAt;
 
   KbChunk({
@@ -28,8 +29,16 @@ class KbChunk {
     required this.content,
     required this.isFaq,
     this.source,
+    this.sourceId,
     this.updatedAt,
   });
+
+  /// True when [source] looks like a web address (used to split web-page
+  /// entries from hand-typed knowledge in the library view).
+  bool get sourceIsUrl {
+    final s = source;
+    return s != null && (s.startsWith('http://') || s.startsWith('https://'));
+  }
 
   factory KbChunk.fromJson(Map<String, dynamic> j) => KbChunk(
         id: j['id'].toString(),
@@ -37,6 +46,7 @@ class KbChunk {
         content: (j['content'] ?? '') as String,
         isFaq: (j['is_faq'] ?? false) as bool,
         source: j['source'] as String?,
+        sourceId: j['source_id']?.toString(),
         updatedAt: j['updated_at'] as String?,
       );
 }
@@ -289,12 +299,131 @@ Future<void> kbSourceRemove(String name) async {
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'remove source failed');
 }
 
+/// A managed KB content source (a web page or a website crawl) that can be
+/// refreshed on demand or auto-synced periodically. Distinct from [KbSource]
+/// above, which is an external federated KB provider.
+class KbSyncSource {
+  final String id;
+  final String kind; // 'url' | 'crawl'
+  final String url;
+  final String? topic;
+  final int? maxPages;
+  final bool autoSync;
+  final int syncIntervalHours;
+  final String? lastSyncedAt;
+  final String? lastStatus; // 'ok' | 'error' | null
+  final int chunkCount;
+
+  KbSyncSource({
+    required this.id,
+    required this.kind,
+    required this.url,
+    this.topic,
+    this.maxPages,
+    required this.autoSync,
+    required this.syncIntervalHours,
+    this.lastSyncedAt,
+    this.lastStatus,
+    required this.chunkCount,
+  });
+
+  factory KbSyncSource.fromJson(Map<String, dynamic> j) => KbSyncSource(
+        id: j['id'].toString(),
+        kind: (j['kind'] ?? 'url') as String,
+        url: (j['url'] ?? '') as String,
+        topic: j['topic'] as String?,
+        maxPages: (j['max_pages'] as num?)?.toInt(),
+        autoSync: (j['auto_sync'] ?? false) as bool,
+        syncIntervalHours: (j['sync_interval_hours'] ?? 24) as int,
+        lastSyncedAt: j['last_synced_at'] as String?,
+        lastStatus: j['last_status'] as String?,
+        chunkCount: (j['chunk_count'] ?? 0) as int,
+      );
+}
+
+final kbSyncSourcesProvider =
+    FutureProvider.autoDispose<List<KbSyncSource>>((ref) async {
+  final res = await http
+      .get(Uri.parse('$_spineBase/kb/sources'), headers: _headers)
+      .timeout(const Duration(seconds: 10));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'sources failed');
+  return (data['sources'] as List)
+      .map((e) => KbSyncSource.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+/// Toggle auto-sync / change the interval for a managed source.
+Future<void> kbSourceSetSync(String id, {bool? autoSync, int? intervalHours}) async {
+  final res = await http
+      .patch(Uri.parse('$_spineBase/kb/sources/$id'),
+          headers: _headers,
+          body: jsonEncode({
+            if (autoSync != null) 'auto_sync': autoSync,
+            if (intervalHours != null) 'sync_interval_hours': intervalHours,
+          }))
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'update failed');
+}
+
+/// Re-sync a managed source now (delete its chunks + re-ingest). Slow for crawls.
+Future<int> kbSourceSyncNow(String id) async {
+  final res = await http
+      .post(Uri.parse('$_spineBase/kb/sources/$id/sync'), headers: _headers)
+      .timeout(const Duration(seconds: 120));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'sync failed');
+  return (data['chunks'] ?? 0) as int;
+}
+
+/// Remove a managed source (its chunks cascade-delete on the spine).
+Future<void> kbSyncSourceDelete(String id) async {
+  final res = await http
+      .delete(Uri.parse('$_spineBase/kb/sources/$id'), headers: _headers)
+      .timeout(const Duration(seconds: 15));
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  if (data['ok'] != true) throw Exception(data['reason'] ?? 'remove failed');
+}
+
 Future<void> kbDeleteChunk(String id) async {
   final res = await http
       .delete(Uri.parse('$_spineBase/kb/chunks/$id'), headers: _headers)
       .timeout(const Duration(seconds: 15));
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   if (data['ok'] != true) throw Exception(data['reason'] ?? 'delete failed');
+}
+
+/// Delete every chunk in [ids], one call each (used to remove a legacy web-page
+/// group that isn't a managed source). Best-effort: collects failures and
+/// throws once at the end so partial success is still applied.
+Future<void> kbDeleteChunks(List<String> ids) async {
+  final failures = <String>[];
+  for (final id in ids) {
+    try {
+      await kbDeleteChunk(id);
+    } catch (_) {
+      failures.add(id);
+    }
+  }
+  if (failures.isNotEmpty) {
+    throw Exception('${failures.length} of ${ids.length} entries could not be deleted');
+  }
+}
+
+/// Edit a hand-typed knowledge entry. There is no in-place chunk update on the
+/// spine (content must be re-embedded), so we ingest the new text first, then
+/// delete the old chunk — no gap where the entry is missing. Long text may
+/// re-split into multiple chunks. Returns the new chunk count.
+Future<int> kbUpdateManualEntry(
+  String oldId,
+  String text, {
+  String? topic,
+  bool isFaq = false,
+}) async {
+  final chunks = await kbIngestText(text, topic: topic, isFaq: isFaq);
+  await kbDeleteChunk(oldId);
+  return chunks;
 }
 
 /// Ask the grounded brain (same pipeline the robot's voice uses).
