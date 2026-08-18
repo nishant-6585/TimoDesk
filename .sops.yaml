@@ -7,6 +7,7 @@ creation_rules:
   # path at encrypt time. Decryption needs no rule (recipients are in the file).
   - path_regex: (^|/)\.env$
     # Recipients who can decrypt. Each is an age PUBLIC key (safe to commit).
-    #   Nishant (macOS): age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4
+    #   Nishant (macOS):   age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4
+    #   Nishant (Windows): age13mkyqq2kgf0y4d6tfpfpyxwm4xgh7nkktmv36e8gwq2n6t9z8uaq6cunhy
     age: >-
-      age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4
+      age1v3sl7zakl6pmuvylgnj2klaew5tds6yp6pu0cj209zrtrzxecv0qzpf0u4,age13mkyqq2kgf0y4d6tfpfpyxwm4xgh7nkktmv36e8gwq2n6t9z8uaq6cunhy
