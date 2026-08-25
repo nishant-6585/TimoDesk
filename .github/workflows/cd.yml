@@ -22,6 +22,12 @@ jobs:
       run:
         working-directory: robot_app
 
+    env:
+      # `secrets` is not a recognized context in step-level `if:` expressions
+      # (the workflow file is rejected as invalid, failing EVERY push) — expose
+      # the presence check through env instead.
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,7 +55,7 @@ jobs:
         run: flutter analyze --fatal-infos
 
       - name: Decode keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/mikee-release.keystore
           cat > android/key.properties <<EOF
