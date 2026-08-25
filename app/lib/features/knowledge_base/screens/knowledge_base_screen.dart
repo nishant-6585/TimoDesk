@@ -42,7 +42,7 @@ class _KnowledgeBaseScreenState extends ConsumerState<KnowledgeBaseScreen> {
       _answer = null;
     });
     try {
-      final a = await ref.read(kbAskProvider(q).future);
+      final a = await kbAsk(q);
       if (mounted) setState(() => _answer = a);
     } catch (e) {
       if (mounted) setState(() => _askError = '$e');
