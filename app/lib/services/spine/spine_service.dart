@@ -52,7 +52,7 @@ class SpineService extends StateNotifier<SpineState> {
       developer.log('[SpineService] ========================================', name: 'SpineService');
       developer.log('[SpineService] CONNECTING TO SPINE BROKER', name: 'SpineService');
       developer.log('[SpineService] Spine WebSocket: $_spineUrl', name: 'SpineService');
-      developer.log('[SpineService] (Camera stream from robot: http://192.168.1.41:8080)', name: 'SpineService');
+      developer.log('[SpineService] (Camera stream from robot: http://192.168.1.60:8080)', name: 'SpineService');
       developer.log('[SpineService] ========================================', name: 'SpineService');
 
       await connect(_spineUrl!, _jwt!);

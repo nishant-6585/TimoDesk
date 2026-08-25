@@ -43,7 +43,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   // Last-resort default if the spine is unreachable at startup. The REAL IP is
   // fetched from the spine (see _syncRobotIpFromSpine) â€” this only bootstraps the
   // very first frame before that returns.
-  static const String _fallbackRobotIp = '192.168.1.41';
+  static const String _fallbackRobotIp = '192.168.1.60';
 
   // Durable fix for the recurring DHCP-churn hardcode: the spine already knows
   // ROBOT_IP (it dials the robot), so fetch it instead of hardcoding it here.
@@ -75,9 +75,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
       print('[SettingsNotifier] â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.1.41');
+      print('[SettingsNotifier] Robot IP: 192.168.1.60');
       print('[SettingsNotifier] Spine: $spineWsUrl');
-      print('[SettingsNotifier] Camera: http://192.168.1.41:8080/stream');
+      print('[SettingsNotifier] Camera: http://192.168.1.60:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
       print('[SettingsNotifier] â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
     } catch (e) {
@@ -99,7 +99,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.1.41');
+      state = state.copyWith(robotIp: '192.168.1.60');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }
