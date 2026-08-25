@@ -57,18 +57,51 @@ start_app_and_wait() {
   sleep 3
 }
 
+# Escape the app's cgroup FIRST. This script is spawned (via su) from the app's
+# own process at BOOT_COMPLETED, so it inherits the app's cgroup — and when we
+# kill the early app process below, ActivityManager's killProcessGroup takes
+# down everything left in that cgroup, this script included (nohup does not
+# help; verified on-device 2026-08-25: the boot log stopped at exactly the
+# "kill early app" line on both automatic runs). As root we can move ourselves
+# to the root cgroup and survive.
+# v1 multi-hierarchy kernel (this rk3576 unit): escape EVERY hierarchy we can
+# find — the group-kill may act on any of them, so no `break` after a success.
+for f in /sys/fs/cgroup/cgroup.procs /acct/cgroup.procs /dev/memcg/cgroup.procs \
+         /dev/cpuctl/cgroup.procs /dev/cpuset/cgroup.procs /dev/stune/cgroup.procs \
+         /dev/blkio/cgroup.procs; do
+  echo $$ > "$f" 2>/dev/null
+done
+
+# Kill the app WITHOUT leaving a sticky-service time bomb. The vendor AIUI
+# service (com.csjbot.asragent.aiui_soft.AiuiMixedService) runs in OUR process
+# as START_STICKY once a voice session has opened; killing the process makes
+# Android re-create the service in a fresh bare process where the CSJBot SDK
+# http client isn't built yet -> NPE crash-loop (seen 2026-08-24/25). Stopping
+# the service right after the kill clears the pending sticky restart.
+kill_app() {
+  _p=$(pidof $APP)
+  [ -n "$_p" ] && kill "$_p"
+  sleep 1
+  am stopservice -n $APP/com.csjbot.asragent.aiui_soft.AiuiMixedService >/dev/null 2>&1
+  sleep 2
+}
+
 : > "$LOG"
-log "=== bringup start ==="
+log "=== bringup start (cgroup: $(grep -m1 . /proc/self/cgroup 2>/dev/null)) ==="
+
+# Self-heal grants an APK reinstall silently resets: without All-files-access
+# the SDK can't read /sdcard/.robot_info/aiuikey.txt and the AIUI service
+# NPE-crashes the app on every launch.
+appops set $APP MANAGE_EXTERNAL_STORAGE allow 2>/dev/null
+log "granted MANAGE_EXTERNAL_STORAGE"
 sleep 5
 
 log "start robotsdk"
 start_sdk
 
-APPPID=$(pidof $APP)
-if [ -n "$APPPID" ]; then
-  log "kill early app process pid=$APPPID (binder pre-dates robotsdk)"
-  kill "$APPPID"
-  sleep 3
+if [ -n "$(pidof $APP)" ]; then
+  log "kill early app process (binder pre-dates robotsdk)"
+  kill_app
 fi
 
 log "start app, wait for camera"
@@ -104,9 +137,8 @@ case "$H" in
     log "restart robotsdk (app holds mic: ${H:-NO})"
     start_sdk
     log "bounce app for fresh binder"
-    APPPID=$(pidof $APP)
-    [ -n "$APPPID" ] && kill "$APPPID"
-    sleep 5
+    kill_app
+    sleep 2
     start_app_and_wait
     input tap $TAP_X $TAP_Y
     sleep 5
