@@ -1,17 +1,34 @@
 name: Auto-Fix Issues
 
+# Two ways in, one fix pipeline:
+#   1. Nightly self-scan (schedule): dart-analyze the Flutter apps, fix findings.
+#      robot_app is held to zero issues (matches CI's fatal-infos); the admin app
+#      carries ~170 accepted warnings/infos, so only its ERRORs are collected
+#      (matches CI's --no-fatal-warnings gate).
+#   2. DevConsole dispatch (XBoom Flow → Admin → Dev Console) posts issues_json —
+#      unchanged behaviour, issues_json just became optional so the same workflow
+#      can self-scan when dispatched with no input.
+# A run that finds nothing (or sees an auto-fix/* PR still open) exits quietly.
+
 on:
   workflow_dispatch:
     inputs:
       issues_json:
-        description: "JSON array of open issues from DevConsole"
-        required: true
+        description: "JSON array of issues (DevConsole). Leave EMPTY to self-scan."
+        required: false
+        default: ""
+  schedule:
+    - cron: "30 20 * * *" # 02:00 IST nightly
+
+concurrency:
+  group: auto-fix
+  cancel-in-progress: false
 
 jobs:
   fix:
     name: Claude Auto-Fix → PR
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -20,23 +37,81 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GH_PAT || github.token }}
 
-      - name: Parse issues
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+          cache: true
+
+      - name: Skip if an auto-fix PR is already open
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          OPEN=$(gh pr list --state open --json headRefName \
+                 --jq '[.[] | select(.headRefName | startswith("auto-fix/"))] | length')
+          if [ "$OPEN" -gt 0 ]; then
+            echo "An auto-fix PR is already open — merge/close it first. Skipping."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect issues (DevConsole payload or self-scan)
+        id: collect
+        if: steps.gate.outputs.proceed == 'true'
         env:
           ISSUES_JSON: ${{ github.event.inputs.issues_json }}
         run: |
-          printf '%s' "$ISSUES_JSON" > /tmp/issues.json
-          echo "Issue count: $(jq 'length' /tmp/issues.json)"
+          if [ -n "$ISSUES_JSON" ]; then
+            echo "Source: DevConsole payload"
+            printf '%s' "$ISSUES_JSON" > /tmp/issues.json
+            echo "source=DevConsole" >> "$GITHUB_OUTPUT"
+          else
+            echo "Source: self-scan (dart analyze)"
+            (cd robot_app && flutter pub get >/dev/null && dart analyze --format=machine . > /tmp/robot.txt 2>&1) || true
+            (cd app && flutter pub get >/dev/null && dart analyze --format=machine . > /tmp/app.txt 2>&1) || true
+
+            # machine format: SEVERITY|TYPE|CODE|/abs/path|LINE|COL|LEN|message
+            collect() { # $1=machine-format file  $2=severity mode: all|errors
+              [ -f "$1" ] || return 0
+              while IFS='|' read -r sev type code path line col len msg; do
+                case "$sev" in ERROR|WARNING|INFO) ;; *) continue ;; esac
+                if [ "$2" = "errors" ] && [ "$sev" != "ERROR" ]; then continue; fi
+                rel="${path#"$GITHUB_WORKSPACE"/}"
+                jq -n --arg s "$(printf '%s' "$sev" | tr 'A-Z' 'a-z')" \
+                      --arg f "$rel" --arg l "${line:-0}" --arg m "$msg" \
+                      '{severity:$s, file_path:$f, line_number:($l|tonumber), message:$m, suggestion:null}'
+              done < "$1"
+            }
+            collect /tmp/robot.txt all > /tmp/stream.json
+            collect /tmp/app.txt errors >> /tmp/stream.json
+            # Cap per run to keep the PR reviewable; the rest ride the next night.
+            jq -s '.[0:20]' /tmp/stream.json > /tmp/issues.json
+            echo "source=nightly self-scan" >> "$GITHUB_OUTPUT"
+          fi
+
+          COUNT=$(jq 'length' /tmp/issues.json)
+          echo "Issue count: $COUNT"
           jq -r '.[] | "[" + .severity + "] " + (.file_path // "unknown") + ":" + (.line_number | tostring) + " — " + .message' /tmp/issues.json
+          if [ "$COUNT" -eq 0 ]; then
+            echo "Nothing to fix — clean scan."
+            echo "have_issues=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_issues=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build file list
+        if: steps.collect.outputs.have_issues == 'true'
         run: |
           jq -r '[.[].file_path] | unique | .[]' /tmp/issues.json | grep -v "null" > /tmp/files_to_fix.txt
           echo "Files to fix:"
           cat /tmp/files_to_fix.txt
 
       - name: Apply fixes with Claude
+        if: steps.collect.outputs.have_issues == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -120,11 +195,21 @@ jobs:
             echo "Fixed: $file"
           done < /tmp/files_to_fix.txt
 
-      - name: Create PR
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+      - name: Verify fixes still analyze clean
+        if: steps.collect.outputs.have_issues == 'true'
         run: |
-          BRANCH="auto-fix/devConsole-$(date +%Y%m%d-%H%M%S)"
+          # A "fix" that introduces NEW errors must never become a PR. robot_app is
+          # gated hard; the admin app only on errors (same as CI).
+          (cd robot_app && dart analyze --fatal-infos)
+          (cd app && dart analyze --no-fatal-warnings) || true
+
+      - name: Create PR
+        if: steps.collect.outputs.have_issues == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          SOURCE: ${{ steps.collect.outputs.source }}
+        run: |
+          BRANCH="auto-fix/scan-$(date +%Y%m%d-%H%M%S)"
           ISSUE_COUNT=$(jq 'length' /tmp/issues.json)
           ISSUE_LIST=$(jq -r '.[] | "- [" + .severity + "] " + (.file_path // "unknown") + ":" + (.line_number | tostring) + " — " + .message' /tmp/issues.json)
           ISSUE_LIST_MD=$(jq -r '.[] | "- **[" + (.severity | ascii_upcase) + "]** `" + (.file_path // "unknown") + ":" + (.line_number | tostring) + "` — " + .message' /tmp/issues.json)
@@ -135,13 +220,13 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No file changes — Claude returned identical content"
+            echo "No file changes — every issue was skipped or content identical"
             exit 0
           fi
 
           # Write commit message using brace group
           {
-            printf '%s\n' "fix: auto-fix $ISSUE_COUNT issues from DevConsole"
+            printf '%s\n' "fix: auto-fix $ISSUE_COUNT issues ($SOURCE)"
             printf '%s\n' ""
             printf '%s\n' "$ISSUE_LIST"
             printf '%s\n' ""
@@ -153,9 +238,7 @@ jobs:
 
           # Write PR body using brace group
           {
-            printf '%s\n' "## Auto-generated fixes from DevConsole"
-            printf '%s\n' ""
-            printf '%s\n' "Triggered from XBoom Flow → Admin → Dev Console."
+            printf '%s\n' "## Auto-generated fixes — $SOURCE"
             printf '%s\n' ""
             printf '%s\n' "### Issues fixed ($ISSUE_COUNT)"
             printf '%s\n' "$ISSUE_LIST_MD"
@@ -165,11 +248,11 @@ jobs:
             printf '%s\n' '- [ ] Run `flutter analyze` locally'
             printf '%s\n' "- [ ] Test on emulator before merging"
             printf '%s\n' ""
-            printf '%s\n' "> Generated by Claude Haiku via DevConsole auto-fix"
+            printf '%s\n' "> Generated by Claude Haiku ($SOURCE). Only one auto-fix PR is opened at a time; the next scan waits until this one is merged or closed."
           } > /tmp/pr_body.txt
 
           gh pr create \
-            --title "Auto-fix: $ISSUE_COUNT issues from DevConsole" \
+            --title "Auto-fix: $ISSUE_COUNT issues ($SOURCE)" \
             --body-file /tmp/pr_body.txt \
             --base main \
             --head "$BRANCH"
