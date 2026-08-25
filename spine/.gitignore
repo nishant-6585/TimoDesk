@@ -7,3 +7,4 @@ kb-providers.json
 
 # runtime voice/video capture artifacts
 recordings/
+spine_service.log
