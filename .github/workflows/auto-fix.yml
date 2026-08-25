@@ -199,9 +199,13 @@ jobs:
         if: steps.collect.outputs.have_issues == 'true'
         run: |
           # A "fix" that introduces NEW errors must never become a PR. robot_app is
-          # gated hard; the admin app only on errors (same as CI).
+          # gated hard; the admin app on errors only (dart analyze exits nonzero for
+          # errors even with --no-fatal-warnings; its ~170 accepted infos don't trip
+          # it because dart analyze — unlike flutter analyze — defaults infos
+          # non-fatal). PR #40 proved this gate must have no escape hatch: Haiku
+          # invented a nonexistent provider and broke the build.
           (cd robot_app && dart analyze --fatal-infos)
-          (cd app && dart analyze --no-fatal-warnings) || true
+          (cd app && dart analyze --no-fatal-warnings)
 
       - name: Create PR
         if: steps.collect.outputs.have_issues == 'true'
