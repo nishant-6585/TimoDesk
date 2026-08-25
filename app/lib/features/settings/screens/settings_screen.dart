@@ -32,6 +32,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _companyName = TextEditingController(text: 'xboom');
   final _greetVisitor =
       TextEditingController(text: 'Hello! Welcome to xboom!');
+  final _greetStaff = TextEditingController();
+  final _regreetMins = TextEditingController();
+
+  // Behaviour + escort settings mirrored from the robot's Settings screen.
+  // Seeded once from the robot's config_report; edits push back via set_config.
+  bool _gateEnabled = true;
+  bool _autoOpenMic = false;
+  final _gateYaw = TextEditingController();
+  final _gateFacePct = TextEditingController();
+  final _escortSecs = TextEditingController();
+  final _escortText = TextEditingController();
+  final _escortLost = TextEditingController();
+  bool _behaviorSeeded = false; // seed text fields only once (don't clobber edits)
 
   // ElevenLabs credentials. The API key is write-only (never fetched back — a
   // blank field is not pushed, so it won't overwrite a saved one). Agent/Voice
@@ -98,6 +111,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _openaiKeyStatus = oSet
             ? 'On robot: set ✓${oHint.isNotEmpty ? ' · …$oHint' : ''}'
             : 'On robot: not set';
+        // Seed the behaviour/identity fields from the robot's actual state,
+        // once — later refreshes must not clobber in-progress edits.
+        if (!_behaviorSeeded && eleven.containsKey('robot_name')) {
+          _behaviorSeeded = true;
+          String s(dynamic v) => (v ?? '').toString();
+          if (s(eleven['robot_name']).isNotEmpty) {
+            _robotName.text = s(eleven['robot_name']);
+          }
+          if (s(eleven['company_name']).isNotEmpty) {
+            _companyName.text = s(eleven['company_name']);
+          }
+          if (s(eleven['greet_visitor']).isNotEmpty) {
+            _greetVisitor.text = s(eleven['greet_visitor']);
+          }
+          if (s(eleven['greet_staff']).isNotEmpty) {
+            _greetStaff.text = s(eleven['greet_staff']);
+          }
+          if (eleven['regreet_minutes'] is num) {
+            _regreetMins.text = (eleven['regreet_minutes'] as num).toInt().toString();
+          }
+          if (eleven['attention_gate'] is bool) {
+            _gateEnabled = eleven['attention_gate'] as bool;
+          }
+          if (eleven['auto_open_mic'] is bool) {
+            _autoOpenMic = eleven['auto_open_mic'] as bool;
+          }
+          if (eleven['attention_max_yaw_deg'] is num) {
+            _gateYaw.text =
+                (eleven['attention_max_yaw_deg'] as num).toStringAsFixed(0);
+          }
+          if (eleven['attention_min_face_ratio'] is num) {
+            _gateFacePct.text =
+                ((eleven['attention_min_face_ratio'] as num) * 100)
+                    .toStringAsFixed(0);
+          }
+          if (eleven['escort_reassure_seconds'] is num) {
+            _escortSecs.text =
+                (eleven['escort_reassure_seconds'] as num).toInt().toString();
+          }
+          if (s(eleven['escort_reassure_text']).isNotEmpty) {
+            _escortText.text = s(eleven['escort_reassure_text']);
+          }
+          _escortLost.text = s(eleven['escort_lost_text']);
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _elevenKeyStatus = 'Robot unreachable');
@@ -109,6 +166,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _robotName.dispose();
     _companyName.dispose();
     _greetVisitor.dispose();
+    _greetStaff.dispose();
+    _regreetMins.dispose();
+    _gateYaw.dispose();
+    _gateFacePct.dispose();
+    _escortSecs.dispose();
+    _escortText.dispose();
+    _escortLost.dispose();
     _elevenApiKey.dispose();
     _elevenAgentId.dispose();
     _elevenVoiceId.dispose();
@@ -125,13 +189,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _saveIdentity() {
-    _sendConfig({
+    final cfg = <String, dynamic>{
       'robot_name': _robotName.text.trim(),
       'company_name': _companyName.text.trim(),
       'greet_visitor': _greetVisitor.text.trim(),
-    });
+    };
+    if (_greetStaff.text.trim().isNotEmpty) {
+      cfg['greet_staff'] = _greetStaff.text.trim();
+    }
+    final mins = int.tryParse(_regreetMins.text.trim());
+    if (mins != null) cfg['regreet_minutes'] = mins;
+    _sendConfig(cfg);
     _toast(Icons.check_circle, MikeeColors.success,
         'Sent to robot — applies immediately');
+  }
+
+  /// Push the attention-gate + mic behaviour settings to the robot.
+  void _saveBehavior() {
+    final cfg = <String, dynamic>{
+      'attention_gate': _gateEnabled,
+      'auto_open_mic': _autoOpenMic,
+    };
+    final yaw = double.tryParse(_gateYaw.text.trim());
+    if (yaw != null) cfg['attention_max_yaw_deg'] = yaw;
+    final facePct = double.tryParse(_gateFacePct.text.trim());
+    if (facePct != null) cfg['attention_min_face_ratio'] = facePct / 100;
+    _sendConfig(cfg);
+    _toast(Icons.check_circle, MikeeColors.success,
+        'Behaviour pushed to robot — applies immediately');
+  }
+
+  /// Push the escort ("follow me") phrases + cadence to the robot.
+  void _saveEscort() {
+    final cfg = <String, dynamic>{
+      // Empty lost-text is meaningful (turns the phrase off) — always send it.
+      'escort_lost_text': _escortLost.text.trim(),
+    };
+    final secs = int.tryParse(_escortSecs.text.trim());
+    if (secs != null) cfg['escort_reassure_seconds'] = secs;
+    if (_escortText.text.trim().isNotEmpty) {
+      cfg['escort_reassure_text'] = _escortText.text.trim();
+    }
+    _sendConfig(cfg);
+    _toast(Icons.check_circle, MikeeColors.success,
+        'Escort settings pushed to robot');
   }
 
   void _saveKeys() {
@@ -252,7 +353,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _IdField('Company name', _companyName, 'e.g. xboom'),
                 const SizedBox(height: 12),
                 _IdField('Visitor greeting', _greetVisitor,
-                    'Spoken to visitors on approach'),
+                    'Spoken to visitors on approach — {hello} {welcome} {company}'),
+                const SizedBox(height: 12),
+                _IdField('Staff greeting (recognised face)', _greetStaff,
+                    'Placeholders: {hello} {name} {welcome} {company}'),
+                const SizedBox(height: 12),
+                _IdField('Re-greet after (minutes)', _regreetMins,
+                    'How long before the same person is greeted again'),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -360,6 +467,103 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onPressed: _saveKeys,
                     icon: const Icon(Icons.key, size: 16),
                     label: Text('Push keys to robot',
+                        style: GoogleFonts.inter(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: MikeeColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10))),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
+            // ── GREETING BEHAVIOUR — attention gate + mic, mirrors the robot.
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('GREETING BEHAVIOUR',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.12,
+                        color: MikeeColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('Mirrors the robot\'s own Settings — pushed instantly.',
+                    style: GoogleFonts.inter(fontSize: 11, color: MikeeColors.textMuted)),
+                const SizedBox(height: 6),
+                _SettingRow('Greet only when looking at the camera', _gateEnabled,
+                    (v) => setState(() => _gateEnabled = v)),
+                _SettingRow('Auto-open mic after greeting', _autoOpenMic,
+                    (v) => setState(() => _autoOpenMic = v)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(
+                      child: _IdField('Max head turn (°)', _gateYaw,
+                          'Beyond this = looking away')),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: _IdField('Min face size (% of frame)', _gateFacePct,
+                          'Smaller = too far away')),
+                ]),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    onPressed: _saveBehavior,
+                    icon: const Icon(Icons.cloud_upload, size: 16),
+                    label: Text('Push to robot',
+                        style: GoogleFonts.inter(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: MikeeColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10))),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
+            // ── ESCORT ("FOLLOW ME") — phrases + cadence, mirrors the robot.
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [MikeeColors.cardTop, MikeeColors.cardBottom]),
+                  border: Border.all(color: MikeeColors.border),
+                  borderRadius: BorderRadius.circular(16)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('ESCORT — "FOLLOW ME"',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.12,
+                        color: MikeeColors.textSecondary)),
+                const SizedBox(height: 14),
+                _IdField('Reassure every (seconds)', _escortSecs,
+                    'Mid-route "stay with me" cadence — 0 = off'),
+                const SizedBox(height: 12),
+                _IdField('Reassurance phrase', _escortText,
+                    'Spoken repeatedly while leading a visitor'),
+                const SizedBox(height: 12),
+                _IdField('Lost-visitor phrase (after arrival)', _escortLost,
+                    '{name} = the point. Empty = off.'),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    onPressed: _saveEscort,
+                    icon: const Icon(Icons.cloud_upload, size: 16),
+                    label: Text('Push to robot',
                         style: GoogleFonts.inter(fontSize: 12)),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: MikeeColors.primary,
