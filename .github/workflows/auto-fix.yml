@@ -151,19 +151,29 @@ jobs:
               cat "$file"
             } > /tmp/fix_prompt.txt
 
+            # Opus 5 (was Haiku): far less likely to invent nonexistent APIs in a
+            # rewrite (PR #40's kbAskProvider). fallbacks:"default" auto-routes the
+            # rare safety refusal to a sibling model instead of failing the file.
             jq -n --rawfile prompt /tmp/fix_prompt.txt \
-              '{model:"claude-haiku-4-5-20251001",max_tokens:16384,messages:[{role:"user",content:$prompt}]}' \
+              '{model:"claude-opus-5",max_tokens:16384,fallbacks:"default",messages:[{role:"user",content:$prompt}]}' \
               > /tmp/fix_request.json
 
             curl -s -X POST https://api.anthropic.com/v1/messages \
               -H "Content-Type: application/json" \
               -H "x-api-key: $ANTHROPIC_API_KEY" \
               -H "anthropic-version: 2023-06-01" \
+              -H "anthropic-beta: server-side-fallback-2026-07-01" \
               -d @/tmp/fix_request.json > /tmp/fix_response.json
 
-            FIXED=$(jq -r '.content[0].text // ""' /tmp/fix_response.json)
+            # Opus 5 thinks by default: content[0] is a thinking block, so grab the
+            # text block(s) — '.content[0].text' would read the (empty) thinking text.
+            FIXED=$(jq -r '[.content[]? | select(.type=="text") | .text] | join("")' /tmp/fix_response.json)
             STOP_REASON=$(jq -r '.stop_reason // ""' /tmp/fix_response.json)
 
+            if [ "$STOP_REASON" = "refusal" ]; then
+              echo "Skipping $file — model refused ($(jq -r '.stop_details.category // "unknown"' /tmp/fix_response.json))"
+              continue
+            fi
             if [ -z "$FIXED" ]; then
               echo "No response for $file — skipping"
               jq '.error // "unknown"' /tmp/fix_response.json
