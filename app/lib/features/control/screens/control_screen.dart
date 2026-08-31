@@ -266,11 +266,17 @@ class _ControlContent extends StatelessWidget {
         TextButton.icon(onPressed: () {}, icon: const Icon(Icons.fullscreen, size: 20), label: Text('Pop out feed', style: GoogleFonts.inter(fontSize: 13))),
       ]),
       const SizedBox(height: 24),
+      // Joysticks live NEXT TO the live feed so the operator sees the camera
+      // while driving (they were below the fold; telemetry swapped down).
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(flex: 3, child: _LiveFeedCard()),
         const SizedBox(width: 20),
         Expanded(flex: 2, child: Column(children: [
-          _TelemetryCard(driveStatus: driveStatus, throttle: throttle, pan: pan, tilt: tilt, maxSpeed: maxSpeed, onMaxSpeedChange: onMaxSpeedChange),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: _DriveCard(status: driveStatus, onJoystick: onDriveJoystick, disabled: stopped)),
+            const SizedBox(width: 20),
+            Expanded(child: _HeadLookCard(pan: pan, tilt: tilt, onJoystick: onHeadJoystick, disabled: stopped)),
+          ]),
           if (status != null) ...[
             const SizedBox(height: 20),
             SensorStatusCard(status: status!),
@@ -281,9 +287,7 @@ class _ControlContent extends StatelessWidget {
       const _FaceDetectionStrip(),
       const SizedBox(height: 14),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: _DriveCard(status: driveStatus, onJoystick: onDriveJoystick, disabled: stopped)),
-        const SizedBox(width: 20),
-        Expanded(child: _HeadLookCard(pan: pan, tilt: tilt, onJoystick: onHeadJoystick, disabled: stopped)),
+        Expanded(child: _TelemetryCard(driveStatus: driveStatus, throttle: throttle, pan: pan, tilt: tilt, maxSpeed: maxSpeed, onMaxSpeedChange: onMaxSpeedChange)),
         const SizedBox(width: 20),
         Expanded(child: _GesturesCard(onGesture: onGesture, onCenterHead: onCenterHead)),
       ]),
