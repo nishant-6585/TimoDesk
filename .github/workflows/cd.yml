@@ -22,6 +22,14 @@ jobs:
       run:
         working-directory: robot_app
 
+    # `secrets` is not a valid context in step-level `if:` expressions, so the
+    # signing secrets are surfaced as env vars, which `if:` can read.
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,13 +57,13 @@ jobs:
         run: flutter analyze --fatal-infos
 
       - name: Decode keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: env.KEYSTORE_BASE64 != ''
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/mikee-release.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/mikee-release.keystore
           cat > android/key.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
           storeFile=mikee-release.keystore
           EOF
 
