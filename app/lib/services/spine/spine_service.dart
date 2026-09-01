@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,14 +45,14 @@ class SpineService extends StateNotifier<SpineState> {
       final session = Supabase.instance.client.auth.currentSession;
       _jwt = session?.accessToken ?? 'dev';
 
-      // Spine runs on the machine serving this app — derive the host from the
+      // Spine runs on the machine serving this app â€” derive the host from the
       // browser URL so LAN-served builds work from any device.
       _spineUrl = spineWsUrl;
 
       developer.log('[SpineService] ========================================', name: 'SpineService');
       developer.log('[SpineService] CONNECTING TO SPINE BROKER', name: 'SpineService');
       developer.log('[SpineService] Spine WebSocket: $_spineUrl', name: 'SpineService');
-      developer.log('[SpineService] (Camera stream from robot: http://192.168.1.5:8080)', name: 'SpineService');
+      developer.log('[SpineService] (Camera stream from robot: http://192.168.1.60:8080)', name: 'SpineService');
       developer.log('[SpineService] ========================================', name: 'SpineService');
 
       await connect(_spineUrl!, _jwt!);
@@ -145,7 +145,7 @@ class SpineService extends StateNotifier<SpineState> {
         final name = (inner['name'] as String?) ?? 'unknown';
         final matched = name != 'unknown';
         final distance = (inner['distance'] as num?)?.toDouble() ?? 0.0;
-        developer.log('[SpineService] Face detection → $name (L2 $distance)', name: 'SpineService');
+        developer.log('[SpineService] Face detection â†’ $name (L2 $distance)', name: 'SpineService');
         _ref.read(faceDetectionProvider.notifier).report(
               FaceDetection(
                 name: name,
@@ -204,7 +204,7 @@ class SpineService extends StateNotifier<SpineState> {
     } else if (msgType == 'navi_state') {
       // Spine-owned cross-client navigation state: a Go To / Cancel from ANY
       // client (web admin or robot app) lands here on every client.
-      // Escort progress rides on the same message (absent → no escort running).
+      // Escort progress rides on the same message (absent â†’ no escort running).
       _ref
           .read(escortStatusProvider.notifier)
           .sync(msg['escort'] as Map<String, dynamic>?);
@@ -223,7 +223,7 @@ class SpineService extends StateNotifier<SpineState> {
         notifier.clear();
       }
     } else if (msgType == 'recording_state') {
-      // Spine-owned recording state — keeps every screen's Record/Stop UI in
+      // Spine-owned recording state â€” keeps every screen's Record/Stop UI in
       // sync while the ffmpeg recorder runs across navigation.
       _ref.read(recordingProvider.notifier).sync(
             msg['recording'] == true,
@@ -265,7 +265,7 @@ class SpineService extends StateNotifier<SpineState> {
     return completer.future;
   }
 
-  /// Navigate the robot to a saved pose. Fire-and-forget — the spine acks
+  /// Navigate the robot to a saved pose. Fire-and-forget â€” the spine acks
   /// {type:'ack', intent:'navi'}, then broadcasts navi_state to all clients.
   void naviTo(Map<String, dynamic> point, {String? name, String? arrivalText}) {
     sendIntent({

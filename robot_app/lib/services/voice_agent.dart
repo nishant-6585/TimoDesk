@@ -53,6 +53,7 @@ class VoiceAgent implements VoiceProvider {
   String? _pendingContext;
   bool _speaking = false; // emit agentSpeaking once per turn, not per audio chunk
   int _connectedAtMs = 0; // when the WS connected — to spot early server drops
+  bool _gotAgentAudio = false; // agent audio arrived — the account/key clearly works
   bool get isActive => _channel != null;
 
   // A server-initiated close within this window of connecting is treated as an
@@ -95,6 +96,7 @@ class VoiceAgent implements VoiceProvider {
     _transcript.clear();
     _speaking = false;
     _connectedAtMs = 0;
+    _gotAgentAudio = false;
     try {
       final ws = await WebSocket.connect(
         '$_base$agentId',
@@ -269,6 +271,7 @@ class VoiceAgent implements VoiceProvider {
             _nested(msg, 'audio_event', 'audio_base64');
         if (b64 is String && b64.isNotEmpty) {
           final bytes = base64Decode(b64);
+          _gotAgentAudio = true;
           // Enter "speaking" once per turn, not on every chunk.
           if (!_speaking) {
             _speaking = true;
@@ -325,7 +328,13 @@ class VoiceAgent implements VoiceProvider {
     final elapsed = _connectedAtMs == 0
         ? 1 << 30
         : DateTime.now().millisecondsSinceEpoch - _connectedAtMs;
-    final likelyUnavailable = elapsed < _earlyDropMs;
+    // Only an early close where the agent NEVER produced audio points at an
+    // account problem (no credits / expired / bad key). Once agent audio has
+    // flowed, the service demonstrably works — a drop is a transient network
+    // failure (seen live 2026-08-24: Wi-Fi glitch mid-greeting → local WS closed
+    // 1002, ElevenLabs logged "client disconnected 1006", and this dialog
+    // wrongly told the operator to recharge the account).
+    final likelyUnavailable = elapsed < _earlyDropMs && !_gotAgentAudio;
     _closeSocket();
     if (_events.isClosed) return;
     if (likelyUnavailable) {

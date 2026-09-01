@@ -93,11 +93,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           # Build JSON payload using jq --rawfile to safely handle all special chars
+          # Opus 5 (was Haiku) — materially better review judgment; fallbacks:"default"
+          # auto-routes a rare safety refusal to a sibling model instead of failing.
           jq -n \
             --rawfile prompt /tmp/prompt.txt \
             '{
-              model: "claude-haiku-4-5-20251001",
-              max_tokens: 4096,
+              model: "claude-opus-5",
+              max_tokens: 8192,
+              fallbacks: "default",
               messages: [{"role": "user", "content": $prompt}]
             }' > /tmp/api_request.json
 
@@ -110,6 +113,7 @@ jobs:
               -H "Content-Type: application/json" \
               -H "x-api-key: $ANTHROPIC_API_KEY" \
               -H "anthropic-version: 2023-06-01" \
+              -H "anthropic-beta: server-side-fallback-2026-07-01" \
               -d @/tmp/api_request.json) || http=000
             echo "Claude API attempt $attempt → HTTP $http"
             case "$http" in
@@ -125,8 +129,10 @@ jobs:
 
           echo "=== API Response type: $(jq -r '.type // .error.type // "unknown"' /tmp/api_response.json) (HTTP $http) ==="
 
-          # Extract the text content
-          RAW=$(jq -r '.content[0].text // ""' /tmp/api_response.json)
+          # Extract the text content. Opus 5 thinks by default: content[0] is a
+          # thinking block, so select the text block(s) — '.content[0].text' would
+          # read the (empty) thinking text.
+          RAW=$(jq -r '[.content[]? | select(.type=="text") | .text] | join("")' /tmp/api_response.json)
           echo "=== Raw response (first 300 chars) ==="
           echo "${RAW:0:300}"
           printf '%s' "$RAW" > /tmp/raw.txt

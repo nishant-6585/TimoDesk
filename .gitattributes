@@ -1,0 +1,7 @@
+# Files that MUST keep LF endings regardless of the checkout platform.
+# - *.sh: executed by POSIX/Android sh — a \r in the line makes paths and
+#   commands silently wrong (the boot-bringup script shipped CRLF inside the
+#   APK on 2026-08-25 and died before its first log line).
+# - .env.enc: sops chokes on \r in its metadata timestamps when decrypting.
+*.sh text eol=lf
+spine/.env.enc text eol=lf

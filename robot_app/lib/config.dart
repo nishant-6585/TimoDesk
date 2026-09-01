@@ -28,6 +28,21 @@ class RobotConfig {
       'openai_api_key_hint': ok.length > 4 ? ok.substring(ok.length - 4) : '',
       'openai_voice': openaiVoice,
       'openai_model': openaiModel,
+      // Behaviour settings mirrored to the admin Settings screen (two-way sync:
+      // these seed the admin's fields; the admin pushes edits back through
+      // set_config → applyRemoteConfig). No secrets here — plain settings.
+      'robot_name': robotName,
+      'company_name': companyName,
+      'greet_visitor': greetVisitorTemplate,
+      'greet_staff': greetStaffTemplate,
+      'regreet_minutes': regreetMinutes,
+      'attention_gate': attentionGateEnabled,
+      'attention_max_yaw_deg': attentionMaxYawDeg,
+      'attention_min_face_ratio': attentionMinFaceRatio,
+      'escort_reassure_seconds': escortReassureSeconds,
+      'escort_reassure_text': escortReassureText,
+      'escort_lost_text': escortLostText,
+      'auto_open_mic': autoOpenMic,
     };
   }
 
@@ -233,16 +248,54 @@ class RobotConfig {
       (await SharedPreferences.getInstance())
           .setString(_kGreetVisitor, greetVisitorTemplate);
     }
+    if (cfg['greet_staff'] is String &&
+        (cfg['greet_staff'] as String).trim().isNotEmpty) {
+      greetStaffTemplate = (cfg['greet_staff'] as String).trim();
+      (await SharedPreferences.getInstance())
+          .setString(_kGreetStaff, greetStaffTemplate);
+    }
+    if (cfg['regreet_minutes'] is num) {
+      regreetMinutes = (cfg['regreet_minutes'] as num).toInt().clamp(1, 240);
+      (await SharedPreferences.getInstance())
+          .setInt(_kRegreetMinutes, regreetMinutes);
+    }
     if (cfg['escort_reassure_seconds'] is num) {
       escortReassureSeconds =
           (cfg['escort_reassure_seconds'] as num).toInt().clamp(0, 120);
       (await SharedPreferences.getInstance())
           .setInt(_kEscortReassureSecs, escortReassureSeconds);
     }
+    if (cfg['escort_reassure_text'] is String &&
+        (cfg['escort_reassure_text'] as String).trim().isNotEmpty) {
+      escortReassureText = (cfg['escort_reassure_text'] as String).trim();
+      (await SharedPreferences.getInstance())
+          .setString(_kEscortReassureText, escortReassureText);
+    }
+    if (cfg['escort_lost_text'] is String) {
+      // Deliberately allows empty — empty turns the lost-visitor phrase off.
+      escortLostText = (cfg['escort_lost_text'] as String).trim();
+      (await SharedPreferences.getInstance())
+          .setString(_kEscortLostText, escortLostText);
+    }
     if (cfg['attention_gate'] is bool) {
       attentionGateEnabled = cfg['attention_gate'] as bool;
       (await SharedPreferences.getInstance())
           .setBool(_kGateEnabled, attentionGateEnabled);
+    }
+    if (cfg['attention_max_yaw_deg'] is num) {
+      attentionMaxYawDeg =
+          (cfg['attention_max_yaw_deg'] as num).clamp(5, 90).toDouble();
+      (await SharedPreferences.getInstance())
+          .setDouble(_kGateMaxYaw, attentionMaxYawDeg);
+    }
+    if (cfg['attention_min_face_ratio'] is num) {
+      attentionMinFaceRatio =
+          (cfg['attention_min_face_ratio'] as num).clamp(0.0, 1.0).toDouble();
+      (await SharedPreferences.getInstance())
+          .setDouble(_kGateMinFace, attentionMinFaceRatio);
+    }
+    if (cfg['auto_open_mic'] is bool) {
+      await setAutoOpenMic(cfg['auto_open_mic'] as bool);
     }
     // ElevenLabs credentials pushed from the admin app. Write-only: a blank
     // field is ignored so pushing other settings never wipes a saved key.
@@ -277,6 +330,9 @@ class RobotConfig {
         (cfg['openai_model'] as String).trim().isNotEmpty) {
       await setOpenaiModel(cfg['openai_model'] as String);
     }
+    // Report the applied state back (config_report) so the admin's fields
+    // confirm what the robot actually accepted — the sync's return half.
+    elevenConfigRev.value++;
   }
 
   /// Switch the speaking voice (Settings preset or the "change your voice"

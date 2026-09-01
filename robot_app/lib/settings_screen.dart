@@ -225,8 +225,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1A1A1A),
       ),
+      // SafeArea + generous bottom padding: the Android system nav bar overlaid
+      // the SAVE button at the end of the scroll, leaving only a sliver tappable.
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, 32 + MediaQuery.of(context).padding.bottom),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           TextField(controller: _spine, style: const TextStyle(fontSize: 16),
               decoration: _dec('Spine base URL', 'Where spine runs — used by enrollment + check-face')),

@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -41,14 +41,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   }
 
   // Last-resort default if the spine is unreachable at startup. The REAL IP is
-  // fetched from the spine (see _syncRobotIpFromSpine) — this only bootstraps the
+  // fetched from the spine (see _syncRobotIpFromSpine) â€” this only bootstraps the
   // very first frame before that returns.
-  static const String _fallbackRobotIp = '192.168.1.6';
+  static const String _fallbackRobotIp = '192.168.1.60';
 
   // Durable fix for the recurring DHCP-churn hardcode: the spine already knows
   // ROBOT_IP (it dials the robot), so fetch it instead of hardcoding it here.
   // When the robot's lease moves, find_robot.sh updates spine/.env + restarts the
-  // spine and this repoints the camera on next load — no source edit, no rebuild.
+  // spine and this repoints the camera on next load â€” no source edit, no rebuild.
   Future<void> _syncRobotIpFromSpine() async {
     try {
       final res = await http
@@ -61,7 +61,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
         print('[SettingsNotifier] Robot IP from spine: $ip (camera repointed)');
       }
     } catch (e) {
-      print('[SettingsNotifier] spine robot IP fetch failed ($e) — using $_fallbackRobotIp');
+      print('[SettingsNotifier] spine robot IP fetch failed ($e) â€” using $_fallbackRobotIp');
     }
   }
 
@@ -73,13 +73,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       await prefs.remove('robot_ip');
       await prefs.remove('spine_url');
 
-      print('[SettingsNotifier] ════════════════════════════════════════');
+      print('[SettingsNotifier] â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
       print('[SettingsNotifier] REAL TIMO ROBOT SETTINGS (HARDCODED)');
-      print('[SettingsNotifier] Robot IP: 192.168.1.6');
+      print('[SettingsNotifier] Robot IP: 192.168.1.60');
       print('[SettingsNotifier] Spine: $spineWsUrl');
-      print('[SettingsNotifier] Camera: http://192.168.1.6:8080/stream');
+      print('[SettingsNotifier] Camera: http://192.168.1.60:8080/stream');
       print('[SettingsNotifier] Cleared old cached settings');
-      print('[SettingsNotifier] ════════════════════════════════════════');
+      print('[SettingsNotifier] â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
     } catch (e) {
       print('[SettingsNotifier] Error clearing old settings: $e');
     }
@@ -99,7 +99,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     try {
       // Ignore user changes - always keep hardcoded value
       print('[SettingsNotifier] User tried to change Robot IP, ignoring to keep hardcoded value');
-      state = state.copyWith(robotIp: '192.168.1.6');
+      state = state.copyWith(robotIp: '192.168.1.60');
     } catch (e) {
       print('[SettingsNotifier] Error: $e');
     }
